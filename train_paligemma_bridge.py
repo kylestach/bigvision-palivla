@@ -3,6 +3,7 @@ from functools import partial
 import os
 from pathlib import Path
 from pprint import pprint
+import json
 
 import jax
 import chex
@@ -22,15 +23,16 @@ from scalax.sharding import (
     PartitionSpec,
     NamedSharding,
 )
-import jax_smi
+
+# import jax_smi
 import wandb
 import numpy as np
 from jax.experimental import multihost_utils
 import orbax.checkpoint as ocp
 
-import tracemalloc
-import linecache
-                
+# import tracemalloc
+# import linecache
+
 jax.config.update("jax_compilation_cache_dir", "/tmp/jax_cache")
 jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
 jax.config.update("jax_persistent_cache_min_compile_time_secs", 0)
@@ -284,14 +286,18 @@ def make_dataset(config: ConfigDict, tokenizer: Tokenizer, train: bool):
 
     dataset = (
         dataset.filter(has_language)
-        .map(tokenizer.tokenize_language_instruction)
-        .map(prepare_image)
+        .map(tokenizer.tokenize_language_instruction, num_parallel_calls=None)
+        .map(prepare_image, num_parallel_calls=None)
     )
 
     if train:
-        dataset = dataset.map(tokenizer.prepare_tokens_for_training)
+        dataset = dataset.map(
+            tokenizer.prepare_tokens_for_training, num_parallel_calls=None
+        )
     else:
-        dataset = dataset.map(tokenizer.prepare_tokens_for_generation)
+        dataset = dataset.map(
+            tokenizer.prepare_tokens_for_generation, num_parallel_calls=None
+        )
 
     return dataset
 
@@ -422,34 +428,11 @@ def step_fn(
                 {"params": params},
                 batch["image"],
                 batch["tokens"][..., :-1],
-                # jnp.where(batch["tokens"][..., :-1] == tokenizer.pad_token, tokenizer.pad_token, tokenizer.begin_of_action_token),
                 batch["mask_ar"][..., :-1],
                 # train=True,
                 # rngs={"dropout": key},
             )
 
-        # from jax._src.debugging import inspect_sharding_p
-
-        # def _visualize(k, v, sharding: jax.sharding.PositionalSharding):
-        #     import time
-
-        #     time.sleep(0.1)
-        #     keystr = jax.tree_util.keystr(k)
-        #     sharding_str = " ".join(repr(sharding).split())
-        #     try:
-        #         print(f"Visualizing {keystr} ({v.shape}): {sharding_str}")
-        #         jax.debug.visualize_sharding(v.shape, sharding)
-        #     except:
-        #         print(f"Visualizing {keystr} ({jax.numpy.shape(v)}): {sharding_str}")
-        #     time.sleep(0.1)
-
-        # def _inspect(path, val):
-        #     inspect_sharding_p.bind(val, callback=lambda x: _visualize(path, val, x))
-
-        # jax.tree_util.tree_map_with_path(
-        #     _inspect,
-        #     {"data": batch, "params": train_state.params, "intermediates": out},
-        # )
 
         output_pred_mask = batch["mask_loss"][..., 1:]
         labels = batch["tokens"][..., 1:]
@@ -577,7 +560,6 @@ def host_broadcast_str(x: str | None) -> str:
 def main(_):
     jax.distributed.initialize()
 
-    jax_smi.initialise_tracking()
     tf.random.set_seed(jax.process_index())
 
     config = flags.FLAGS.config
@@ -600,7 +582,9 @@ def main(_):
 
     optimizer = make_optimizer(config)
 
-    mesh = MeshShardingHelper([config.data_axis_size, config.fsdp_axis_size], ["data", "fsdp"])  # , mesh_axis_splitting=True)
+    mesh = MeshShardingHelper(
+        [config.data_axis_size, config.fsdp_axis_size], ["data", "fsdp"]
+    )
 
     model_sharding = FSDPShardingRule("fsdp", fsdp_axis_size=mesh.mesh.shape["fsdp"])
     data_sharding = PartitionSpec(("data", "fsdp"))
@@ -619,11 +603,13 @@ def main(_):
     key = jax.random.PRNGKey(0)
 
     if jax.process_index() == 0:
+        wandb_kwargs = {"project": "paligemma-vla"}
+
         if config.profile:
-            wandb.init(project="paligemma-vla", mode="disabled")
-        else:
-            wandb.init(project="paligemma-vla")
-            wandb.config.update(config.to_dict())
+            wandb_kwargs["mode"] = "disabled"
+
+        wandb.init(**wandb_kwargs)
+        wandb.config.update(config.to_dict())
 
         run_name = wandb.run.name
     else:
@@ -638,6 +624,42 @@ def main(_):
             options=ocp.CheckpointManagerOptions(max_to_keep=3),
         )
 
+    # Save config and dataset statistics
+    if config.save_path is not None:
+        with open(f"{config.save_path}/{run_name}/config.json", "w") as f:
+            json.dump(config.to_dict(), f)
+        with open(f"{config.save_path}/{run_name}/dataset_statistics.json", "w") as f:
+            json.dump(ds_train.dataset_statistics, f)
+
+    if config.resume_from_checkpoint_dir is not None:
+        assert (
+            config.save_path is not None
+        ), "Must provide save_path to resume from checkpoint"
+
+        def _make_restore_args(value, ps: PartitionSpec):
+            if isinstance(value, jax.Array):
+                return ocp.ArrayRestoreArgs(
+                    restore_type=jax.Array,
+                    dtype=value.dtype,
+                    mesh_axes=ps,
+                    sharding=value.sharding,
+                )
+            else:
+                raise ValueError(f"Unexpected restore type: {type(value)}")
+
+        restore_args = jax.tree_map(
+            _make_restore_args, train_state, model_sharding.apply(train_state)
+        )
+
+        train_state = ocp.CheckpointManager(
+            config.resume_from_checkpoint_dir,
+            ocp.PyTreeCheckpointer(),
+            options=ocp.CheckpointManagerOptions(),
+        ).restore(
+            config.resume_from_checkpoint_step,
+            items=train_state,
+            restore_kwargs={"restore_args": restore_args},
+        )
 
     jit_step_fn = mesh.sjit(
         step_fn,
@@ -658,8 +680,7 @@ def main(_):
 
     wandb_logs = []
 
-    tracemalloc.start()
-    with tqdm.trange(config.num_steps, desc="Training") as pbar:
+    with tqdm.trange(train_state.step, config.num_steps, desc="Training") as pbar:
         for i in pbar:
             if i == 2 and jax.process_index() == 0:
                 jax.profiler.start_trace("/tmp/jax-trace")
@@ -677,6 +698,7 @@ def main(_):
 
             with jax.profiler.StepTraceAnnotation("step_fn", step_num=i):
                 from flax import linen as nn
+
                 with mesh.mesh, nn.logical_axis_rules([("act_batch", "fsdp")]):
                     train_state, info, key = jit_step_fn(
                         train_state,
@@ -684,48 +706,20 @@ def main(_):
                         key,
                         tokenizer.config,
                     )
-                train_state = jax.block_until_ready(train_state)
 
+            info = jax.device_get(info)
+            wandb_logs.append(info)
             pbar.set_postfix(
                 loss=f"{info['loss']:.4f}",
             )
-            wandb_logs.append(jax.device_get(info))
 
             if (i + 1) % config.log_interval == 0:
                 avg_info = jax.tree.map(
-                    lambda *xs: jnp.mean(jnp.stack(xs), axis=0), *wandb_logs
+                    lambda *xs: np.mean(np.stack(xs), axis=0), *wandb_logs
                 )
-                avg_info = jax.device_get(avg_info)
                 if jax.process_index() == 0:
                     wandb.log(avg_info, step=i)
                 wandb_logs = []
-
-            if (i + 1) % 100 == 0:
-                # Print out a trace of the largest objects in memory
-                def display_top(snapshot, key_type='lineno', limit=10):
-                    snapshot = snapshot.filter_traces((
-                        tracemalloc.Filter(False, "<frozen importlib._bootstrap>"),
-                        tracemalloc.Filter(False, "<unknown>"),
-                    ))
-                    top_stats = snapshot.statistics(key_type)
-                    
-                    print(f"Top {limit} lines")
-                    for index, stat in enumerate(top_stats[:limit], 1):
-                        frame = stat.traceback[0]
-                        print(f"#{index}: {frame.filename}:{frame.lineno}: {stat.size/1024/1024:.1f} MiB")
-                        line = linecache.getline(frame.filename, frame.lineno).strip()
-                        if line:
-                            print(f"    {line}")
-                    
-                    other = top_stats[limit:]
-                    if other:
-                        size = sum(stat.size for stat in other)
-                        print(f"{len(other)} other: {size/1024/1024:.1f} MiB")
-                    total = sum(stat.size for stat in top_stats)
-                    print(f"Total allocated size: {total/1024/1024:.1f} MiB")
-
-                snapshot = tracemalloc.take_snapshot()
-                display_top(snapshot)
 
             if (i + 1) % config.eval_interval == 0:
                 batch_eval = next(eval_it)

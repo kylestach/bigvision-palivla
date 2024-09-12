@@ -14,11 +14,13 @@ def get_config():
             "eval_batch_size": 128,
             "num_steps": 100000,
             "eval_interval": 100,
-            "save_interval": 1000,
+            "save_interval": 5000,
             "log_interval": 1,
             "profile": False,
             "data_axis_size": 1,
             "fsdp_axis_size": -1,
+            "resume_from_checkpoint_dir": placeholder(str),
+            "resume_from_checkpoint_step": placeholder(int),
             "dataset_kwargs": {
                 "oxe_kwargs": {
                     "data_mix": "bridge",
