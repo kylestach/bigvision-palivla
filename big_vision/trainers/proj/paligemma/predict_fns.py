@@ -68,9 +68,10 @@ def _image_avg_repr(train_state, batch, *, model, key="img/pre_logits"):
 
 def _decode_with_logp(
     train_state, batch, *, model, devices, max_decode_len, eos_token,
-    best_of_n=1, sampler="greedy", replicate_out=False, eos_look_behind=0):
+    best_of_n=1, sampler="greedy", replicate_out=False, eos_look_behind=0, mesh=None):
   """Sample token continuations to the input sequences."""
-  mesh = jax.sharding.Mesh(devices, ("devices",))
+  if mesh is None:
+    mesh = jax.sharding.Mesh(devices, ("devices",))
   replicate_sharding = jax.sharding.NamedSharding(mesh, P())
   out_sharding = jax.sharding.NamedSharding(
       mesh, P() if replicate_out else P("devices")
