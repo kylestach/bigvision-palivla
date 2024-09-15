@@ -96,6 +96,7 @@ if config is None:
     raise ValueError(f"No matching configuration found for pod name: {pod_name}")
 
 train_args = os.environ.get("TRAIN_ARGS")
+config_file = os.environ.get("CONFIG_FILE", "bridge_config.py")
 train_args = DEFAULT_TRAIN_ARGS | config["train_args"] | parse_args(train_args)
 train_args_str = " \\\n\t".join([f"--config.{k} {v}" for k, v in train_args.items()])
 
@@ -105,7 +106,7 @@ launch_script = f"""
 {config["setup_script"]}
 cd {config["src_dir"]}
 
-PYTHONPATH=. python palivla/train.py \
+PYTHONPATH=. python palivla/train.py --config {config_file} \
     {train_args_str}
 
 read -p "Press any key to continue..."

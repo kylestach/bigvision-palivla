@@ -37,21 +37,20 @@ def step_fn(
     def loss_fn(params, batch, key: chex.PRNGKey):
         batch_size, seq_len = batch["tokens"].shape
 
-        chex.assert_shape(batch["image"], (batch_size, 224, 224, 3))
+        chex.assert_shape(batch["image"], (batch_size, ..., 224, 224, 3))
         chex.assert_shape(
             [batch["tokens"], batch["mask_ar"], batch["mask_loss"]],
             (batch_size, seq_len),
         )
 
-        with jax.profiler.TraceAnnotation("apply_fn"):
-            logits, out = train_state.apply_fn(
-                {"params": params},
-                batch["image"],
-                batch["tokens"][..., :-1],
-                batch["mask_ar"][..., :-1],
-                # train=True,
-                # rngs={"dropout": key},
-            )
+        logits, out = train_state.apply_fn(
+            {"params": params},
+            batch["image"],
+            batch["tokens"][..., :-1],
+            batch["mask_ar"][..., :-1],
+            # train=True,
+            # rngs={"dropout": key},
+        )
 
 
         output_pred_mask = batch["mask_loss"][..., 1:]
@@ -112,6 +111,8 @@ def step_fn(
             details[f"details/tf_mse_{i}"] = jnp.mean(mse[:, i])
             details[f"details/tf_mae_{i}"] = jnp.mean(mae[:, i])
 
+        details["details/loss_action_only"] = jnp.mean(loss_by_action_token)
+
         return (
             loss,
             {
@@ -125,20 +126,18 @@ def step_fn(
             | details,
         )
 
-    with jax.profiler.TraceAnnotation("grad"):
-        grad_fn = jax.grad(loss_fn, has_aux=True)
+    grad_fn = jax.grad(loss_fn, has_aux=True)
 
-    with jax.profiler.TraceAnnotation("apply_updates"):
-        key, dropout_key = jax.random.split(key)
-        grads, info = grad_fn(train_state.params, batch, dropout_key)
-        updates, opt_state = train_state.tx.update(
-            grads, train_state.opt_state, params=train_state.params
-        )
-        params = optax.apply_updates(train_state.params, updates)
+    key, dropout_key = jax.random.split(key)
+    grads, info = grad_fn(train_state.params, batch, dropout_key)
+    updates, opt_state = train_state.tx.update(
+        grads, train_state.opt_state, params=train_state.params
+    )
+    params = optax.apply_updates(train_state.params, updates)
 
-        train_state = train_state.replace(
-            params=params, opt_state=opt_state, step=train_state.step + 1
-        )
+    train_state = train_state.replace(
+        params=params, opt_state=opt_state, step=train_state.step + 1
+    )
 
     info = info | train_state.opt_state.hyperparams
 

@@ -22,6 +22,7 @@ class Tokenizer:
         max_pad_length: int = struct.field(pytree_node=False)
         min_action_value: float = struct.field(pytree_node=True)
         max_action_value: float = struct.field(pytree_node=True)
+        prompt_autoregressive: bool = struct.field(pytree_node=True)
 
         def bin_tokenize(self, data):
             # Assume normalization and clipping to [-1, 1]
@@ -48,12 +49,12 @@ class Tokenizer:
             )
             return data
 
-    config: ConfigDict
-    language_tokenizer: SentencepieceTokenizer
+    config: TokenizerConfig = struct.field(pytree_node=True)
+    language_tokenizer: SentencepieceTokenizer = struct.field(pytree_node=False)
     token_structure: dict = struct.field(pytree_node=False)
 
     @classmethod
-    def from_tokenizer(cls, tokenizer: SentencepieceTokenizer):
+    def from_tokenizer(cls, tokenizer: SentencepieceTokenizer, prompt_autoregressive: bool = False):
         bos_token = tokenizer.string_to_id("<bos>").numpy().item()
         eos_token = tokenizer.string_to_id("<eos>").numpy().item()
         pad_token = tokenizer.string_to_id("<pad>").numpy().item()
@@ -73,6 +74,7 @@ class Tokenizer:
                 min_action_value=-2,
                 max_action_value=2,
                 vocab_size=tokenizer.vocab_size().numpy().item(),
+                prompt_autoregressive=prompt_autoregressive,
             ),
             language_tokenizer=tokenizer,
             token_structure={
@@ -108,9 +110,10 @@ class Tokenizer:
             [tokens_by_name["prefix"], tokens_by_name["causal"], tokens_by_name["pad"]],
             axis=0,
         )[: self.config.max_pad_length]
+        include_prefix_mask = tf.ones_like(tokens_by_name["prefix"], dtype=tf.bool) if self.config.prompt_autoregressive else tf.zeros_like(tokens_by_name["prefix"], dtype=tf.bool)
         mask_ar = tf.concat(
             [
-                tf.zeros_like(tokens_by_name["prefix"], dtype=tf.bool),
+                include_prefix_mask,
                 tf.ones_like(tokens_by_name["causal"], dtype=tf.bool),
                 tf.ones_like(tokens_by_name["pad"], dtype=tf.bool),
             ],
@@ -118,7 +121,7 @@ class Tokenizer:
         )[: self.config.max_pad_length]
         mask_loss = tf.concat(
             [
-                tf.zeros_like(tokens_by_name["prefix"], dtype=tf.bool),
+                include_prefix_mask,
                 tf.ones_like(tokens_by_name["causal"], dtype=tf.bool),
                 tf.zeros_like(tokens_by_name["pad"], dtype=tf.bool),
             ],

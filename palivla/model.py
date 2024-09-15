@@ -4,12 +4,13 @@ import jax
 import jax.numpy as jnp
 import ml_collections
 from ml_collections import ConfigDict
-from tensorflow_text import SentencepieceTokenizer
 import optax
 
 from flax import linen as nn
 
-def load_model(config: ConfigDict, tokenizer: SentencepieceTokenizer):
+from palivla.tokenizer import Tokenizer
+
+def load_model(config: ConfigDict, tokenizer: Tokenizer):
     from big_vision.models.proj.paligemma import paligemma
     from big_vision.trainers.proj.paligemma import predict_fns
 

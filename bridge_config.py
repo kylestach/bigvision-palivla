@@ -6,6 +6,8 @@ placeholder(int)._value
 def get_config():
     return ConfigDict(
         {
+            "wandb_project": "palivla",
+
             "model_load_fn": "big_vision.models.proj.paligemma.paligemma.load",
             "tokenizer_path": "models/paligemma_tokenizer.model",
             "model_path": "models/paligemma",
@@ -14,9 +16,8 @@ def get_config():
             "eval_batch_size": 128,
             "num_steps": 100000,
             "eval_interval": 100,
-            "save_interval": 5000,
+            "save_interval": 1000,
             "log_interval": 1,
-            "profile": False,
             "data_axis_size": 1,
             "fsdp_axis_size": -1,
             "resume_from_checkpoint_dir": placeholder(str),
@@ -35,11 +36,6 @@ def get_config():
                 "traj_transform_kwargs": {
                     "window_size": 1,
                     "action_horizon": 1,
-                    # "task_augment_strategy": "rephrase_instruction",
-                    # "task_augment_kwargs": {
-                    #     "pickle_file_path": "/data/rlds/paraphrases_oxe.pkl",
-                    #     "rephrase_prob": 0.5,
-                    # },
                 },
                 "frame_transform_kwargs": {
                     "image_augment_kwargs": {},
@@ -47,28 +43,6 @@ def get_config():
                 },
                 "shuffle_buffer_size": 50000,
             },
-            # "optimizer": "sgd",
-            # "llm_optimizer_kwargs": {
-            #     "init_learning_rate": 0,
-            #     "learning_rate": 1e-3,
-            #     "warmup_steps": 50,
-            #     "weight_decay": 0,
-            #     "grad_norm_clip": 10.0,
-            # },
-            # "embed_optimizer_kwargs": {
-            #     "init_learning_rate": 0,
-            #     "learning_rate": 1e-3,
-            #     "warmup_steps": 10,
-            #     "weight_decay": 0.0,
-            #     "grad_norm_clip": 10.0,
-            # },
-            # "img_optimizer_kwargs": {
-            #     "init_learning_rate": 0,
-            #     "learning_rate": 1e-3,
-            #     "warmup_steps": 50,
-            #     "weight_decay": 0,
-            #     "grad_norm_clip": 10.0,
-            # },
             "optimizer": "adamw",
             "llm_optimizer_kwargs": {
                 "init_learning_rate": 0,

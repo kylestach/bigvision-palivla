@@ -16,6 +16,7 @@ from scalax.sharding import (
 
 import wandb
 import numpy as np
+from flax import linen as nn
 from jax.experimental import multihost_utils
 import orbax.checkpoint as ocp
 
@@ -52,9 +53,11 @@ def main(_):
 
     config = flags.FLAGS.config
 
+    predict_prompt = config.get("predict_prompt", False)
+
     with open(config.tokenizer_path, "rb") as f:
         language_tokenizer = SentencepieceTokenizer(f.read())
-    tokenizer = Tokenizer.from_tokenizer(language_tokenizer)
+    tokenizer = Tokenizer.from_tokenizer(language_tokenizer, prompt_autoregressive=predict_prompt)
 
     print("Constructing dataset...")
     per_host_train_batch_size = config.batch_size // jax.process_count()
@@ -101,10 +104,7 @@ def main(_):
     key = jax.random.PRNGKey(0)
 
     if jax.process_index() == 0:
-        wandb_kwargs = {"project": "paligemma-vla"}
-
-        if config.profile:
-            wandb_kwargs["mode"] = "disabled"
+        wandb_kwargs = {"project": config.wandb_project}
 
         wandb.init(**wandb_kwargs)
         wandb.config.update(config.to_dict())
@@ -118,18 +118,13 @@ def main(_):
     if config.save_path is not None:
         checkpoint_manager = ocp.CheckpointManager(
             f"{config.save_path}/{run_name}/checkpoints",
-            ocp.Checkpointer(
-                ocp.CompositeCheckpointHandler("state", "config", "dataset_statistics")
+            item_names=["state", "config", "dataset_statistics"],
+            options=ocp.CheckpointManagerOptions(
+                max_to_keep=1
             ),
-            options=ocp.CheckpointManagerOptions(max_to_keep=1),
         )
-        params_manager = ocp.CheckpointManager(
-            f"{config.save_path}/{run_name}/params",
-            ocp.Checkpointer(
-                ocp.CompositeCheckpointHandler("params", "config", "dataset_statistics")
-            ),
-            options=ocp.CheckpointManagerOptions(),
-        )
+
+    dataset_statistics = jax.tree.map(lambda x: x.tolist(), train_ds.dataset_statistics)
 
     # Save config and dataset statistics
     if config.save_path is not None:
@@ -138,39 +133,23 @@ def main(_):
         with tf.io.gfile.GFile(
             f"{config.save_path}/{run_name}/dataset_statistics.json", "w"
         ) as f:
-            json.dump(
-                jax.tree.map(lambda x: x.tolist(), train_ds.dataset_statistics), f
-            )
+            json.dump(dataset_statistics, f)
 
     if config.resume_from_checkpoint_dir is not None:
         assert (
             config.save_path is not None
         ), "Must provide save_path to resume from checkpoint"
 
-        def _make_restore_args(value, ps: PartitionSpec):
-            if isinstance(value, jax.Array):
-                return ocp.ArrayRestoreArgs(
-                    restore_type=jax.Array,
-                    dtype=value.dtype,
-                    mesh_axes=ps,
-                    sharding=value.sharding,
-                )
-            else:
-                raise ValueError(f"Unexpected restore type: {type(value)}")
-
-        restore_args = jax.tree_map(
-            _make_restore_args, train_state, model_sharding.apply(train_state)
-        )
-
         train_state = ocp.CheckpointManager(
             config.resume_from_checkpoint_dir,
-            ocp.PyTreeCheckpointer(),
+            item_names=["state"],
             options=ocp.CheckpointManagerOptions(),
         ).restore(
             config.resume_from_checkpoint_step,
-            items=train_state,
-            restore_kwargs={"restore_args": restore_args},
-        )
+            args=ocp.args.Composite(
+                state=ocp.args.StandardRestore(train_state)
+            )
+        )['state']
 
     jit_step_fn = mesh.sjit(
         step_fn,
@@ -184,23 +163,16 @@ def main(_):
         ),
         donate_argnums=(0,),
     )
-    jit_step_fn = jax.profiler.annotate_function(jit_step_fn, name="step_fn")
-
-    if config.profile:
-        config.num_steps = 10
 
     wandb_logs = []
 
     # Main training loop
     with tqdm.trange(train_state.step, config.num_steps, desc="Training") as pbar:
         for i in pbar:
-            if i == 2 and jax.process_index() == 0:
-                jax.profiler.start_trace("/tmp/jax-trace")
-
             batch = next(train_it)
             batch_train = mesh.local_data_to_global_array(
                 {
-                    "image": np.squeeze(batch["observation"]["image_primary"], axis=1),
+                    "image": batch["observation"]["images"],
                     "tokens": batch["tokens"],
                     "input_mask": batch["mask_input"],
                     "mask_ar": batch["mask_ar"],
@@ -208,16 +180,13 @@ def main(_):
                 }
             )
 
-            with jax.profiler.StepTraceAnnotation("step_fn", step_num=i):
-                from flax import linen as nn
-
-                with mesh.mesh, nn.logical_axis_rules([("act_batch", "fsdp")]):
-                    train_state, info, key = jit_step_fn(
-                        train_state,
-                        batch_train,
-                        key,
-                        tokenizer.config,
-                    )
+            with mesh.mesh, nn.logical_axis_rules([("act_batch", "fsdp")]):
+                train_state, info, key = jit_step_fn(
+                    train_state,
+                    batch_train,
+                    key,
+                    tokenizer.config,
+                )
 
             info = jax.device_get(info)
             wandb_logs.append(info)
@@ -234,11 +203,10 @@ def main(_):
                 wandb_logs = []
 
             if (i + 1) % config.eval_interval == 0:
-
                 def compute_gen_stats(batch, prefix):
                     batch = mesh.local_data_to_global_array(
                         {
-                            "image": batch["observation"]["image_primary"][:, 0],
+                            "image": batch["observation"]["images"],
                             "text": batch["tokens"],
                             "mask_ar": batch["mask_ar"],
                             "mask_input": batch["mask_input"],
@@ -287,7 +255,7 @@ def main(_):
                         )
                     for j in range(gt_action_tokens.shape[-1]):
                         info[f"details/{prefix}/rollout_acc_{j}"] = np.mean(
-                            decoded_actions[:, j] == gt_action_tokens[:, j]
+                            out_tokens[:, j] == gt_action_tokens[:, j]
                         )
 
                     return info
@@ -310,32 +278,12 @@ def main(_):
                         i + 1,
                         args=ocp.args.Composite(
                             state=ocp.args.StandardSave(train_state),
-                            config=ocp.args.JsonSave(config),
+                            config=ocp.args.JsonSave(config.to_dict()),
                             dataset_statistics=ocp.args.JsonSave(
-                                train_ds.dataset_statistics
+                                dataset_statistics
                             ),
                         ),
                     )
-                    # Also save a copy of just params in bfloat16
-                    params_manager.save(
-                        i + 1,
-                        args=ocp.args.Composite(
-                            params=ocp.args.PyTreeSave(
-                                train_state.params,
-                                save_args=jax.tree_map(
-                                    lambda _: ocp.SaveArgs(dtype=jax.numpy.bfloat16),
-                                    train_state.params,
-                                ),
-                            ),
-                            config=ocp.args.JsonSave(config),
-                            dataset_statistics=ocp.args.JsonSave(
-                                train_ds.dataset_statistics
-                            ),
-                        ),
-                    )
-
-    if config.profile and jax.process_index() == 0:
-        jax.profiler.stop_trace()
 
 
 if __name__ == "__main__":
