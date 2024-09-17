@@ -1,3 +1,7 @@
+import dataclasses
+from functools import partial
+from typing import Literal, Optional
+from einops import rearrange
 from flax import struct
 from tensorflow_text import SentencepieceTokenizer
 import tensorflow as tf
@@ -5,6 +9,50 @@ from ml_collections import ConfigDict
 import jax
 import numpy as np
 import jax.numpy as jnp
+from flax import linen as nn
+from flax.core.frozen_dict import FrozenDict
+from jax.experimental import jax2tf
+
+class ActionTokenizer(nn.Module):
+    action_vocab_offset: int = struct.field(pytree_node=True)
+    action_vocab_size: int = struct.field(pytree_node=False)
+
+    def tokenize(self, data, obs=None):
+        ...
+
+    def detokenize(self, tokens, obs=None):
+        ...
+
+class BinActionTokenizer(ActionTokenizer):
+    min_action_value: jax.Array = struct.field(pytree_node=True)
+    max_action_value: jax.Array = struct.field(pytree_node=True)
+    action_dim: int = struct.field(pytree_node=False)
+
+    def tokenize(self, data, obs=None):
+        # Assume normalization and clipping to [-1, 1]
+        data = jnp.clip(data, self.min_action_value, self.max_action_value)
+        data = (data - self.min_action_value) / (
+            self.max_action_value - self.min_action_value
+        )
+        data = rearrange(data, "... p a -> ... (p a)")
+        return (
+            jnp.clip(
+                (data * self.action_vocab_size).astype(jnp.int32),
+                0,
+                self.action_vocab_size - 1,
+            )
+            + self.action_vocab_offset
+        )
+
+    def detokenize(self, tokens, obs=None):
+        values = (tokens - self.action_vocab_offset) / self.action_vocab_size
+        values = jnp.where((values < 0) | (values > 1), jnp.nan, values)
+        data = (
+            values * (self.max_action_value - self.min_action_value)
+            + self.min_action_value
+        )
+        data = rearrange(data, "... (p a) -> ... p a", a=self.action_dim)
+        return data
 
 
 @struct.dataclass
@@ -24,42 +72,26 @@ class Tokenizer:
         max_action_value: float = struct.field(pytree_node=True)
         prompt_autoregressive: bool = struct.field(pytree_node=True)
 
-        def bin_tokenize(self, data):
-            # Assume normalization and clipping to [-1, 1]
-            data = tf.clip_by_value(data, self.min_action_value, self.max_action_value)
-            data = (data - self.min_action_value) / (
-                self.max_action_value - self.min_action_value
-            )
-            return (
-                tf.clip_by_value(
-                    tf.cast(data * self.action_vocab_size, tf.int32),
-                    0,
-                    self.action_vocab_size - 1,
-                )
-                + self.action_vocab_offset
-            )
-
-        def bin_detokenize(self, tokens):
-            _np = jax.numpy if isinstance(tokens, jax.Array) else np
-            values = (tokens - self.action_vocab_offset) / self.action_vocab_size
-            values = _np.where((values < 0) | (values > 1), _np.nan, values)
-            data = (
-                values * (self.max_action_value - self.min_action_value)
-                + self.min_action_value
-            )
-            return data
-
     config: TokenizerConfig = struct.field(pytree_node=True)
     language_tokenizer: SentencepieceTokenizer = struct.field(pytree_node=False)
     token_structure: dict = struct.field(pytree_node=False)
 
+    action_tokenizer: ActionTokenizer = struct.field(pytree_node=False)
+    action_tokenizer_params: dict = struct.field(pytree_node=True)
+
+    _tf_action_tokenize_fn: Optional[tf.Module] = struct.field(pytree_node=False)
+
     @classmethod
-    def from_tokenizer(cls, tokenizer: SentencepieceTokenizer, prompt_autoregressive: bool = False):
-        bos_token = tokenizer.string_to_id("<bos>").numpy().item()
-        eos_token = tokenizer.string_to_id("<eos>").numpy().item()
-        pad_token = tokenizer.string_to_id("<pad>").numpy().item()
-        begin_of_action_token = tokenizer.string_to_id("\n").numpy().item()
+    def from_components(cls, language_tokenizer: SentencepieceTokenizer, action_tokenizer: ActionTokenizer, action_tokenizer_params: dict = None, prompt_autoregressive: bool = False):
+        bos_token = language_tokenizer.string_to_id("<bos>").numpy().item()
+        eos_token = language_tokenizer.string_to_id("<eos>").numpy().item()
+        pad_token = language_tokenizer.string_to_id("<pad>").numpy().item()
+        begin_of_action_token = language_tokenizer.string_to_id("\n").numpy().item()
         max_pad_length = 60
+
+        @tf.function(autograph=False)
+        def _tokenize(params, tokens, obs):
+            return jax2tf.convert(partial(action_tokenizer.apply, method="tokenize"))({"params": params}, tokens, obs=obs)
 
         return cls(
             config=cls.TokenizerConfig(
@@ -73,10 +105,10 @@ class Tokenizer:
                 max_pad_length=max_pad_length,
                 min_action_value=-2,
                 max_action_value=2,
-                vocab_size=tokenizer.vocab_size().numpy().item(),
+                vocab_size=language_tokenizer.vocab_size().numpy().item(),
                 prompt_autoregressive=prompt_autoregressive,
             ),
-            language_tokenizer=tokenizer,
+            language_tokenizer=language_tokenizer,
             token_structure={
                 "prefix": [
                     [bos_token],
@@ -88,6 +120,9 @@ class Tokenizer:
                 ],
                 "pad": [[pad_token] * max_pad_length],
             },
+            action_tokenizer=action_tokenizer,
+            action_tokenizer_params=action_tokenizer_params,
+            _tf_action_tokenize_fn=_tokenize,
         )
 
     def compose_token_structure(self, tokens, include_keys=["prefix", "causal", "pad"]):
@@ -144,18 +179,30 @@ class Tokenizer:
 
         return data
 
-    def bin_tokenize(self, data):
-        return self.config.bin_tokenize(data)
+    def tokenize_action(self, data, obs=None):
+        is_single_sample = data.ndim == 1
+        if is_single_sample:
+            data = data[None]
+        tokens = self.action_tokenizer.apply({"params": self.action_tokenizer_params}, data, obs=obs, method="tokenize")
+        if is_single_sample:
+            tokens = tokens[0]
+        return tokens
 
-    def bin_detokenize(self, tokens):
-        return self.config.bin_detokenize(tokens)
+    def detokenize_action(self, tokens, obs=None):
+        is_single_sample = tokens.ndim == 1
+        if is_single_sample:
+            tokens = tokens[None]
+        recon = self.action_tokenizer.apply({"params": self.action_tokenizer_params}, tokens, obs=obs, method="detokenize")
+        if is_single_sample:
+            recon = recon[0]
+        return recon
 
     def prepare_tokens_for_training(self, data):
         tokens = {
             "prompt": data["language_instruction_tokens"][
                 : self.config.max_pad_length - 10
             ],
-            "action": self.bin_tokenize(tf.squeeze(data["action"], axis=(0, 1))),
+            "action": self._tf_action_tokenize_fn(self.action_tokenizer_params, data["action"][-1], None),
         }
 
         tokens, mask_ar, mask_loss = self.compose_token_structure(tokens)

@@ -23,24 +23,25 @@ def get_config():
             "fsdp_axis_size": -1,
             "resume_from_checkpoint_dir": placeholder(str),
             "resume_from_checkpoint_step": placeholder(int),
+            "image_keys": ["image_primary", "image_secondary", "image_wrist_left", "image_wrist_right"],
             "dataset_kwargs": {
                 "oxe_kwargs": {
-                    "data_mix": "bridge",
-                    "data_dir": "/data/rlds/",
-                    "load_camera_views": ["primary"],
+                    "data_mix": "aloha",
+                    "data_dir": "/data/rlds",
+                    "load_camera_views": ["primary", "secondary", "wrist_left", "wrist_right"],
                     "load_depth": False,
                     "load_proprio": True,
-                    "load_language": True,
+                    "load_language": False, # Because we don't want to overwrite the language key
                     "force_recompute_dataset_statistics": False,
-                    "action_proprio_normalization_type": NormalizationType.NORMAL,
+                    "action_proprio_normalization_type": NormalizationType.NONE,
                 },
                 "traj_transform_kwargs": {
                     "window_size": 1,
-                    "action_horizon": 1,
+                    "action_horizon": 64,
                 },
                 "frame_transform_kwargs": {
                     "image_augment_kwargs": {},
-                    "resize_size": {"primary": [224, 224]},
+                    "resize_size": {"primary": [224, 224], "secondary": [224, 224], "wrist_left": [224, 224], "wrist_right": [224, 224]},
                 },
                 "shuffle_buffer_size": 50000,
             },

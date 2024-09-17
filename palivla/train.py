@@ -20,7 +20,7 @@ from flax import linen as nn
 from jax.experimental import multihost_utils
 import orbax.checkpoint as ocp
 
-from palivla.model import load_model, make_optimizer
+from palivla.model import load_model_params_decode, make_optimizer
 from palivla.tokenizer import Tokenizer
 from palivla.train_step import step_fn
 from palivla.dataset import make_dataset
@@ -77,11 +77,11 @@ def main(_):
     )
 
     print("Loading model params...")
-    model, params, decode = load_model(config, tokenizer)
+    model, params, decode = load_model_params_decode(config, tokenizer)
 
     print("Initializing model...")
 
-    optimizer = make_optimizer(config)
+    optimizer = make_optimizer(**config.optimizer_kwargs)
 
     mesh = MeshShardingHelper(
         [config.data_axis_size, config.fsdp_axis_size], ["data", "fsdp"]
@@ -150,6 +150,9 @@ def main(_):
                 state=ocp.args.StandardRestore(train_state)
             )
         )['state']
+
+    if config.restart_checkpoint_step is not None:
+        train_state = init_fn(train_state.params)
 
     jit_step_fn = mesh.sjit(
         step_fn,

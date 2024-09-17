@@ -99,6 +99,7 @@ train_args = os.environ.get("TRAIN_ARGS")
 config_file = os.environ.get("CONFIG_FILE", "bridge_config.py")
 train_args = DEFAULT_TRAIN_ARGS | config["train_args"] | parse_args(train_args)
 train_args_str = " \\\n\t".join([f"--config.{k} {v}" for k, v in train_args.items()])
+train_script = os.environ.get("TRAIN_SCRIPT", "palivla/train.py")
 
 launch_script = f"""
 #!/bin/bash
@@ -106,7 +107,7 @@ launch_script = f"""
 {config["setup_script"]}
 cd {config["src_dir"]}
 
-PYTHONPATH=. python palivla/train.py --config {config_file} \
+PYTHONPATH=. python {train_script} --config {config_file} \
     {train_args_str}
 
 read -p "Press any key to continue..."
