@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import chex
 import optax
 from flax.training.train_state import TrainState
-from palivla.tokenizer import Tokenizer
+from palivla.tokenizer import ActionTokenizer, Tokenizer
 from palivla.model import components_by_label
 
 def smooth_nll_loss(logits, labels, sigma, base_action_token, action_vocab_size):
@@ -32,7 +32,9 @@ def step_fn(
     train_state: TrainState,
     batch,
     key: chex.PRNGKey,
-    tokenizer: Tokenizer.TokenizerConfig,
+    tokenizer_config: Tokenizer.TokenizerConfig,
+    action_tokenizer: ActionTokenizer,
+    action_tokenizer_params: dict,
 ):
     def loss_fn(params, batch, key: chex.PRNGKey):
         batch_size, seq_len = batch["tokens"].shape
@@ -48,6 +50,7 @@ def step_fn(
             batch["image"],
             batch["tokens"][..., :-1],
             batch["mask_ar"][..., :-1],
+            proprio=batch.get("proprio", None),
             # train=True,
             # rngs={"dropout": key},
         )
@@ -56,7 +59,7 @@ def step_fn(
         output_pred_mask = batch["mask_loss"][..., 1:]
         labels = batch["tokens"][..., 1:]
 
-        chex.assert_shape([logits], (batch_size, seq_len - 1, tokenizer.vocab_size))
+        chex.assert_shape([logits], (batch_size, seq_len - 1, tokenizer_config.vocab_size))
 
         loss_by_token = optax.softmax_cross_entropy_with_integer_labels(logits, labels)
         # loss_by_token = smooth_nll_loss(
@@ -82,11 +85,11 @@ def step_fn(
 
         # Decode actions
         get_action_tokens = jax.vmap(
-            lambda x, i: jax.lax.dynamic_slice(x, (i,), (tokenizer.num_action_tokens,))
+            lambda x, i: jax.lax.dynamic_slice(x, (i,), (tokenizer_config.num_action_tokens,))
         )
 
         action_token_starts = (
-            jnp.argmax(labels == tokenizer.begin_of_action_token, axis=-1) + 1
+            jnp.argmax(labels == tokenizer_config.begin_of_action_token, axis=-1) + 1
         )
         pred_action_tokens = get_action_tokens(pred_tokens, action_token_starts)
         gt_action_tokens = get_action_tokens(labels, action_token_starts)
@@ -95,13 +98,13 @@ def step_fn(
             accuracy_by_token, action_token_starts
         )
 
-        decoded_actions = tokenizer.bin_detokenize(pred_action_tokens)
-        decoded_actions_gt = tokenizer.bin_detokenize(gt_action_tokens)
+        decoded_actions = action_tokenizer.apply({"params": action_tokenizer_params}, pred_action_tokens, obs=batch, method="detokenize")
+        decoded_actions_gt = action_tokenizer.apply({"params": action_tokenizer_params}, gt_action_tokens, obs=batch, method="detokenize")
         mae = jnp.abs(decoded_actions - decoded_actions_gt)
         mse = jnp.square(decoded_actions - decoded_actions_gt)
 
         details = {}
-        for i in range(tokenizer.num_action_tokens):
+        for i in range(tokenizer_config.num_action_tokens):
             details[f"details/tf_loss_{i}"] = jnp.mean(loss_by_action_token[:, i])
             details[f"details/tf_accuracy_{i}"] = jnp.mean(
                 accuracy_by_action_token[:, i]

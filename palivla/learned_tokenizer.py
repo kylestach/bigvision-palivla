@@ -227,8 +227,8 @@ class LookupFreeQuantization(nn.Module):
 
 
 class LfqResnetTokenizer(nn.Module):
-    stages: List[int]
-    stage_filters: List[int]
+    stages: Sequence[int]
+    stage_filters: Sequence[int]
     target_codebook_size: int
     data_dim: int
     data_horizon: int = 64
@@ -238,7 +238,7 @@ class LfqResnetTokenizer(nn.Module):
     commit_loss_weight: float = 0.0
     entropy_loss_weight: float = 0.05
 
-    use_initial_offset: bool = False
+    use_initial_offset: bool = False # Unused
     use_state_conditioning: bool = False
 
     @property
@@ -298,12 +298,16 @@ class LfqResnetTokenizer(nn.Module):
         return x
 
     def tokenize(self, action, obs=None, train=True):
+        chex.assert_shape(action, (None, self.data_horizon, self.data_dim))
+
         x = self._encoder(action, train=train)
         tokens = self.codebook.encode(x)
 
         return tokens
 
     def detokenize(self, tokens, obs=None, train=True):
+        chex.assert_shape(tokens, (None, self.num_tokens))
+
         x = self.codebook.decode(tokens)
         action = self._decoder(x, train=train) * self.out_scale
 

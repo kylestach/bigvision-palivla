@@ -13,20 +13,26 @@ from flax import linen as nn
 from flax.core.frozen_dict import FrozenDict
 from jax.experimental import jax2tf
 
+from palivla.utils import freeze_structure
+
+
 class ActionTokenizer(nn.Module):
-    action_vocab_offset: int = struct.field(pytree_node=True)
-    action_vocab_size: int = struct.field(pytree_node=False)
+    def tokenize(self, data, obs=None): ...
 
-    def tokenize(self, data, obs=None):
-        ...
+    def detokenize(self, tokens, obs=None): ...
 
-    def detokenize(self, tokens, obs=None):
-        ...
 
 class BinActionTokenizer(ActionTokenizer):
     min_action_value: jax.Array = struct.field(pytree_node=True)
     max_action_value: jax.Array = struct.field(pytree_node=True)
     action_dim: int = struct.field(pytree_node=False)
+    action_vocab_size: int = struct.field(pytree_node=False)
+
+    num_tokens: int = struct.field(pytree_node=False)
+
+    @property
+    def vocab_size(self):
+        return self.action_vocab_size
 
     def tokenize(self, data, obs=None):
         # Assume normalization and clipping to [-1, 1]
@@ -35,17 +41,14 @@ class BinActionTokenizer(ActionTokenizer):
             self.max_action_value - self.min_action_value
         )
         data = rearrange(data, "... p a -> ... (p a)")
-        return (
-            jnp.clip(
-                (data * self.action_vocab_size).astype(jnp.int32),
-                0,
-                self.action_vocab_size - 1,
-            )
-            + self.action_vocab_offset
+        return jnp.clip(
+            (data * self.vocab_size).astype(jnp.int32),
+            0,
+            self.vocab_size - 1,
         )
 
     def detokenize(self, tokens, obs=None):
-        values = (tokens - self.action_vocab_offset) / self.action_vocab_size
+        values = tokens / self.vocab_size
         values = jnp.where((values < 0) | (values > 1), jnp.nan, values)
         data = (
             values * (self.max_action_value - self.min_action_value)
@@ -74,7 +77,7 @@ class Tokenizer:
 
     config: TokenizerConfig = struct.field(pytree_node=True)
     language_tokenizer: SentencepieceTokenizer = struct.field(pytree_node=False)
-    token_structure: dict = struct.field(pytree_node=False)
+    token_structure: FrozenDict = struct.field(pytree_node=False)
 
     action_tokenizer: ActionTokenizer = struct.field(pytree_node=False)
     action_tokenizer_params: dict = struct.field(pytree_node=True)
@@ -82,7 +85,13 @@ class Tokenizer:
     _tf_action_tokenize_fn: Optional[tf.Module] = struct.field(pytree_node=False)
 
     @classmethod
-    def from_components(cls, language_tokenizer: SentencepieceTokenizer, action_tokenizer: ActionTokenizer, action_tokenizer_params: dict = None, prompt_autoregressive: bool = False):
+    def from_components(
+        cls,
+        language_tokenizer: SentencepieceTokenizer,
+        action_tokenizer: ActionTokenizer,
+        action_tokenizer_params: dict = None,
+        prompt_autoregressive: bool = False,
+    ):
         bos_token = language_tokenizer.string_to_id("<bos>").numpy().item()
         eos_token = language_tokenizer.string_to_id("<eos>").numpy().item()
         pad_token = language_tokenizer.string_to_id("<pad>").numpy().item()
@@ -90,36 +99,49 @@ class Tokenizer:
         max_pad_length = 60
 
         @tf.function(autograph=False)
-        def _tokenize(params, tokens, obs):
-            return jax2tf.convert(partial(action_tokenizer.apply, method="tokenize"))({"params": params}, tokens, obs=obs)
+        def _tokenize(params, actions, obs):
+            return tf.squeeze(
+                jax2tf.convert(
+                    partial(action_tokenizer.apply, method="tokenize"),
+                    native_serialization=True,
+                    native_serialization_platforms=["cpu"],
+                )({"params": params}, actions[None], obs=obs),
+                axis=0,
+            )
 
         return cls(
             config=cls.TokenizerConfig(
                 action_vocab_size=256,
                 action_vocab_offset=256000,
-                num_action_tokens=7,
+                num_action_tokens=action_tokenizer.num_tokens,
                 bos_token=bos_token,
                 eos_token=eos_token,
                 pad_token=pad_token,
                 begin_of_action_token=begin_of_action_token,
                 max_pad_length=max_pad_length,
-                min_action_value=-2,
-                max_action_value=2,
+                min_action_value=getattr(action_tokenizer, "min_action_value", None),
+                max_action_value=getattr(action_tokenizer, "max_action_value", None),
                 vocab_size=language_tokenizer.vocab_size().numpy().item(),
                 prompt_autoregressive=prompt_autoregressive,
             ),
             language_tokenizer=language_tokenizer,
-            token_structure={
-                "prefix": [
-                    [bos_token],
-                    "prompt",
-                    [begin_of_action_token],
-                ],
-                "causal": [
-                    "action",
-                ],
-                "pad": [[pad_token] * max_pad_length],
-            },
+            token_structure=FrozenDict(
+                freeze_structure(
+                    {
+                        "prefix": [
+                            [bos_token],
+                            "prompt",
+                            [begin_of_action_token],
+                        ],
+                        "causal": [
+                            "action",
+                        ],
+                        "pad": [
+                            [pad_token] * max_pad_length,
+                        ],
+                    }
+                )
+            ),
             action_tokenizer=action_tokenizer,
             action_tokenizer_params=action_tokenizer_params,
             _tf_action_tokenize_fn=_tokenize,
@@ -145,7 +167,11 @@ class Tokenizer:
             [tokens_by_name["prefix"], tokens_by_name["causal"], tokens_by_name["pad"]],
             axis=0,
         )[: self.config.max_pad_length]
-        include_prefix_mask = tf.ones_like(tokens_by_name["prefix"], dtype=tf.bool) if self.config.prompt_autoregressive else tf.zeros_like(tokens_by_name["prefix"], dtype=tf.bool)
+        include_prefix_mask = (
+            tf.ones_like(tokens_by_name["prefix"], dtype=tf.bool)
+            if self.config.prompt_autoregressive
+            else tf.zeros_like(tokens_by_name["prefix"], dtype=tf.bool)
+        )
         mask_ar = tf.concat(
             [
                 include_prefix_mask,
@@ -173,17 +199,21 @@ class Tokenizer:
         instruction = tf.strings.strip(instruction)
         instruction = tf.strings.join([tf.constant("act "), instruction])
 
-        data["language_instruction_tokens"] = self.language_tokenizer.tokenize(
-            instruction
-        )
-
-        return data
+        return self.language_tokenizer.tokenize(instruction)
 
     def tokenize_action(self, data, obs=None):
         is_single_sample = data.ndim == 1
         if is_single_sample:
             data = data[None]
-        tokens = self.action_tokenizer.apply({"params": self.action_tokenizer_params}, data, obs=obs, method="tokenize")
+        tokens = (
+            self.action_tokenizer.apply(
+                {"params": self.action_tokenizer_params},
+                data,
+                obs=obs,
+                method="tokenize",
+            )
+            + self.config.action_vocab_offset
+        )
         if is_single_sample:
             tokens = tokens[0]
         return tokens
@@ -192,48 +222,49 @@ class Tokenizer:
         is_single_sample = tokens.ndim == 1
         if is_single_sample:
             tokens = tokens[None]
-        recon = self.action_tokenizer.apply({"params": self.action_tokenizer_params}, tokens, obs=obs, method="detokenize")
+        recon = self.action_tokenizer.apply(
+            {"params": self.action_tokenizer_params},
+            tokens - self.config.action_vocab_offset,
+            obs=obs,
+            method="detokenize",
+        )
+
         if is_single_sample:
             recon = recon[0]
         return recon
 
-    def prepare_tokens_for_training(self, data):
+    def prepare_tokens_for_training(self, data, language_token_instructions):
         tokens = {
-            "prompt": data["language_instruction_tokens"][
-                : self.config.max_pad_length - 10
-            ],
-            "action": self._tf_action_tokenize_fn(self.action_tokenizer_params, data["action"][-1], None),
+            "prompt": language_token_instructions[: self.config.max_pad_length - 10],
+            "action": self._tf_action_tokenize_fn(
+                self.action_tokenizer_params, data["action"][-1], None
+            )
+            + self.config.action_vocab_offset,
         }
 
         tokens, mask_ar, mask_loss = self.compose_token_structure(tokens)
 
-        data["tokens"] = tokens
-        data["mask_ar"] = mask_ar
-        data["mask_loss"] = mask_loss
-        data["mask_input"] = tokens != self.config.pad_token
+        return {
+            "tokens": tokens,
+            "mask_ar": mask_ar,
+            "mask_loss": mask_loss,
+            "mask_input": tokens != self.config.pad_token,
+        }
 
-        del data["language_instruction_tokens"]
-
-        return data
-
-    def prepare_tokens_for_generation(self, data):
+    def prepare_tokens_for_generation(self, data, language_token_instructions):
         tokens = {
-            "prompt": data["language_instruction_tokens"][
-                : self.config.max_pad_length - 10
-            ],
+            "prompt": language_token_instructions[: self.config.max_pad_length - 10],
         }
 
         tokens, mask_ar, mask_loss = self.compose_token_structure(
             tokens, include_keys={"prefix", "pad"}
         )
 
-        del data["language_instruction_tokens"]
-
-        data["tokens"] = tokens
-        data["mask_ar"] = mask_ar
-        data["mask_input"] = tokens != self.config.pad_token
-
-        return data
+        return {
+            "tokens": tokens,
+            "mask_ar": mask_ar,
+            "mask_input": tokens != self.config.pad_token,
+        }
 
     def extract_action(self, data):
         action_start = (

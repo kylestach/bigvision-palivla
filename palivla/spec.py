@@ -7,6 +7,8 @@ from flax import linen as nn
 from flax import struct
 from flax.core import frozen_dict
 
+from palivla.utils import freeze_structure
+
 T = TypeVar("T")
 
 
@@ -23,7 +25,7 @@ class CtorSpec(Generic[T]):
         return cls(ctor=ctor, config=config)
 
     def instantiate(self, *args, **kwargs) -> T:
-        return self.ctor(**frozen_dict.freeze(self.config), **kwargs)
+        return self.ctor(**frozen_dict.freeze(freeze_structure(self.config)), **kwargs)
 
     def to_dict(self) -> Dict[str, Any]:
         return {"ctor": self.ctor.__module__ + "." + self.ctor.__name__, "config": self.config}

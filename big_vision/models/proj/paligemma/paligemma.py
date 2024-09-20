@@ -17,6 +17,7 @@
 import importlib
 from typing import Any, Optional
 
+from einops import rearrange
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
@@ -57,6 +58,7 @@ class Model(nn.Module):
   img: Optional[ConfigDict] = None
   llm_model: str = "proj.paligemma.gemma_bv"
   llm: Optional[ConfigDict] = None
+  num_proprio_tokens: int = 0
 
   def setup(self):
     self._llm = importlib.import_module(
@@ -67,6 +69,8 @@ class Model(nn.Module):
     self._img_model = importlib.import_module(
         f"big_vision.models.{self.img_model}"
     ).Model(**img_config, name="img")
+
+    self._proprio_model = nn.Dense(self._llm.embdim * self.num_proprio_tokens, name="proprio")
 
   def embed_image(self, image, train=False):
     out = {}
@@ -92,7 +96,12 @@ class Model(nn.Module):
     ztxt = out["llm/ztxt"] = self._llm.embed_tokens(tokens, train=train)
     return ztxt, out
 
-  def embed_image_and_text(self, image, text, *,
+  def embed_proprio(self, proprio, train=False):
+    out = {}
+    zproprio = out["proprio/zproprio"] = rearrange(self._proprio_model(proprio), "b (k e) -> b k e", e=self._llm.embdim)
+    return zproprio, out
+
+  def embed_image_and_text(self, image, text, proprio, *,
                            input_mask=None, mask_ar=None, train=False):
     """Concats image/text into a sequence of embeded tokens to pass to `llm`.
 
@@ -114,21 +123,30 @@ class Model(nn.Module):
     zimg, out_img = self.embed_image(image, train=train)
     ztxt, out_txt = self.embed_text(text, train=train)
 
+    if proprio is not None:
+      zproprio, out_proprio = self.embed_proprio(proprio, train=train)
+      zprompt = jnp.concatenate([zimg, zproprio], axis=1)
+      _, proprio_len, _ = zproprio.shape
+    else:
+      out_proprio = {}
+      zprompt = zimg
+      proprio_len = 0
+
     if input_mask is None:
       input_mask = jnp.full(text.shape, True)
     if mask_ar is None:
       mask_ar = jnp.full(text.shape, 1)
 
     # Concatenate embeded image and text into a single token sequence.
-    x = jnp.concatenate([zimg, ztxt], axis=1)
+    x = jnp.concatenate([zprompt, ztxt], axis=1)
     _, img_len, _ = zimg.shape
-    pad_width = ((0, 0), (img_len, 0))
+    pad_width = ((0, 0), (img_len + proprio_len, 0))
     mask_ar = jnp.pad(mask_ar, pad_width, constant_values=0)
     input_mask = jnp.pad(input_mask, pad_width, constant_values=True)
 
-    return (x, input_mask, mask_ar), {**out_img, **out_txt}
+    return (x, input_mask, mask_ar), {**out_img, **out_txt, **out_proprio}
 
-  def __call__(self, image, text, mask_ar, train=False):
+  def __call__(self, image, text, mask_ar, proprio=None, train=False):
     """Concats image/text and returns text logits.
 
     Args:
@@ -144,7 +162,7 @@ class Model(nn.Module):
     """
     # Embed the image and text.
     (x, input_mask, mask_ar), out = self.embed_image_and_text(
-        image, text, mask_ar=mask_ar, train=train)
+        image, text, proprio=proprio, mask_ar=mask_ar, train=train)
 
     # Call transformer on the embedded token sequence.
     attn_mask = out["attn_mask"] = make_attn_mask(input_mask, mask_ar)
@@ -154,7 +172,9 @@ class Model(nn.Module):
 
     # Extract the logits for the text tokens.
     zimg = out["img/zimg"]
-    text_pre_logits = out["llm/pre_logits"][:, zimg.shape[1]:, :]
+    zproprio = out["proprio/zproprio"]
+    prompt_len = zimg.shape[1] + zproprio.shape[1]
+    text_pre_logits = out["llm/pre_logits"][:, prompt_len:, :]
     text_logits = self._llm.compute_logits(text_pre_logits, train=train)
     out["text_logits"] = text_logits
     out["text_tokens"] = jnp.argmax(text_logits, axis=-1)
@@ -199,6 +219,7 @@ class Model(nn.Module):
     self.put_variable("cache", "mask_ar_cache", mask_ar)
 
     # Extract logits of the last token (using einsum).
+    # last_pos = jnp.argmax(~input_mask, axis=1)[:, None] - 1
     last_pos = jnp.sum(input_mask, axis=1)[:, None] - 1
     last_onehot = jax.nn.one_hot(last_pos, logits.shape[1], dtype=jnp.int32)
     last_logits = jnp.einsum("bnh,ben->beh", logits, last_onehot)

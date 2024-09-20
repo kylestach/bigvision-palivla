@@ -117,6 +117,31 @@ def make_dataset(
 ):
     dataset_kwargs = config.dataset_kwargs.to_dict()
 
+    def frame_transform(data):
+        if config.get("multimodal", False):
+            data = process_rephrase_tf(data, **config.multimodal_rephrasing_kwargs)
+            data = mel_spectro_to_image(data)
+            data = tactile_to_image(data)
+            data = make_stacked_images(data)
+
+        if config.chunk_relative_actions:
+            # Gripper is absolute, rest is relative
+            relative_mask = tf.constant([True] * 6 + [False] + [True] * 6 + [False])
+            initial_offset = data["observation"]["proprio"][-1] * tf.cast(relative_mask, tf.float32)
+            data["action"] = data["action"] - initial_offset
+            data["initial_offset"] = initial_offset
+
+        language_token_instructions = tokenizer.tokenize_language_instruction(data)
+
+        if generation:
+            data = data | tokenizer.prepare_tokens_for_generation(data, language_token_instructions)
+        else:
+            data = data | tokenizer.prepare_tokens_for_training(data, language_token_instructions)
+
+        data["proprio"] = tf.squeeze(data["observation"]["proprio"], axis=0)
+
+        return data
+
     if config.get("multimodal", False):
         data_dir = dataset_kwargs.pop("oxe_kwargs").pop("data_dir")
         dataset_kwargs["data_dir"] = data_dir
@@ -128,14 +153,6 @@ def make_dataset(
         )
         dataset_statistics = dataset.dataset_statistics
         dataset = dataset.flatten().shuffle(config.shuffle_buffer_size)
-
-        dataset = dataset.map(
-            partial(process_rephrase_tf, **config.multimodal_rephrasing_kwargs),
-            num_parallel_calls=None,
-        )
-        dataset = dataset.map(mel_spectro_to_image, num_parallel_calls=None)
-        dataset = dataset.map(tactile_to_image, num_parallel_calls=None)
-        dataset = dataset.map(make_stacked_images, num_parallel_calls=None)
     else:
         dataset_kwargs["dataset_kwargs_list"], dataset_kwargs["sample_weights"] = (
             make_oxe_dataset_kwargs_and_weights(**dataset_kwargs.pop("oxe_kwargs"))
@@ -147,17 +164,11 @@ def make_dataset(
         dataset_statistics = dataset.dataset_statistics
 
     dataset = dataset.filter(has_language).map(
-        tokenizer.tokenize_language_instruction, num_parallel_calls=None
+        frame_transform, num_parallel_calls=None
     )
-
-    if generation:
-        dataset = dataset.map(
-            tokenizer.prepare_tokens_for_generation, num_parallel_calls=None
-        )
-    else:
-        dataset = dataset.map(
-            tokenizer.prepare_tokens_for_training, num_parallel_calls=None
-        )
+    options = tf.data.Options()
+    options.autotune.enabled = False
+    dataset = dataset.with_options(options)
 
     dataset.dataset_statistics = dataset_statistics
 

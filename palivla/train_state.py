@@ -15,6 +15,7 @@ import tensorflow as tf
 import flax
 from tensorflow_text import SentencepieceTokenizer
 from scalax.sharding import SJITCompiledFunction
+from jax.sharding import PartitionSpec
 
 import optax
 from flax import linen as nn
@@ -168,9 +169,12 @@ class PaliVLAModel(paligemma.Model):
 '''
 
 
-def restore_gluon_module(path: str, step: int | None = None):
+def restore_gluon_module(path: str, mesh: MeshShardingHelper, step: int | None = None, extra_kwargs: Dict[str, Any] = {}):
     with tf.io.gfile.GFile(tf.io.gfile.join(path, "module_spec.json"), "r") as f:
         module_spec = ModuleSpec.from_json(f.read())
+
+    module_spec.config.update(extra_kwargs)
+
     params_manager = ocp.CheckpointManager(
         directory=tf.io.gfile.join(path, "checkpoints"),
         item_handlers={"default": ocp.StandardCheckpointHandler()},
@@ -179,9 +183,9 @@ def restore_gluon_module(path: str, step: int | None = None):
     params_metadata = params_manager.item_metadata(params_manager.latest_step())[
         "default"
     ]
-    params_sharding = jax.tree_map(lambda _: jax.sharding.PositionalSharding(jax.devices()), params_metadata)
+    sharding = jax.sharding.NamedSharding(mesh, PartitionSpec())
     abstract_params = jax.tree.map(
-        lambda x, sharding: jax.ShapeDtypeStruct(x.shape, x.dtype, sharding=sharding), params_metadata, params_sharding
+        lambda x: jax.ShapeDtypeStruct(x.shape, x.dtype, sharding=sharding), params_metadata
     )
     params = params_manager.restore(
         params_manager.latest_step(),
@@ -250,12 +254,13 @@ class PaliVLA:
         self.step_fn = (
             self.mesh.sjit(
                 step_fn,
-                static_argnums=(3,),
-                in_shardings=(self.model_sharding, self.data_sharding, None),
+                static_argnums=(3, 4),
+                in_shardings=(self.model_sharding, self.data_sharding, None, None),
                 out_shardings=(self.model_sharding, None, None),
                 args_sharding_constraint=(
                     self.model_sharding,
                     self.data_sharding,
+                    None,
                     None,
                 ),
                 donate_argnums=(0,),
@@ -270,7 +275,9 @@ class PaliVLA:
         cls,
         model_load_path: str,
         language_tokenizer_path: str,
-        # If None, default to bin tokenization
+        num_proprio_tokens: int = 0,
+        proprio_dim: int = 7,
+        action_dim: int = 7,
         action_tokenizer_path: Optional[str] = None,
         prompt_autoregressive: bool = False,
         optimizer_spec: Optional[OptimizerSpec] = None,
@@ -295,15 +302,19 @@ class PaliVLA:
             action_tokenizer_spec = ModuleSpec(BinActionTokenizer, {
                 "action_vocab_offset": 256000,
                 "action_vocab_size": 256,
-                "action_dim": 7,
+                "action_dim": action_dim,
                 "min_action_value": -2,
                 "max_action_value": 2,
             })
             action_tokenizer_params = {}
         else:
             action_tokenizer_spec, action_tokenizer_params = restore_gluon_module(
-                action_tokenizer_path
+                action_tokenizer_path,
+                mesh=mesh.mesh,
             )
+
+        action_tokenizer_params = mesh.apply_shard_and_gather_fns(mesh.make_shard_and_gather_fns(action_tokenizer_params, PartitionSpec())[0], action_tokenizer_params)
+
         action_tokenizer = action_tokenizer_spec.instantiate()
 
         tokenizer = Tokenizer.from_components(
@@ -313,12 +324,17 @@ class PaliVLA:
             prompt_autoregressive=prompt_autoregressive,
         )
 
-        model_spec = get_model_spec()
+        rng = jax.random.PRNGKey(rng_seed)
+        rng, init_rng = jax.random.split(rng)
+
+        model_spec = get_model_spec(num_proprio_tokens=num_proprio_tokens)
         model = model_spec.instantiate()
         model_params = load_pretrained_params(
             model_load_path,
             dtype=model_dtype,
         )
+        model_params["proprio"] = model.init(init_rng, jnp.zeros((1, proprio_dim)), method="embed_proprio")["params"]["proprio"]
+
         decode_fn = get_decode_fn(model, tokenizer)
 
         if optimizer_spec is None:
@@ -327,8 +343,6 @@ class PaliVLA:
 
         if dataset_statistics is None:
             dataset_statistics = {}
-
-        rng = jax.random.PRNGKey(rng_seed)
 
         @partial(
             mesh.sjit,
@@ -360,6 +374,18 @@ class PaliVLA:
                     "action_tokenizer_spec",
                     "action_tokenizer_params",
                 ],
+                item_handlers={
+                    "params": ocp.StandardCheckpointHandler(),
+                    "opt_state": ocp.StandardCheckpointHandler(),
+                    "step": ocp.StandardCheckpointHandler(),
+                    "model_spec": ocp.JsonCheckpointHandler(),
+                    "optimizer_spec": ocp.JsonCheckpointHandler(),
+                    "dataset_statistics": ocp.JsonCheckpointHandler(),
+                    "tokenizer_config": ocp.JsonCheckpointHandler(),
+                    "rng": ocp.JaxRandomKeyCheckpointHandler(),
+                    "action_tokenizer_spec": ocp.JsonCheckpointHandler(),
+                    "action_tokenizer_params": ocp.StandardCheckpointHandler(),
+                },
                 options=ocp.CheckpointManagerOptions(
                     max_to_keep=1,
                 ),
@@ -385,26 +411,28 @@ class PaliVLA:
         )
 
     def save(self, step: int):
+        args=ocp.args.Composite(
+            params=ocp.args.StandardSave(self.train_state.params),
+            opt_state=ocp.args.StandardSave(self.train_state.opt_state),
+            # step=ocp.args.StandardSave({"step": self.train_state.step}),
+            # rng=ocp.args.JaxRandomKeySave(self.rng),
+            model_spec=ocp.args.JsonSave(self.module_spec.to_dict()),
+            optimizer_spec=ocp.args.JsonSave(self.optimizer_spec.to_dict()),
+            dataset_statistics=ocp.args.JsonSave(self.dataset_statistics),
+            # tokenizer_config=ocp.args.JsonSave(
+            #     dataclasses.asdict(self.tokenizer.config)
+            # ),
+            # action_tokenizer_spec=ocp.args.JsonSave(
+            #     self.action_tokenizer_spec.to_dict()
+            # ),
+            # action_tokenizer_params=ocp.args.StandardSave(
+            #     self.tokenizer.action_tokenizer_params
+            # ),
+        )
+
         self.checkpoint_manager.save(
             step,
-            args=ocp.args.Composite(
-                params=ocp.args.StandardSave(self.train_state.params),
-                opt_state=ocp.args.StandardSave(self.train_state.opt_state),
-                step=ocp.args.StandardSave(self.train_state.step),
-                rng=ocp.args.StandardSave(self.rng),
-                model_spec=ocp.args.JsonSave(self.module_spec.to_dict()),
-                optimizer_spec=ocp.args.JsonSave(self.optimizer_spec.to_dict()),
-                dataset_statistics=ocp.args.JsonSave(self.dataset_statistics),
-                tokenizer_config=ocp.args.JsonSave(
-                    dataclasses.asdict(self.tokenizer.config)
-                ),
-                action_tokenizer_spec=ocp.args.JsonSave(
-                    self.action_tokenizer_spec.to_dict()
-                ),
-                action_tokenizer_params=ocp.args.StandardSave(
-                    self.tokenizer.action_tokenizer_params
-                ),
-            ),
+            args=args,
         )
 
     @classmethod
@@ -419,6 +447,7 @@ class PaliVLA:
         data_sharding: Optional[ShardingRule] = None,
         load_optimizer: bool = True,
         model_dtype: Optional[jnp.dtype] = None,
+        action_tokenizer_path: Optional[str] = None,
     ):
         load_checkpoint_manager = ocp.CheckpointManager(
             directory=load_directory,
@@ -434,6 +463,18 @@ class PaliVLA:
                 "action_tokenizer_spec",
                 "action_tokenizer_params",
             ],
+            item_handlers={
+                "params": ocp.StandardCheckpointHandler(),
+                "opt_state": ocp.StandardCheckpointHandler(),
+                "step": ocp.StandardCheckpointHandler(),
+                "model_spec": ocp.JsonCheckpointHandler(),
+                "optimizer_spec": ocp.JsonCheckpointHandler(),
+                "dataset_statistics": ocp.JsonCheckpointHandler(),
+                "tokenizer_config": ocp.JsonCheckpointHandler(),
+                "rng": ocp.JaxRandomKeyCheckpointHandler(),
+                "action_tokenizer_spec": ocp.JsonCheckpointHandler(),
+                "action_tokenizer_params": ocp.StandardCheckpointHandler(),
+            },
             options=ocp.CheckpointManagerOptions(),
         )
 
@@ -441,19 +482,19 @@ class PaliVLA:
         rng = jax.random.PRNGKey(0)
         train_step_sharding = jax.sharding.NamedSharding(
             mesh.mesh,
-            model_sharding.apply({"step": jax.ShapeDtypeStruct((), jnp.int64)}),
-        )["step"]
+            model_sharding.apply(jax.ShapeDtypeStruct((), jnp.int64)) if isinstance(model_sharding, ShardingRule) else model_sharding,
+        )
 
         restored_metadata = load_checkpoint_manager.restore(
             step,
-            args=ocp.args.CompositeRestore(
-                step=ocp.args.StandardRestore(
-                    jax.ShapeDtypeStruct((), jnp.int64, sharding=train_step_sharding)
-                ),
+            args=ocp.args.Composite(
+                # step=ocp.args.StandardRestore(
+                #     {"step": jax.ShapeDtypeStruct((), jnp.int64, sharding=train_step_sharding)}
+                # ),
                 model_spec=ocp.args.JsonRestore(),
                 optimizer_spec=ocp.args.JsonRestore(),
                 dataset_statistics=ocp.args.JsonRestore(),
-                rng=ocp.args.StandardRestore(rng),
+                rng=ocp.args.JaxRandomKeyRestore(rng),
                 tokenizer_config=ocp.args.JsonRestore(),
                 action_tokenizer_spec=ocp.args.JsonRestore(),
                 action_tokenizer_params=ocp.args.StandardRestore(
@@ -467,11 +508,17 @@ class PaliVLA:
             ),
         )
         rng = restored_metadata["rng"]
-        train_step = restored_metadata["step"]
+        # print(restored_metadata["step"])
+        # train_step = restored_metadata["step"]
+        train_step = step
         model_spec = ModuleSpec.from_dict(restored_metadata["model_spec"])
         optimizer_spec = OptimizerSpec.from_dict(restored_metadata["optimizer_spec"])
-        action_tokenizer_spec = ModuleSpec.from_dict(
-            restored_metadata["action_tokenizer_spec"]
+        # action_tokenizer_spec = ModuleSpec.from_dict(
+        #     restored_metadata["action_tokenizer_spec"]
+        # )
+        action_tokenizer_spec, action_tokenizer_params = restore_gluon_module(
+            action_tokenizer_path,
+            mesh=mesh.mesh,
         )
 
         dataset_statistics = restored_metadata["dataset_statistics"]
@@ -481,10 +528,11 @@ class PaliVLA:
         tokenizer = Tokenizer.from_components(
             language_tokenizer=language_tokenizer,
             action_tokenizer=action_tokenizer_spec.instantiate(),
-            action_tokenizer_params=restored_metadata["action_tokenizer_params"],
-            prompt_autoregressive=restored_metadata["tokenizer_config"][
-                "prompt_autoregressive"
-            ],
+            action_tokenizer_params=action_tokenizer_params,
+            prompt_autoregressive=False,
+            #restored_metadata["tokenizer_config"][
+            #     "prompt_autoregressive"
+            # ],
         )
 
         # Load sharded params
@@ -500,11 +548,16 @@ class PaliVLA:
             return jax.ShapeDtypeStruct(
                 shape=abstract_array.shape,
                 dtype=model_dtype or abstract_array.dtype,
-                sharding_rule=sharding_rule,
+                sharding=sharding_rule,
             )
 
         abstract_params = jax.tree_map(_make_abstract_array, params_metadata)
-        params_sharding_rules = model_sharding.apply(abstract_params)
+        if isinstance(model_sharding, ShardingRule):
+            params_sharding_rules = model_sharding.apply(abstract_params)
+        else:
+            params_sharding_rules = jax.tree_map(lambda _: model_sharding, abstract_params)
+        params_sharding_rules = jax.tree.map(lambda p: jax.NamedSharding(mesh.mesh, p), params_sharding_rules)
+
         abstract_params = jax.tree.map(
             _shard_abstract_array,
             abstract_params,
@@ -577,13 +630,14 @@ class PaliVLA:
             decode_fn=decode_fn,
             checkpoint_manager=checkpoint_manager,
             rng=rng,
+            action_tokenizer_spec=action_tokenizer_spec,
         )
 
     def replace(self, **updates) -> "TrainState":
         return dataclasses.replace(self, **updates)
 
     def process_image(self, obs: Dict[str, jax.Array]) -> jax.Array:
-        # Cocnatenate and normalize images
+        # Concatenate and normalize images
         return jnp.concatenate([obs[image_key] for image_key in self.image_keys], axis=1) / 127.5 - 1.0
 
     def train_step(self, batch: Data):
@@ -591,7 +645,7 @@ class PaliVLA:
 
         with self.mesh.mesh, nn.logical_axis_rules([("act_batch", "fsdp")]):
             self.train_state, info, self.rng = self.step_fn(
-                self.train_state, batch, self.rng, self.tokenizer.config
+                self.train_state, batch, self.rng, self.tokenizer.config, self.tokenizer.action_tokenizer, self.tokenizer.action_tokenizer_params
             )
 
         return info
@@ -602,16 +656,16 @@ class PaliVLA:
         prompt: jax.Array,
         mask_ar: jax.Array,
         mask_input: jax.Array,
+        proprio: jax.Array | None = None,
     ) -> Tuple[jnp.ndarray, Info]:
-        batch = self.mesh.local_data_to_global_array(
-            {
-                "image": image,
-                "text": prompt,
-                "mask_ar": mask_ar,
-                "mask_input": mask_input,
-                "_mask": jnp.ones_like(prompt[:, 0]),
-            }
-        )
+        batch = {
+            "image": image,
+            "text": prompt,
+            "mask_ar": mask_ar,
+            "mask_input": mask_input,
+            "proprio": proprio,
+            "_mask": jnp.ones_like(prompt[:, 0]),
+        }
         return self.decode_fn(
             {"params": self.train_state.params},
             batch,

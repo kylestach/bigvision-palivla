@@ -7,10 +7,11 @@ def get_config():
     num_train_steps = FieldReference(100000, int)
     return ConfigDict(
         {
-            "wandb_project": "palivla",
+            "wandb_project": "palivla-aloha",
 
             "model_load_fn": "big_vision.models.proj.paligemma.paligemma.load",
             "tokenizer_path": "models/paligemma_tokenizer.model",
+            "action_tokenizer_path": "trained_tokenizers/lfq_16tok_256codes_64chunk-jlrm8f1",
             "model_path": "models/paligemma",
             "save_path": placeholder(str),
             "batch_size": 192,
@@ -21,9 +22,12 @@ def get_config():
             "log_interval": 1,
             "data_axis_size": 1,
             "fsdp_axis_size": -1,
+            "proprio_dim": 14,
+            "num_proprio_tokens": 4,
             "resume_from_checkpoint_dir": placeholder(str),
             "resume_from_checkpoint_step": placeholder(int),
             "image_keys": ["image_primary", "image_secondary", "image_wrist_left", "image_wrist_right"],
+            "chunk_relative_actions": True,
             "dataset_kwargs": {
                 "oxe_kwargs": {
                     "data_mix": "aloha",
@@ -42,8 +46,11 @@ def get_config():
                 "frame_transform_kwargs": {
                     "image_augment_kwargs": {},
                     "resize_size": {"primary": [224, 224], "secondary": [224, 224], "wrist_left": [224, 224], "wrist_right": [224, 224]},
+                    "num_parallel_calls": 64,
                 },
                 "shuffle_buffer_size": 50000,
+                "traj_transform_threads": 16,
+                "traj_read_threads": 16,
             },
             "optimizer_kwargs": {
                 "optimizer": "adamw",

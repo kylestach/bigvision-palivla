@@ -23,10 +23,10 @@ model_config = {
     },
 }
 
-def get_model_spec():
+def get_model_spec(**kwargs):
     return ModuleSpec(
         paligemma.Model,
-        model_config,
+        model_config | kwargs,
     )
 
 def load_pretrained_params(
@@ -76,6 +76,7 @@ def component_label_fn(nested_params_dict):
     labels = {
         "llm": jax.tree.map(lambda _: "llm", nested_params_dict["llm"]),
         "img": jax.tree.map(lambda _: "img", nested_params_dict["img"]),
+        "proprio": jax.tree.map(lambda _: "embed", nested_params_dict["proprio"]),
     }
     labels["llm"]["embedder"] = jax.tree.map(
         lambda _: "embed", nested_params_dict["llm"]["embedder"]

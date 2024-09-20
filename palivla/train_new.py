@@ -1,3 +1,4 @@
+import chex
 import jax
 import jax.numpy as jnp
 
@@ -57,32 +58,53 @@ def compute_gen_stats(model: PaliVLA, batch: Data, prefix: str):
     """
     Compute generative (rollout) statistics on a batch of data.
     """
+
+    batch = model.mesh.local_data_to_global_array({
+        "image": model.process_image(batch["observation"]),
+        "tokens": batch["tokens"],
+        "mask_ar": batch["mask_ar"],
+        "mask_input": batch["mask_input"],
+        "action": batch["action"],
+        "proprio": batch.get("proprio", None),
+    })
+
     out_tokens = model.decode(
-        model.process_image(batch["observation"]),
+        batch["image"],
         batch["tokens"],
         batch["mask_ar"],
         batch["mask_input"],
+        proprio=batch.get("proprio", None),
     )
-    out_tokens = jax.device_get(multihost_utils.process_allgather(out_tokens, tiled=True))
 
-    decoded_actions = model.tokenizer.bin_detokenize(out_tokens)
+    decoded_actions = model.tokenizer.detokenize_action(out_tokens, obs=batch)
 
-    gt_action = jax.device_get(multihost_utils.process_allgather(batch["action"], tiled=True))
-    gt_action = np.squeeze(gt_action, axis=(1, 2))
-    gt_action_tokens = model.tokenizer.bin_tokenize(gt_action)
+    gt_action = jnp.squeeze(batch["action"], axis=1)
+
+    gt_action_tokens = model.tokenizer.tokenize_action(gt_action, obs=batch)
+    gt_action_reconstructed = model.tokenizer.detokenize_action(gt_action_tokens, obs=batch)
+
+    global_batch_size = decoded_actions.shape[0]
+    chex.assert_shape([decoded_actions, gt_action, gt_action_reconstructed], [global_batch_size, 64, 14])
+    chex.assert_shape([out_tokens, gt_action_tokens], [global_batch_size, model.tokenizer.config.num_action_tokens])
+
+    errors = jax.device_get(multihost_utils.process_allgather(decoded_actions - gt_action, tiled=True))
+    matching_tokens = jax.device_get(multihost_utils.process_allgather(out_tokens == gt_action_tokens, tiled=True))
+    reconstruction_errors = jax.device_get(multihost_utils.process_allgather(gt_action - gt_action_reconstructed, tiled=True))
 
     info = {
-        f"{prefix}/rollout_mae": np.mean(np.abs(decoded_actions - gt_action)),
-        f"{prefix}/rollout_mse": np.mean(np.square(decoded_actions - gt_action)),
-        f"{prefix}/rollout_acc": np.mean(out_tokens == gt_action_tokens),
+        f"{prefix}/rollout_mae": np.mean(np.abs(errors)),
+        f"{prefix}/rollout_mse": np.mean(np.square(errors)),
+        f"{prefix}/rollout_acc": np.mean(matching_tokens),
+        f"{prefix}/tokenization_mae": np.mean(np.abs(reconstruction_errors)),
+        f"{prefix}/tokenization_mse": np.mean(np.square(reconstruction_errors)),
     }
     for j in range(gt_action.shape[-1]):
-        error = decoded_actions[..., j] - gt_action[..., j]
+        error = errors[..., j]
         info[f"details/{prefix}/rollout_mse_{j}"] = np.mean(np.square(error))
         info[f"details/{prefix}/rollout_mae_{j}"] = np.mean(np.abs(error))
     for j in range(gt_action_tokens.shape[-1]):
         info[f"details/{prefix}/rollout_acc_{j}"] = np.mean(
-            out_tokens[:, j] == gt_action_tokens[:, j]
+            matching_tokens[:, j]
         )
 
     return info
@@ -105,6 +127,20 @@ def main(_):
     model_sharding = FSDPShardingRule("fsdp", fsdp_axis_size=mesh.mesh.shape["fsdp"])
     data_sharding = PartitionSpec("fsdp")
 
+    # W&B setup
+    if jax.process_index() == 0:
+        wandb_kwargs = {"project": config.wandb_project}
+
+        wandb.init(**wandb_kwargs)
+        wandb.config.update(config.to_dict())
+
+        run_name = wandb.run.name
+    else:
+        run_name = None
+
+    run_name = host_broadcast_str(run_name)
+    checkpoint_save_path = tf.io.gfile.join(config.save_path, run_name)
+
     print("Loading model...")
     # Load model
     if config.resume_from_checkpoint_dir is not None:
@@ -112,7 +148,7 @@ def main(_):
             config.resume_from_checkpoint_dir,
             tokenizer_path=config.tokenizer_path,
             step=config.resume_from_checkpoint_step,
-            save_directory=config.save_path,
+            save_directory=checkpoint_save_path,
             mesh=mesh,
             model_sharding=model_sharding,
             data_sharding=data_sharding,
@@ -124,7 +160,10 @@ def main(_):
         model = PaliVLA.from_pretrained(
             config.model_path,
             config.tokenizer_path,
+            action_tokenizer_path=config.action_tokenizer_path,
             prompt_autoregressive=predict_prompt,
+            proprio_dim=config.proprio_dim,
+            num_proprio_tokens=config.num_proprio_tokens,
             optimizer_spec=OptimizerSpec(
                 make_optimizer, config.optimizer_kwargs.to_dict()
             ),
@@ -134,14 +173,14 @@ def main(_):
             model_dtype=jnp.float32,
             dataset_statistics={},
             rng_seed=config.get("seed", 0),
-            checkpoint_save_path=config.save_path,
+            checkpoint_save_path=checkpoint_save_path,
             image_keys=config.image_keys,
         )
 
     print("Constructing dataset...")
     # Load dataset
     train_ds = make_dataset(config, model.tokenizer, train=True, generation=False)
-    model.dataset_statistics = train_ds.dataset_statistics
+    model.dataset_statistics = jax.tree.map(lambda x: x.tolist(), train_ds.dataset_statistics)
 
     per_host_train_batch_size = config.batch_size // jax.process_count()
     per_host_eval_batch_size = config.eval_batch_size // jax.process_count()
@@ -158,19 +197,6 @@ def main(_):
         .iterator()
     )
 
-    # W&B setup
-    if jax.process_index() == 0:
-        wandb_kwargs = {"project": config.wandb_project}
-
-        wandb.init(**wandb_kwargs)
-        wandb.config.update(config.to_dict())
-
-        run_name = wandb.run.name
-    else:
-        run_name = None
-
-    run_name = host_broadcast_str(run_name)
-
     wandb_logs = []
 
     # Main training loop
@@ -186,6 +212,7 @@ def main(_):
                 "input_mask": batch["mask_input"],
                 "mask_ar": batch["mask_ar"],
                 "mask_loss": batch["mask_loss"],
+                "proprio": batch.get("proprio", None),
             }
 
             info = model.train_step(batch_train)
