@@ -6,8 +6,8 @@ DEFAULT_TRAIN_ARGS = {
     "save_interval": 1000,
     "data_axis_size": 1,
     "fsdp_axis_size": -1,
-    "model_path": "models/paligemma-3b-pt-224.f16.npz",
-    "tokenizer_path": "models/paligemma_tokenizer.model",
+    "paligemma_weights_path": "models/paligemma-3b-pt-224.f16.npz",
+    "language_tokenizer_path": "models/paligemma_tokenizer.model",
 }
 
 TPU_PODS = {

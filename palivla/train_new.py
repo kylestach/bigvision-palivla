@@ -18,96 +18,19 @@ import numpy as np
 from flax import linen as nn
 from jax.experimental import multihost_utils
 import orbax.checkpoint as ocp
+from flax.core.frozen_dict import freeze
 
-from palivla.model import make_optimizer
+from palivla.dataset import make_base_dataset, transform_dataset
+from palivla.load_model import make_optimizer
 from palivla.spec import OptimizerSpec
-from palivla.train_state import PaliVLA
-from palivla.train_step import step_fn
-from palivla.dataset import make_dataset
-from palivla.types import Data
+from palivla.train_state import PaliVLATrainState
+from palivla.train_step import TrainingBatch
+from palivla.utils import host_broadcast_str
 
 jax.config.update("jax_compilation_cache_dir", "/tmp/jax_cache")
 jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
 jax.config.update("jax_persistent_cache_min_compile_time_secs", 0)
 tf.config.set_visible_devices([], "GPU")
-
-
-def host_broadcast_str(x: str | None) -> str:
-    """
-    Broadcast_one_to_all, but with a string.
-
-    Works by padding the string to the length of the longest string and then
-    broadcasting the result, then stripping the padding.
-
-    Note: this will remove the padding from the end of the string.
-    """
-    if x is None:
-        x = ""
-
-    max_len = multihost_utils.broadcast_one_to_all(len(x))
-    padded = x.ljust(max_len)
-
-    encoded = np.array([ord(c) for c in padded], dtype=np.uint8)[:max_len]
-    encoded = multihost_utils.broadcast_one_to_all(encoded)
-    decoded = "".join([chr(u) for u in encoded])
-
-    return decoded.rstrip()
-
-
-def compute_gen_stats(model: PaliVLA, batch: Data, prefix: str):
-    """
-    Compute generative (rollout) statistics on a batch of data.
-    """
-
-    batch = model.mesh.local_data_to_global_array({
-        "image": model.process_image(batch["observation"]),
-        "tokens": batch["tokens"],
-        "mask_ar": batch["mask_ar"],
-        "mask_input": batch["mask_input"],
-        "action": batch["action"],
-        "proprio": batch.get("proprio", None),
-    })
-
-    out_tokens = model.decode(
-        batch["image"],
-        batch["tokens"],
-        batch["mask_ar"],
-        batch["mask_input"],
-        proprio=batch.get("proprio", None),
-    )
-
-    decoded_actions = model.tokenizer.detokenize_action(out_tokens, obs=batch)
-
-    gt_action = jnp.squeeze(batch["action"], axis=1)
-
-    gt_action_tokens = model.tokenizer.tokenize_action(gt_action, obs=batch)
-    gt_action_reconstructed = model.tokenizer.detokenize_action(gt_action_tokens, obs=batch)
-
-    global_batch_size = decoded_actions.shape[0]
-    chex.assert_shape([decoded_actions, gt_action, gt_action_reconstructed], [global_batch_size, 64, 14])
-    chex.assert_shape([out_tokens, gt_action_tokens], [global_batch_size, model.tokenizer.config.num_action_tokens])
-
-    errors = jax.device_get(multihost_utils.process_allgather(decoded_actions - gt_action, tiled=True))
-    matching_tokens = jax.device_get(multihost_utils.process_allgather(out_tokens == gt_action_tokens, tiled=True))
-    reconstruction_errors = jax.device_get(multihost_utils.process_allgather(gt_action - gt_action_reconstructed, tiled=True))
-
-    info = {
-        f"{prefix}/rollout_mae": np.mean(np.abs(errors)),
-        f"{prefix}/rollout_mse": np.mean(np.square(errors)),
-        f"{prefix}/rollout_acc": np.mean(matching_tokens),
-        f"{prefix}/tokenization_mae": np.mean(np.abs(reconstruction_errors)),
-        f"{prefix}/tokenization_mse": np.mean(np.square(reconstruction_errors)),
-    }
-    for j in range(gt_action.shape[-1]):
-        error = errors[..., j]
-        info[f"details/{prefix}/rollout_mse_{j}"] = np.mean(np.square(error))
-        info[f"details/{prefix}/rollout_mae_{j}"] = np.mean(np.abs(error))
-    for j in range(gt_action_tokens.shape[-1]):
-        info[f"details/{prefix}/rollout_acc_{j}"] = np.mean(
-            matching_tokens[:, j]
-        )
-
-    return info
 
 
 def main(_):
@@ -117,15 +40,121 @@ def main(_):
 
     config = flags.FLAGS.config
 
-    predict_prompt = config.get("predict_prompt", False)
-
     # Setup mesh and sharding for model and data
-    mesh = MeshShardingHelper(
-        [-1], ["fsdp"]
-    )
+    mesh = MeshShardingHelper([-1], ["fsdp"])
 
     model_sharding = FSDPShardingRule("fsdp", fsdp_axis_size=mesh.mesh.shape["fsdp"])
     data_sharding = PartitionSpec("fsdp")
+
+    # Make the basic dataset
+    # We have to do this first, since we need to know how the dataset is set up before we can construct the model
+    train_ds = make_base_dataset(config, train=True)
+    eval_ds = make_base_dataset(config, train=False)
+
+    batch_shape = {
+        "text": jax.ShapeDtypeStruct(shape=(1, 10), dtype=jnp.int32),
+        "image_primary": jax.ShapeDtypeStruct(shape=(1, 224, 224, 3), dtype=jnp.uint8),
+    }
+
+    if config.resume_from_checkpoint_dir is None:
+        action_shape = (train_ds.element_spec["action"]).shape
+        action_dim = action_shape[-1]
+        action_horizon = action_shape[-2]
+        model = PaliVLATrainState.from_components(
+            paligemma_weights_path=config.paligemma_weights_path,
+            action_tokenizer_weights_path=config.action_tokenizer_path,
+            language_tokenizer_path=config.language_tokenizer_path,
+            config=config.model_config.to_dict(),
+            dataset_statistics=train_ds.dataset_statistics,
+            language_tokenizer=None,
+            optimizer_spec=OptimizerSpec.create(
+                make_optimizer, config.optimizer_kwargs.to_dict()
+            ),
+            model_sharding=model_sharding,
+            data_sharding=data_sharding,
+            mesh=mesh,
+            seed=config.get("seed", 0),
+            param_dtype=jnp.float32,
+            batch_shape=batch_shape,
+            action_dim=action_dim,
+            action_horizon=action_horizon,
+        )
+    else:
+        restore_checkpoint_manager = ocp.CheckpointManager(
+            config.resume_from_checkpoint_dir,
+            item_handlers=PaliVLATrainState.get_checkpoint_handlers(),
+        )
+        model = PaliVLATrainState.restore(
+            checkpoint_manager=restore_checkpoint_manager,
+            step=config.resume_from_checkpoint_step,
+            load_optimizer=True,
+            mesh=mesh,
+            model_sharding=model_sharding,
+            data_sharding=data_sharding,
+        )
+
+    # Construct the final dataset
+    # We need to do this after the model is constructed, since we need to have a tokenizer
+    per_host_train_batch_size = config.batch_size // jax.process_count()
+    per_host_eval_batch_size = config.eval_batch_size // jax.process_count()
+
+    def make_training_batch(batch):
+        sensors = {
+            k: batch["observation"][k]
+            for k in batch["observation"]
+            if k in model.model_state.model.modality_mappings
+        }
+        batch_size = jax.tree.leaves(sensors)[0].shape[0]
+        sensors_mask = {
+            k: np.ones((batch_size,), dtype=jnp.bool_)
+            for k in sensors
+        }
+
+        return mesh.local_data_to_global_array(
+            TrainingBatch(
+                sensors=sensors,
+                sensors_mask=sensors_mask,
+                actions=batch["action"],
+                tokens=batch["tokens"],
+                tokens_ar=batch["mask_ar"],
+                tokens_loss=batch.get("mask_loss", None),
+                tokens_mask=batch["mask_input"]
+            )
+        )
+
+    train_it = map(
+        make_training_batch,
+        transform_dataset(
+            train_ds,
+            model.tokenizer,
+            generation=False,
+            **config.extra_dataset_transform_kwargs,
+        )
+        .batch(per_host_train_batch_size)
+        .iterator(),
+    )
+    gen_eval_it = map(
+        make_training_batch,
+        transform_dataset(
+            eval_ds,
+            model.tokenizer,
+            generation=True,
+            **config.extra_dataset_transform_kwargs,
+        )
+        .batch(per_host_eval_batch_size)
+        .iterator(),
+    )
+    gen_train_it = map(
+        make_training_batch,
+        transform_dataset(
+            train_ds,
+            model.tokenizer,
+            generation=True,
+            **config.extra_dataset_transform_kwargs,
+        )
+        .batch(per_host_train_batch_size)
+        .iterator(),
+    )
 
     # W&B setup
     if jax.process_index() == 0:
@@ -141,81 +170,20 @@ def main(_):
     run_name = host_broadcast_str(run_name)
     checkpoint_save_path = tf.io.gfile.join(config.save_path, run_name)
 
-    print("Loading model...")
-    # Load model
-    if config.resume_from_checkpoint_dir is not None:
-        model = PaliVLA.from_checkpoint(
-            config.resume_from_checkpoint_dir,
-            tokenizer_path=config.tokenizer_path,
-            step=config.resume_from_checkpoint_step,
-            save_directory=checkpoint_save_path,
-            mesh=mesh,
-            model_sharding=model_sharding,
-            data_sharding=data_sharding,
-            load_optimizer=config.load_optimizer,
-            model_dtype=jnp.float32,
-            image_keys=config.image_keys,
-        )
-    else:
-        model = PaliVLA.from_pretrained(
-            config.model_path,
-            config.tokenizer_path,
-            action_tokenizer_path=config.action_tokenizer_path,
-            prompt_autoregressive=predict_prompt,
-            proprio_dim=config.proprio_dim,
-            num_proprio_tokens=config.num_proprio_tokens,
-            optimizer_spec=OptimizerSpec(
-                make_optimizer, config.optimizer_kwargs.to_dict()
-            ),
-            mesh=mesh,
-            model_sharding=model_sharding,
-            data_sharding=data_sharding,
-            model_dtype=jnp.float32,
-            dataset_statistics={},
-            rng_seed=config.get("seed", 0),
-            checkpoint_save_path=checkpoint_save_path,
-            image_keys=config.image_keys,
-        )
-
-    print("Constructing dataset...")
-    # Load dataset
-    train_ds = make_dataset(config, model.tokenizer, train=True, generation=False)
-    model.dataset_statistics = jax.tree.map(lambda x: x.tolist(), train_ds.dataset_statistics)
-
-    per_host_train_batch_size = config.batch_size // jax.process_count()
-    per_host_eval_batch_size = config.eval_batch_size // jax.process_count()
-
-    train_it = train_ds.batch(per_host_train_batch_size).iterator()
-    gen_eval_it = (
-        make_dataset(config, model.tokenizer, train=False, generation=True)
-        .batch(per_host_eval_batch_size)
-        .iterator()
-    )
-    gen_train_it = (
-        make_dataset(config, model.tokenizer, train=True, generation=True)
-        .batch(per_host_eval_batch_size)
-        .iterator()
+    checkpoint_save_manager = ocp.CheckpointManager(
+        checkpoint_save_path,
+        item_handlers=PaliVLATrainState.get_checkpoint_handlers(),
+        options=ocp.CheckpointManagerOptions(),
     )
 
     wandb_logs = []
 
     # Main training loop
-    with tqdm.trange(config.num_steps, desc="Training") as pbar:
-        # Skip ahead if resuming from checkpoint
-        pbar.update(model.train_state.step.item())
-
+    start_step = model.model_state.step.item()
+    with tqdm.trange(start_step, config.num_steps, desc="Training", dynamic_ncols=True) as pbar:
         for i in pbar:
             batch = next(train_it)
-            batch_train = {
-                "image": model.process_image(batch["observation"]),
-                "tokens": batch["tokens"],
-                "input_mask": batch["mask_input"],
-                "mask_ar": batch["mask_ar"],
-                "mask_loss": batch["mask_loss"],
-                "proprio": batch.get("proprio", None),
-            }
-
-            info = model.train_step(batch_train)
+            info = model.train_step(batch)
 
             info = jax.device_get(info)
             wandb_logs.append(info)
@@ -232,13 +200,19 @@ def main(_):
                 wandb_logs = []
 
             if (i + 1) % config.eval_interval == 0:
-                info = compute_gen_stats(
-                    model, next(gen_eval_it), "gen/eval"
-                ) | compute_gen_stats(model, next(gen_train_it), "gen/train")
+                eval_batch = next(gen_eval_it)
+                eval_info = model.eval_step(
+                    eval_batch, "eval/gen_", include_regular_stats=False
+                )
+
+                train_batch_for_eval = next(gen_train_it)
+                train_info = model.eval_step(
+                    train_batch_for_eval, "train/gen_", include_regular_stats=False
+                )
 
                 if jax.process_index() == 0:
                     wandb.log(
-                        info,
+                        eval_info | train_info,
                         commit=False,
                         step=i,
                     )
@@ -246,7 +220,7 @@ def main(_):
             if (i + 1) % config.save_interval == 0:
                 if config.save_path is not None:
                     print(f"Saving model to {config.save_path}/{i}")
-                    model.save(i + 1)
+                    checkpoint_save_manager.save(i+1, args=model.save_args())
 
 
 if __name__ == "__main__":

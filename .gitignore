@@ -1,6 +1,7 @@
 __pycache__
-models
-checkpoints
+/models
+/checkpoints
 notebooks
 **/*.mp4
 *.ipynb
+wandb/

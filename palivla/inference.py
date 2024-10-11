@@ -13,7 +13,7 @@ import orbax.checkpoint as ocp
 from tensorflow_text import SentencepieceTokenizer
 from palivla.dataset import prepare_image
 from palivla.tokenizer import Tokenizer
-from palivla.model import load_model
+from palivla.load_model import load_model
 from scalax.sharding import MeshShardingHelper, FSDPShardingRule, PartitionSpec
 from flax.training.train_state import TrainState
 from jax.experimental import multihost_utils
@@ -70,10 +70,6 @@ def main(_):
     params_restore_args = jax.tree_map(
         _make_restore_args, train_state.params, model_sharding.apply(train_state.params)
     )
-
-    # import pprint
-    # pprint.pprint(jax.tree_map(lambda x, y: (x.shape, y), train_state, restore_args))
-    # breakpoint()
 
     train_state = train_state.replace(
         params=ocp.CheckpointManager(

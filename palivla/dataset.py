@@ -6,6 +6,7 @@ import numpy as np
 from palivla.tokenizer import Tokenizer
 from octo.data.dataset import make_interleaved_dataset, make_single_dataset
 from octo.data.oxe import make_oxe_dataset_kwargs_and_weights
+import dlimp
 
 
 def process_rephrase_tf(
@@ -40,7 +41,9 @@ def process_rephrase_tf(
     )
 
     logits = tf.where(probabilities > 0, tf.math.log(probabilities), -np.inf)[None]
-    modality_idx = tf.random.categorical(tf.math.log(probabilities)[None], num_samples=1)
+    modality_idx = tf.random.categorical(
+        tf.math.log(probabilities)[None], num_samples=1
+    )
     modality_idx = tf.squeeze(tf.squeeze(modality_idx, axis=-1), axis=-1)
     rephrase_idx = tf.random.uniform([], maxval=num_gpt_gen, dtype=tf.int64)
 
@@ -112,35 +115,9 @@ def make_stacked_images(data):
     )
     return data
 
-def make_dataset(
-    config: ConfigDict, tokenizer: Tokenizer, train: bool, generation: bool
-):
+
+def make_base_dataset(config: ConfigDict, train: bool) -> dlimp.DLataset:
     dataset_kwargs = config.dataset_kwargs.to_dict()
-
-    def frame_transform(data):
-        if config.get("multimodal", False):
-            data = process_rephrase_tf(data, **config.multimodal_rephrasing_kwargs)
-            data = mel_spectro_to_image(data)
-            data = tactile_to_image(data)
-            data = make_stacked_images(data)
-
-        if config.chunk_relative_actions:
-            # Gripper is absolute, rest is relative
-            relative_mask = tf.constant([True] * 6 + [False] + [True] * 6 + [False])
-            initial_offset = data["observation"]["proprio"][-1] * tf.cast(relative_mask, tf.float32)
-            data["action"] = data["action"] - initial_offset
-            data["initial_offset"] = initial_offset
-
-        language_token_instructions = tokenizer.tokenize_language_instruction(data)
-
-        if generation:
-            data = data | tokenizer.prepare_tokens_for_generation(data, language_token_instructions)
-        else:
-            data = data | tokenizer.prepare_tokens_for_training(data, language_token_instructions)
-
-        data["proprio"] = tf.squeeze(data["observation"]["proprio"], axis=0)
-
-        return data
 
     if config.get("multimodal", False):
         data_dir = dataset_kwargs.pop("oxe_kwargs").pop("data_dir")
@@ -153,6 +130,7 @@ def make_dataset(
         )
         dataset_statistics = dataset.dataset_statistics
         dataset = dataset.flatten().shuffle(config.shuffle_buffer_size)
+        dataset.dataset_statistics = dataset_statistics
     else:
         dataset_kwargs["dataset_kwargs_list"], dataset_kwargs["sample_weights"] = (
             make_oxe_dataset_kwargs_and_weights(**dataset_kwargs.pop("oxe_kwargs"))
@@ -161,17 +139,67 @@ def make_dataset(
             **dataset_kwargs,
             train=train,
         )
-        dataset_statistics = dataset.dataset_statistics
 
-    dataset = dataset.filter(has_language).map(
-        frame_transform, num_parallel_calls=None
-    )
+    return dataset
+
+
+def transform_dataset(
+    dataset: dlimp.DLataset,
+    tokenizer: Tokenizer | None,
+    generation: bool,
+    *,
+    multimodal_rephrasings: bool = False,
+    chunk_relative_actions: bool = False,
+    multimodal_rephrasing_kwargs: dict = {},
+    gripper_relative_actions: bool = True,
+    require_language: bool = True,
+):
+    dataset_statistics = dataset.dataset_statistics
+
+    def frame_transform(data):
+        if multimodal_rephrasings:
+            data = process_rephrase_tf(data, **multimodal_rephrasing_kwargs)
+            data = mel_spectro_to_image(data)
+            data = tactile_to_image(data)
+            data = make_stacked_images(data)
+
+        if chunk_relative_actions:
+            # Gripper is absolute, rest is relative
+            if gripper_relative_actions:
+                relative_mask = 1
+            else:
+                relative_mask = tf.constant([True] * 6 + [False] + [True] * 6 + [False])
+            initial_offset = data["observation"]["proprio"][-1] * tf.cast(
+                relative_mask, tf.float32
+            )
+            data["action"] = data["action"] - initial_offset
+            data["initial_offset"] = initial_offset
+
+        if tokenizer is not None:
+            language_token_instructions = tokenizer.tokenize_language_instruction(data)
+
+            if generation:
+                data = data | tokenizer.prepare_tokens_for_generation(
+                    data, language_token_instructions
+                )
+            else:
+                data = data | tokenizer.prepare_tokens_for_training(
+                    data, language_token_instructions
+                )
+
+        data["proprio"] = tf.squeeze(data["observation"]["proprio"], axis=0)
+        data["action"] = tf.squeeze(data["action"], axis=0)
+
+        return data
+
+    if require_language:
+        dataset = dataset.filter(has_language)
+    dataset = dataset.map(frame_transform, num_parallel_calls=None)
     options = tf.data.Options()
     options.autotune.enabled = False
     dataset = dataset.with_options(options)
 
     dataset.dataset_statistics = dataset_statistics
-
     return dataset
 
 

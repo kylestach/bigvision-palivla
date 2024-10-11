@@ -12,8 +12,24 @@ from flax.struct import dataclass
 
 class FsqCodebook(nn.Module):
     input_dim: int
-    num_tokens: int
-    bins_per_dim: Sequence[int]
+    target_codebook_size: int
+    codebook_type: Literal["fsq", "lfq"]
+
+    _bins_per_dim: Tuple[int] | None = None
+
+    @property
+    def bins_per_dim(self):
+        if self._bins_per_dim is not None:
+            return self._bins_per_dim
+
+        if self.codebook_type == "fsq":
+            return self._get_bins_fsq(self.target_codebook_size)
+        elif self.codebook_type == "lfq":
+            return self._get_bins_lfq(self.target_codebook_size)
+        elif self.codebook_type == "custom":
+            return self._get_bins_custom(self.target_codebook_size)
+        else:
+            raise ValueError(f"Codebook type {self.codebook_type} not supported.")
 
     @property
     def place_values(self):
@@ -21,19 +37,6 @@ class FsqCodebook(nn.Module):
         for b in self.bins_per_dim[:-1]:
             place_values.append(place_values[-1] * b)
         return jnp.array(place_values)
-
-    @classmethod
-    def from_config(cls, input_dim, num_tokens, codebook_type, target_codebook_size):
-        if codebook_type == "fsq":
-            bins_per_dim = cls._get_bins_fsq(target_codebook_size)
-        elif codebook_type == "lfq":
-            bins_per_dim = cls._get_bins_lfq(target_codebook_size)
-        else:
-            raise ValueError(f"Codebook type {codebook_type} not supported.")
-
-        return cls(
-            input_dim=input_dim, num_tokens=num_tokens, bins_per_dim=bins_per_dim
-        )
 
     @staticmethod
     def _get_bins_fsq(target_codebook_size):
@@ -54,6 +57,19 @@ class FsqCodebook(nn.Module):
             raise ValueError(f"Codebook size {target_codebook_size} not supported.")
 
     @staticmethod
+    def _get_bins_custom(target_codebook_size):
+        if target_codebook_size == 2**8:
+            return (16, 16)
+        elif target_codebook_size == 2**10:
+            return (32, 32)
+        elif target_codebook_size == 2**12:
+            return (64, 64)
+        elif target_codebook_size == 2**14:
+            return (128, 128)
+        elif target_codebook_size == 2**16:
+            return (256, 256)
+
+    @staticmethod
     def _get_bins_lfq(target_codebook_size):
         """
         Get bins per dimension according to the Lookup-Free Quantization paper (2 bins per dimension)
@@ -65,7 +81,7 @@ class FsqCodebook(nn.Module):
         return (2,) * int(math.log2(target_codebook_size))
 
     def setup(self):
-        self.proj_down = nn.Dense(len(self.bins_per_dim) * self.num_tokens)
+        self.proj_down = nn.Dense(len(self.bins_per_dim))
         self.proj_up = nn.Dense(self.input_dim)
 
     def __call__(self, inputs):
@@ -77,7 +93,6 @@ class FsqCodebook(nn.Module):
         bases = jnp.array(self.bins_per_dim)
 
         x = self.proj_down(inputs)
-        x = rearrange(x, "... (n d) -> ... n d", n=self.num_tokens)
         z = jnp.tanh(x)
 
         # Quantize
@@ -95,8 +110,6 @@ class FsqCodebook(nn.Module):
         if z_grad is not None:
             chex.assert_equal_shape([z_q, z_grad])
             z_q = jax.lax.stop_gradient(z_q - z_grad) + z_grad
-
-        z_q = rearrange(z_q, "... n d -> ... (n d)")
 
         output = self.proj_up(z_q)
 
@@ -224,6 +237,208 @@ class LookupFreeQuantization(nn.Module):
             token_log_probs=jnp.zeros(()),
             commit_loss=commit_loss,
         )
+
+
+def make_block_causal_attention_matrix(q, k, bs_q, bs_k):
+    return nn.make_attention_mask(
+        q, k, pairwise_fn=lambda x, y: jnp.greater_equal(x // bs_k, y // bs_q)
+    )
+
+
+class CrossAttentionLayer(nn.Module):
+    dropout_rate: float = 0.0
+    num_heads: int = None
+    causal: bool = False
+    mlp_ratio: float = 4.0
+
+    @nn.compact
+    def __call__(self, x, y, *, mask_self=None, mask_cross=None, train=True):
+        d_embed = x.shape[-1]
+        seq_len_q = x.shape[-2]
+        seq_len_k = y.shape[-2]
+
+        if self.causal:
+            # One block size will be 1
+            bs_q = max(seq_len_q // seq_len_k, 1)
+            bs_k = max(seq_len_k // seq_len_q, 1)
+
+            mask_self = nn.make_causal_mask(x[..., 0])
+            mask_cross = make_block_causal_attention_matrix(
+                x[..., 0], y[..., 0], bs_q, bs_k
+            )
+
+        # Self-attention block
+        skip = x
+        x = nn.LayerNorm()(x)
+        x = nn.MultiHeadDotProductAttention(
+            num_heads=self.num_heads or d_embed // 64,
+            dropout_rate=self.dropout_rate,
+            deterministic=not train,
+        )(x, x, x, mask=mask_self)
+        x = skip + x
+
+        # Cross-attention block
+        skip = x
+        x = nn.LayerNorm()(x)
+        # bias = -jnp.abs(jnp.linspace(0, 1, seq_len_q)[:, None] - jnp.linspace(0, 1, seq_len_k)) * 5
+        x = nn.MultiHeadDotProductAttention(
+            num_heads=self.num_heads or d_embed // 64,
+            dropout_rate=self.dropout_rate,
+            deterministic=not train,
+            # attention_fn=partial(nn.dot_product_attention, bias=bias),
+        )(x, y, y, mask=mask_cross)
+        x = skip + x
+
+        # MLP block
+        skip = x
+        x = nn.LayerNorm()(x)
+        x = nn.Dense(int(d_embed * self.mlp_ratio))(x)
+        x = nn.Dropout(self.dropout_rate)(x, deterministic=not train)
+        x = nn.GeGLU()(x)
+        x = nn.Dense(d_embed)(x)
+        x = skip + x
+
+        return x
+
+
+def sinusoidal_pe_init(_, shape):
+    seq_len, d_embed = shape
+
+    position = jnp.arange(0, seq_len, 1)
+    div_term = jnp.exp(
+        jnp.arange(0, d_embed, 2) * -(jnp.log(10000.0) / d_embed)
+    )
+    pe = jnp.concatenate([
+        jnp.sin(position[:, jnp.newaxis] * div_term),
+        jnp.cos(position[:, jnp.newaxis] * div_term),
+    ], axis=-1)
+    return pe
+
+
+class TokenizerEncoderDecoder(nn.Module):
+    num_tokens: int
+    num_cross_tokens: int
+    num_layers: int
+    causal: bool
+
+    mlp_ratio: float = 4.0
+    use_state_conditioning: bool = False
+
+    @nn.compact
+    def __call__(self, y, *, train=True, state_conditioning=None, mask=None):
+        x = self.param(
+            "q_embed", sinusoidal_pe_init, (self.num_tokens, y.shape[-1])
+        )
+        x = jax.numpy.broadcast_to(x, y.shape[:-2] + x.shape[-2:])
+
+        if mask is not None:
+            # mask is (batch_dims..., num_cross_tokens)
+            chex.assert_equal_shape([y[..., 0], mask])
+            attn_mask = einops.repeat(mask, "... kv -> ... 1 q kv", q=self.num_tokens)
+        else:
+            attn_mask = jnp.ones(y.shape[:-2] + (1, self.num_tokens, self.num_cross_tokens))
+
+        if self.use_state_conditioning:
+            assert state_conditioning is not None, "State conditioning is required for this model."
+            state_embed = nn.Dense(y.shape[-1], name="state_proj")(state_conditioning)[..., None, :]
+            y = jnp.concatenate([y, state_embed], axis=-2)
+            attn_mask = jnp.concatenate([attn_mask, jnp.ones_like(attn_mask[..., 0:1])], axis=-1)
+
+        y = y + self.param("y_pos_enc", sinusoidal_pe_init, y.shape[-2:])
+
+        for _ in range(self.num_layers):
+            x = CrossAttentionLayer(causal=self.causal, mlp_ratio=self.mlp_ratio)(x, y, train=train, mask_self=None, mask_cross=attn_mask)
+
+        return x
+
+
+class FsqAttentionTokenizer(nn.Module):
+    embed_dim: int
+    data_dim: int
+    data_horizon: int
+    num_tokens: int
+    num_layers: int
+    target_codebook_size: int
+    causal: bool = False
+    mlp_ratio: float = 2.0
+
+    min_action_value: float | None = None
+    max_action_value: float | None = None
+
+    use_state_conditioning: bool = False
+
+    @property
+    def vocab_size(self):
+        return math.prod(FsqCodebook._get_bins_fsq(self.target_codebook_size))
+
+    def setup(self):
+        self.proj = nn.Dense(self.embed_dim)
+        self.encoder = TokenizerEncoderDecoder(
+            num_tokens=self.num_tokens,
+            num_cross_tokens=self.data_horizon,
+            num_layers=self.num_layers,
+            causal=self.causal,
+            use_state_conditioning=self.use_state_conditioning,
+            mlp_ratio=self.mlp_ratio,
+        )
+        self.codebook = FsqCodebook(
+            input_dim=self.embed_dim,
+            target_codebook_size=self.target_codebook_size,
+            codebook_type="custom",
+        )
+        self.decoder = TokenizerEncoderDecoder(
+            num_tokens=self.data_horizon,
+            num_cross_tokens=self.num_tokens,
+            num_layers=self.num_layers,
+            causal=self.causal,
+            use_state_conditioning=self.use_state_conditioning,
+            mlp_ratio=self.mlp_ratio,
+        )
+
+        self.proj_mean = nn.Dense(self.data_dim)
+        self.out_scale = self.param("out_scale", lambda _: jnp.full((), 1.0))
+
+    def tokenize(self, action, *, obs=None, train=False):
+        if self.bound is not None:
+            action = jnp.clip(action, -self.bound, self.bound)
+
+        x = self.proj(action)
+        x = self.encoder(x, train=train, state_conditioning=obs)
+
+        return self.codebook.encode(x)
+
+    def detokenize(self, tokens, *, obs=None):
+        x = self.decoder(self.codebook.decode(tokens[..., None]), state_conditioning=obs)
+        mean = self.proj_mean(x)
+        mean = mean * self.out_scale
+
+        return mean
+
+    def loss(self, action, *, obs=None, train=True):
+        # Encode
+        x = self.proj(action)
+        z = self.encoder(x, train=train, state_conditioning=obs)
+
+        # Quantize
+        tokens, z = self.codebook(z)
+
+        # Decode
+        x = self.decoder(z, train=train, state_conditioning=obs)
+        mean = self.proj_mean(x) * self.out_scale
+
+        mse = jnp.mean(jnp.square(action - mean))
+        mae = jnp.mean(jnp.abs(action - mean))
+
+        return mse, {
+            "mse": mse,
+            "mae": mae,
+        }
+    
+    def __call__(self, *args, **kwargs):
+        """
+        Dummy for .init
+        """
+        return self.loss(*args, **kwargs)
 
 
 class LfqResnetTokenizer(nn.Module):
