@@ -27,6 +27,22 @@ TPU_PODS = {
             "dataset_kwargs.oxe_kwargs.data_dir": "gs://rail-datasets-europe-west4/oxe/resize_256_256",
         },
     },
+    "kyle-pod-256": {
+        "tpc_args": {
+            "project": "rail-tpus",
+            "zone": "europe-west4-b",
+            "accelerator_type": "v5litepod-256",
+            "runtime_version": "v2-alpha-tpuv5-lite",
+            "reserved": True,
+        },
+        "setup_script": "source $HOME/.bashrc && conda activate big_vision",
+        "src_dir": "/nfs/nfs3/users/kstachowicz/big_vision",
+        "train_args": {
+            "batch_size": 1024,
+            "save_path": "gs://kyle-checkpoints-eu4/paligemma-checkpoints",
+            "dataset_kwargs.oxe_kwargs.data_dir": "gs://rail-datasets-europe-west4/oxe/resize_256_256",
+        },
+    },
     "oier-pod": {
         "tpc_args": {
             "project": "rail-tpus",

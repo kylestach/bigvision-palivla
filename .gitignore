@@ -1,6 +1,7 @@
 __pycache__
 /models
 /checkpoints
+.venv
 notebooks
 **/*.mp4
 *.ipynb
