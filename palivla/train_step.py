@@ -95,16 +95,16 @@ def compute_action_metrics(
         ) - decoded_actions_gt
 
     return {
-        **stats_for_metric(jnp.mean(jnp.abs(error), axis=1), "tf_l1", action_dim),
-        **stats_for_metric(jnp.mean(jnp.square(error), axis=1), "tf_l2", action_dim),
+        **stats_for_metric(jnp.mean(jnp.abs(error), axis=1), "l1", action_dim),
+        **stats_for_metric(jnp.mean(jnp.square(error), axis=1), "l2", action_dim),
         **stats_for_metric(
-            jnp.mean(jnp.abs(tokenization_error), axis=1), "tf_tokenization_l1", action_dim
+            jnp.mean(jnp.abs(tokenization_error), axis=1), "tok_l1", action_dim
         ),
         **stats_for_metric(
-            jnp.mean(jnp.square(tokenization_error), axis=1), "tf_tokenization_l2", action_dim
+            jnp.mean(jnp.square(tokenization_error), axis=1), "tok_l2", action_dim
         ),
         **stats_for_metric(
-            pred_action_tokens == gt_action_tokens, "accuracy", tokenizer_config.num_action_tokens
+            pred_action_tokens == gt_action_tokens, "acc", tokenizer_config.num_action_tokens
         ),
     } | (
         {

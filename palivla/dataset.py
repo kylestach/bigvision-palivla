@@ -153,6 +153,7 @@ def transform_dataset(
     multimodal_rephrasing_kwargs: dict = {},
     gripper_relative_actions: bool = True,
     require_language: bool = True,
+    proprio_dropout_prob: float = 0.0,
 ):
     dataset_statistics = dataset.dataset_statistics
 
@@ -174,6 +175,15 @@ def transform_dataset(
             )
             data["action"] = data["action"] - initial_offset
             data["initial_offset"] = initial_offset
+
+        if proprio_dropout_prob > 0:
+            mask = tf.random.uniform((1,)) > proprio_dropout_prob
+            data["observation"]["proprio"] = tf.where(
+                mask,
+                data["observation"]["proprio"],
+                tf.zeros_like(data["observation"]["proprio"]),
+            )
+            data["observation"]["pad_mask_dict"]["proprio"] &= mask
 
         if tokenizer is not None:
             language_token_instructions = tokenizer.tokenize_language_instruction(data)

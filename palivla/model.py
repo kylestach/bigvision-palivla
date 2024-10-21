@@ -74,13 +74,7 @@ def make_gather_indices(
     )
     membership_in_original_groups = reordering[membership_in_reordered_groups]
 
-    # Find the start and end of each group in the reordered sequence, by original group index
-    group_start_ends = (cumulative_sizes_reordered[:-1], cumulative_sizes_reordered[1:])
-
-    return (
-        jnp.arange(total_num_tokens) + offset_delta[membership_in_original_groups],
-        group_start_ends,
-    )
+    return jnp.arange(total_num_tokens) + offset_delta[membership_in_original_groups]
 
 
 def pack_embeddings(embeds: jax.Array, masks: jax.Array):
@@ -139,11 +133,12 @@ def collect_embeddings(
 
     # Randomly reorder the embeddings.
     # The last token group is the language tokens, which we want to attend to with full self-attention.
-    gather_indices, (group_starts, group_ends) = make_gather_indices(
+    gather_indices = make_gather_indices(
         total_num_tokens, jnp.array(embed_sizes), jnp.array(sequence_order)
     )
 
     concat_masks = jnp.concatenate([embed_masks[k] for k in key_order], axis=0)
+    group_ids = {k: jnp.full(embeds[k].shape[0], i) for i, k in enumerate(key_order)}
 
     def _gather_values(data, indices):
         concat_data = jnp.concatenate([data[k] for k in key_order], axis=0)
@@ -153,8 +148,15 @@ def collect_embeddings(
     packed_embeds = _gather_values(embeds, gather_indices)
     packed_masks = _gather_values(embed_masks, gather_indices)
     packed_ar = _gather_values(ar_masks, gather_indices)
+    packed_group_membership = jnp.where(packed_masks, _gather_values(group_ids, gather_indices), -1)
 
-    groups = {k: (group_starts[i], group_ends[i]) for i, k in enumerate(key_order)}
+    # Find the first and last (+1) true element
+    def _find_first_last(x):
+        return jnp.argmax(x, axis=0), x.shape[0] - jnp.argmax(x[::-1], axis=0)
+    groups = {
+        k: _find_first_last(packed_group_membership == i)
+        for i, k in enumerate(key_order)
+    }
 
     return packed_embeds, packed_masks, packed_ar, groups
 
@@ -240,7 +242,7 @@ class PaliVLAModel(nn.Module):
         embed_masks = {}
         info = {}
 
-        for i, (modality, encoder_name) in enumerate(self.modality_mappings.items()):
+        for modality, encoder_name in self.modality_mappings.items():
             # Embed the data
             encoder = self.encoders[encoder_name]
 
@@ -252,7 +254,7 @@ class PaliVLAModel(nn.Module):
             else:
                 embeds[modality], m_info = result, {}
 
-            m_info = {"embed": embeds[modality]}
+            m_info["embed"] = embeds[modality]
 
             # If only one embedding was produced, expand it to match the sequence length
             if embeds[modality].ndim == 2:

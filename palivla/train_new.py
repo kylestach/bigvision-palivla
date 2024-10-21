@@ -1,12 +1,10 @@
-import chex
 import jax
 import jax.numpy as jnp
 
 import tensorflow as tf
 import tqdm
-from absl import app, flags
+from absl import app, flags, logging as absl_logging
 from ml_collections import config_flags
-from tensorflow_text import SentencepieceTokenizer
 from scalax.sharding import (
     MeshShardingHelper,
     FSDPShardingRule,
@@ -15,10 +13,6 @@ from scalax.sharding import (
 
 import wandb
 import numpy as np
-from flax import linen as nn
-from jax.experimental import multihost_utils
-import orbax.checkpoint as ocp
-from flax.core.frozen_dict import freeze
 
 from palivla.dataset import make_base_dataset, transform_dataset
 from palivla.load_model import make_optimizer
@@ -36,6 +30,10 @@ tf.config.set_visible_devices([], "GPU")
 def main(_):
     jax.distributed.initialize()
 
+    # Turn off debug logs
+    tf.get_logger().setLevel("WARNING")
+    absl_logging.set_verbosity(absl_logging.WARNING)
+
     tf.random.set_seed(jax.process_index())
 
     config = flags.FLAGS.config
@@ -49,11 +47,13 @@ def main(_):
     # Make the basic dataset
     # We have to do this first, since we need to know how the dataset is set up before we can construct the model
     train_ds = make_base_dataset(config, train=True)
-    eval_ds = make_base_dataset(config, train=False)
+    # eval_ds = make_base_dataset(config, train=False)
 
     batch_shape = {
         "text": jax.ShapeDtypeStruct(shape=(1, 10), dtype=jnp.int32),
         "image_primary": jax.ShapeDtypeStruct(shape=(1, 224, 224, 3), dtype=jnp.uint8),
+        "image_wrist": jax.ShapeDtypeStruct(shape=(1, 224, 224, 3), dtype=jnp.uint8),
+        "proprio": jax.ShapeDtypeStruct(shape=(1, 6), dtype=jnp.float32),
     }
 
     if config.resume_from_checkpoint_dir is None:
@@ -102,12 +102,12 @@ def main(_):
         sensors = {
             k: batch["observation"][k]
             for k in batch["observation"]
-            if k in model.model_state.model.modality_mappings
+            if k in model.model_state.model.modality_mappings and k != "text"
         }
-        batch_size = jax.tree.leaves(sensors)[0].shape[0]
         sensors_mask = {
-            k: np.ones((batch_size,), dtype=jnp.bool_)
-            for k in sensors
+            k: np.squeeze(batch["observation"]["pad_mask_dict"][k], axis=-1)
+            for k in model.model_state.model.modality_mappings
+            if k != "text"
         }
 
         return mesh.local_data_to_global_array(
@@ -133,17 +133,17 @@ def main(_):
         .batch(per_host_train_batch_size)
         .iterator(),
     )
-    gen_eval_it = map(
-        make_training_batch,
-        transform_dataset(
-            eval_ds,
-            model.tokenizer,
-            generation=True,
-            **config.extra_dataset_transform_kwargs,
-        )
-        .batch(per_host_eval_batch_size)
-        .iterator(),
-    )
+    # gen_eval_it = map(
+    #     make_training_batch,
+    #     transform_dataset(
+    #         eval_ds,
+    #         model.tokenizer,
+    #         generation=True,
+    #         **config.extra_dataset_transform_kwargs,
+    #     )
+    #     .batch(per_host_eval_batch_size)
+    #     .iterator(),
+    # )
     gen_train_it = map(
         make_training_batch,
         transform_dataset(
@@ -158,7 +158,7 @@ def main(_):
 
     # W&B setup
     if jax.process_index() == 0:
-        wandb_kwargs = {"project": config.wandb_project}
+        wandb_kwargs = {"project": config.wandb_project, "tags": [config.data_mix]}
 
         wandb.init(**wandb_kwargs)
         wandb.config.update(config.to_dict())
@@ -200,10 +200,11 @@ def main(_):
                 wandb_logs = []
 
             if (i + 1) % config.eval_interval == 0:
-                eval_batch = next(gen_eval_it)
-                eval_info = model.eval_step(
-                    eval_batch, "eval/gen_", include_regular_stats=False
-                )
+                eval_info = {}
+                # eval_batch = next(gen_eval_it)
+                # eval_info = model.eval_step(
+                #     eval_batch, "eval/gen_", include_regular_stats=False
+                # )
 
                 train_batch_for_eval = next(gen_train_it)
                 train_info = model.eval_step(
@@ -221,6 +222,7 @@ def main(_):
                 if config.save_path is not None:
                     print(f"Saving model to {config.save_path}/{i}")
                     checkpoint_save_manager.save(i+1, args=model.save_args())
+    checkpoint_save_manager.wait_until_finished()
 
 
 if __name__ == "__main__":

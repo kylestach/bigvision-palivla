@@ -112,11 +112,11 @@ def adamw_cosine_warmup(*, learning_rate, warmup_steps, total_steps, global_norm
 def make_optimizer(**config):
     @optax.inject_hyperparams
     def _make_optimizer(llm_learning_rate, img_learning_rate, embed_learning_rate):
-        def _make_opt(lr, weight_decay, grad_norm_clip):
+        def _make_opt(lr, weight_decay, grad_norm_clip, b1, b2):
             if config['optimizer'] == "adamw":
                 return optax.chain(
                     optax.clip_by_global_norm(grad_norm_clip),
-                    optax.adamw(lr, weight_decay=weight_decay),
+                    optax.adamw(lr, weight_decay=weight_decay, b1=b1, b2=b2),
                 )
             elif config['optimizer'] == "sgd":
                 return optax.chain(
@@ -130,16 +130,22 @@ def make_optimizer(**config):
             img_learning_rate,
             config['img_optimizer_kwargs']['weight_decay'],
             config['img_optimizer_kwargs']['grad_norm_clip'],
+            config['img_optimizer_kwargs']['b1'],
+            config['img_optimizer_kwargs']['b2'],
         )
         embed_optimizer = _make_opt(
             embed_learning_rate,
             config['embed_optimizer_kwargs']['weight_decay'],
             config['embed_optimizer_kwargs']['grad_norm_clip'],
+            config['embed_optimizer_kwargs']['b1'],
+            config['embed_optimizer_kwargs']['b2'],
         )
         llm_optimizer = _make_opt(
             llm_learning_rate,
             config['llm_optimizer_kwargs']['weight_decay'],
             config['llm_optimizer_kwargs']['grad_norm_clip'],
+            config['llm_optimizer_kwargs']['b1'],
+            config['llm_optimizer_kwargs']['b2'],
         )
 
         return optax.multi_transform(

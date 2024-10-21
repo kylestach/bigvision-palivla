@@ -66,7 +66,7 @@ def compute_gen_stats(
         out_shardings=PartitionSpec(),
     )(
         detokenize_fn,
-        prefix + "/",
+        prefix,
         batch.actions.shape[-1],
         tokenizer_config,
         out_tokens,
@@ -105,5 +105,5 @@ def compute_eval_stats(
         actions=batch.actions,
         mask_loss=batch.tokens_loss,
         tokenizer_config=tokenizer_config,
-        log_segment_prefix=prefix + "_",
+        log_segment_prefix=prefix,
     )[1]

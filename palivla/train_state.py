@@ -548,7 +548,7 @@ class PaliVLATrainState:
     ):
         return _decode(
             self.model_state.params,
-            self.prepare_sensors(batch.sensor_data) | {"text": batch.prompt},
+            batch.sensor_data | {"text": batch.prompt},
             batch.sensor_masks | {"text": batch.prompt_mask},
             batch.prompt_ar,
             target_key_order=target_key_order or self.config.get("target_key_order"),

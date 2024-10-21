@@ -6,7 +6,7 @@ import tensorflow as tf
 import tqdm
 from absl import app, flags
 from flax.training.train_state import TrainState
-from ml_collections import ConfigDict, config_flags
+from ml_collections import config_flags
 from tensorflow_text import SentencepieceTokenizer
 from scalax.sharding import (
     MeshShardingHelper,
@@ -20,7 +20,7 @@ from flax import linen as nn
 from jax.experimental import multihost_utils
 import orbax.checkpoint as ocp
 
-from palivla.model import load_model_params_decode, make_optimizer
+from palivla.load_model import load_model_params_decode, make_optimizer
 from palivla.tokenizer import Tokenizer
 from palivla.train_step import step_fn
 from palivla.dataset import make_dataset
@@ -83,9 +83,7 @@ def main(_):
 
     optimizer = make_optimizer(**config.optimizer_kwargs)
 
-    mesh = MeshShardingHelper(
-        [config.data_axis_size, config.fsdp_axis_size], ["data", "fsdp"]
-    )
+    mesh = MeshShardingHelper([-1], ["fsdp"])
 
     model_sharding = FSDPShardingRule("fsdp", fsdp_axis_size=mesh.mesh.shape["fsdp"])
     data_sharding = PartitionSpec(("data", "fsdp"))
