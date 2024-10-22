@@ -40,9 +40,9 @@ fi
 
 # Set the source and destination directories based on the zone
 if [[ $ZONE == "europe-west4-"* ]]; then
-    DEST_DIR="$TPU_VM_NAME:/nfs/nfs3/users/kstachowicz/big_vision"
+    DEST_DIR="$TPU_VM_NAME:/nfs/nfs3/users/arjun/big_vision"
 elif [[ $ZONE == "us-central2-"* ]]; then
-    DEST_DIR="data-machine:/nfs/nfs2/users/kstachowicz/big_vision"
+    DEST_DIR="data-machine:/nfs/nfs2/users/arjun/big_vision"
 else
     echo "Unsupported zone: $ZONE"
     exit 1

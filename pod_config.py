@@ -84,11 +84,11 @@ TPU_PODS = {
             "reserved": False,
         },
         "setup_script": "source /nfs/nfs2/users/kstachowicz/miniconda3/etc/profile.d/conda.sh && conda activate big_vision",
-        "src_dir": "/nfs/nfs2/users/kstachowicz/big_vision",
+        "src_dir": "/nfs/nfs2/users/arjun/big_vision",
         "train_args": {
             "batch_size": 128,
-            "save_path": "gs://kyle-checkpoints-c2/paligemma-checkpoints",
-            "dataset_kwargs.oxe_kwargs.data_dir": "gs://rail-orca-central2/resize_256_256",
+            "save_path": "gs://arjun_central2/paligemma-checkpoints",
+            "dataset_kwargs.oxe_kwargs.data_dir": "gs://arjun_central2/lcbc",
         },
     },
 }
