@@ -84,7 +84,7 @@ TPU_PODS = {
             "reserved": False,
         },
         "setup_script": "source /nfs/nfs2/users/kstachowicz/miniconda3/etc/profile.d/conda.sh && conda activate big_vision",
-        "src_dir": "/nfs/nfs2/users/arjun/big_vision",
+        "src_dir": "/nfs/nfs2/users/arjun/bigvision-palivla",
         "train_args": {
             "batch_size": 128,
             "save_path": "gs://arjun_central2/paligemma-checkpoints",
