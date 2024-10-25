@@ -120,6 +120,7 @@ def make_base_dataset(config: ConfigDict, train: bool) -> dlimp.DLataset:
     dataset_kwargs = config.dataset_kwargs.to_dict()
 
     if config.get("multimodal", False):
+        print("Not Multimodal")
         data_dir = dataset_kwargs.pop("oxe_kwargs").pop("data_dir")
         dataset_kwargs["data_dir"] = data_dir
         dataset = make_single_dataset(
@@ -132,6 +133,7 @@ def make_base_dataset(config: ConfigDict, train: bool) -> dlimp.DLataset:
         dataset = dataset.flatten().shuffle(config.shuffle_buffer_size)
         dataset.dataset_statistics = dataset_statistics
     else:
+        print("Not Multimodal")
         dataset_kwargs["dataset_kwargs_list"], dataset_kwargs["sample_weights"] = (
             make_oxe_dataset_kwargs_and_weights(**dataset_kwargs.pop("oxe_kwargs"))
         )
