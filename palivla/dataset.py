@@ -1,11 +1,13 @@
 from functools import partial
+from typing import Optional, Sequence
 import tensorflow as tf
 from ml_collections import ConfigDict
 import numpy as np
 
+from orca.octo.data.utils.data_utils import NormalizationType
 from palivla.tokenizer import Tokenizer
 from octo.data.dataset import make_interleaved_dataset, make_single_dataset
-from octo.data.oxe import make_oxe_dataset_kwargs_and_weights
+from octo.data.oxe import make_oxe_dataset_kwargs_and_weights, make_oxe_dataset_kwargs
 import dlimp
 
 
@@ -116,47 +118,83 @@ def make_stacked_images(data):
     return data
 
 
-def make_base_dataset(config: ConfigDict, train: bool) -> dlimp.DLataset:
-    dataset_kwargs = config.dataset_kwargs.to_dict()
-
-    if config.get("multimodal", False):
-        data_dir = dataset_kwargs.pop("oxe_kwargs").pop("data_dir")
-        dataset_kwargs["data_dir"] = data_dir
-        dataset = make_single_dataset(
-            dataset_kwargs,
-            traj_transform_kwargs=config.traj_transform_kwargs,
-            frame_transform_kwargs=config.frame_transform_kwargs,
-            train=True,
-        )
-        dataset_statistics = dataset.dataset_statistics
-        dataset = dataset.flatten().shuffle(config.shuffle_buffer_size)
-        dataset.dataset_statistics = dataset_statistics
-    else:
-        dataset_kwargs["dataset_kwargs_list"], dataset_kwargs["sample_weights"] = (
-            make_oxe_dataset_kwargs_and_weights(**dataset_kwargs.pop("oxe_kwargs"))
-        )
-        dataset = make_interleaved_dataset(
-            **dataset_kwargs,
-            train=train,
-        )
+def make_base_dataset(
+    *,
+    oxe_kwargs: dict,
+    train: bool,
+    shuffle_buffer_size: int,
+    frame_transform_kwargs: dict,
+    traj_transform_kwargs: dict,
+    batch_size: Optional[int] = None,
+    balance_weights: bool,
+    traj_transform_threads: int,
+    traj_read_threads: int,
+) -> dlimp.DLataset:
+    dataset_kwargs_list, sample_weights = (
+        make_oxe_dataset_kwargs_and_weights(**oxe_kwargs)
+    )
+    dataset = make_interleaved_dataset(
+        dataset_kwargs_list,
+        sample_weights,
+        train=train,
+        shuffle_buffer_size=shuffle_buffer_size,
+        frame_transform_kwargs=frame_transform_kwargs,
+        traj_transform_kwargs=traj_transform_kwargs,
+        batch_size=batch_size,
+        balance_weights=balance_weights,
+        traj_transform_threads=traj_transform_threads,
+        traj_read_threads=traj_read_threads,
+    )
 
     return dataset
 
 
-def transform_dataset(
-    dataset: dlimp.DLataset,
+def make_base_single_dataset(
+    *,
+    name: str,
+    data_dir: str,
+    load_camera_views: Sequence[str],
+    load_depth: bool,
+    load_proprio: bool,
+    load_language: bool,
+    force_recompute_dataset_statistics: bool,
+    action_proprio_normalization_type: NormalizationType,
+    train: bool,
+    frame_transform_kwargs: dict,
+    traj_transform_kwargs: dict,
+    batch_size: Optional[int] = None,
+) -> dlimp.DLataset:
+    dataset = make_single_dataset(
+        make_oxe_dataset_kwargs(
+            name,
+            data_dir,
+            load_camera_views,
+            load_depth,
+            load_proprio,
+            load_language,
+            force_recompute_dataset_statistics,
+            action_proprio_normalization_type,
+        ),
+        train=train,
+        frame_transform_kwargs=frame_transform_kwargs,
+        traj_transform_kwargs=traj_transform_kwargs,
+    )
+    dataset_statistics = dataset.dataset_statistics
+    if batch_size is not None:
+        dataset = dataset.batch(batch_size)
+    dataset.dataset_statistics = dataset_statistics
+    return dataset
+
+
+def make_frame_transform(
+    multimodal_rephrasings: bool,
+    multimodal_rephrasing_kwargs: dict,
+    chunk_relative_actions: bool,
+    gripper_relative_actions: bool,
+    proprio_dropout_prob: float,
     tokenizer: Tokenizer | None,
     generation: bool,
-    *,
-    multimodal_rephrasings: bool = False,
-    chunk_relative_actions: bool = False,
-    multimodal_rephrasing_kwargs: dict = {},
-    gripper_relative_actions: bool = True,
-    require_language: bool = True,
-    proprio_dropout_prob: float = 0.0,
 ):
-    dataset_statistics = dataset.dataset_statistics
-
     def frame_transform(data):
         if multimodal_rephrasings:
             data = process_rephrase_tf(data, **multimodal_rephrasing_kwargs)
@@ -202,9 +240,37 @@ def transform_dataset(
 
         return data
 
+    return frame_transform
+
+
+def transform_dataset(
+    dataset: dlimp.DLataset,
+    tokenizer: Tokenizer | None,
+    generation: bool,
+    *,
+    multimodal_rephrasings: bool = False,
+    chunk_relative_actions: bool = False,
+    multimodal_rephrasing_kwargs: dict = {},
+    gripper_relative_actions: bool = True,
+    require_language: bool = True,
+    proprio_dropout_prob: float = 0.0,
+):
+    dataset_statistics = dataset.dataset_statistics
+
     if require_language:
         dataset = dataset.filter(has_language)
-    dataset = dataset.map(frame_transform, num_parallel_calls=None)
+    dataset = dataset.map(
+        make_frame_transform(
+            multimodal_rephrasings,
+            multimodal_rephrasing_kwargs,
+            chunk_relative_actions,
+            gripper_relative_actions,
+            proprio_dropout_prob,
+            tokenizer,
+            generation,
+        ),
+        num_parallel_calls=None,
+    )
     options = tf.data.Options()
     options.autotune.enabled = False
     dataset = dataset.with_options(options)

@@ -123,14 +123,14 @@ class Tokenizer:
 
         @tf.function(autograph=False)
         def _tokenize(params, actions, obs):
-            return tf.squeeze(
-                jax2tf.convert(
-                    partial(action_tokenizer.apply, method="tokenize"),
-                    native_serialization=True,
-                    native_serialization_platforms=["cpu"],
-                )({"params": params}, actions[None], obs=obs),
-                axis=0,
-            )
+            toks = jax2tf.convert(
+                partial(action_tokenizer.apply, method="tokenize"),
+                native_serialization=True,
+                native_serialization_platforms=["cpu"],
+            )({"params": params}, actions[None], obs=obs),
+            if isinstance(toks, tuple):
+                toks = toks[0]
+            return tf.squeeze(toks, axis=0)
 
         return cls(
             config=cls.TokenizerConfig.create(action_tokenizer, language_tokenizer, prompt_autoregressive),

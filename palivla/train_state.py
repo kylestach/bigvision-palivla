@@ -23,7 +23,7 @@ from palivla.eval_step import compute_eval_stats, compute_gen_stats
 from palivla.model import load_from_pretrained
 from palivla.spec import ModuleSpec, OptimizerSpec, restore_gluon_module
 from palivla.tokenizer import Tokenizer
-from palivla.sentencepiece_model_pb2 import ModelProto as SentencepieceModelProto
+from palivla.preprocess.sentencepiece_model_pb2 import ModelProto as SentencepieceModelProto
 from palivla.train_step import TrainingBatch, step_fn
 from palivla.types import RolloutBatch
 from palivla.predict_fns import _decode
@@ -53,10 +53,10 @@ class TrainState(FlaxTrainState):
     @classmethod
     def get_checkpoint_handlers(cls, name: str):
         return {
-            f"{name}/model_spec": ocp.JsonCheckpointHandler(),
-            f"{name}/model_params": ocp.StandardCheckpointHandler(),
-            f"{name}/optimizer_spec": ocp.JsonCheckpointHandler(),
-            f"{name}/opt_state": ocp.StandardCheckpointHandler(),
+            f"{name}_model_spec": ocp.JsonCheckpointHandler(),
+            f"{name}_model_params": ocp.StandardCheckpointHandler(),
+            f"{name}_optimizer_spec": ocp.JsonCheckpointHandler(),
+            f"{name}_opt_state": ocp.StandardCheckpointHandler(),
         }
 
     @classmethod
@@ -139,15 +139,15 @@ class TrainState(FlaxTrainState):
 
     def save_args(self):
         args = {
-            f"{self.name}/model_spec": ocp.args.JsonSave(self.model_spec.to_dict()),
-            f"{self.name}/model_params": ocp.args.StandardSave({"params": self.params}),
+            f"{self.name}_model_spec": ocp.args.JsonSave(self.model_spec.to_dict()),
+            f"{self.name}_model_params": ocp.args.StandardSave({"params": self.params}),
         }
 
         if self.optimizer_spec is not None:
-            args[f"{self.name}/optimizer_spec"] = ocp.args.JsonSave(
+            args[f"{self.name}_optimizer_spec"] = ocp.args.JsonSave(
                 self.optimizer_spec.to_dict()
             )
-            args[f"{self.name}/opt_state"] = ocp.args.StandardSave(
+            args[f"{self.name}_opt_state"] = ocp.args.StandardSave(
                 {"opt_state": self.opt_state}
             )
 
@@ -166,10 +166,10 @@ class TrainState(FlaxTrainState):
         if step is None:
             step = checkpoint_manager.latest_step()
 
-        model_params_name = f"{name}/model_params"
-        model_spec_name = f"{name}/model_spec"
-        optimizer_spec_name = f"{name}/optimizer_spec"
-        opt_state_name = f"{name}/opt_state"
+        model_params_name = f"{name}_model_params"
+        model_spec_name = f"{name}_model_spec"
+        optimizer_spec_name = f"{name}_optimizer_spec"
+        opt_state_name = f"{name}_opt_state"
 
         abstract_params = checkpoint_manager.item_metadata(step).get(model_params_name)[
             "params"

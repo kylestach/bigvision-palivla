@@ -47,18 +47,55 @@ def compute_gen_stats(
     Compute generative (rollout) statistics on a batch of data.
     """
 
+    def _split_tokens(tokens, mask, mask_ar, gen_start):
+        seq_len = tokens.shape[0]
+        prompt = jnp.where(
+            jnp.arange(seq_len) < gen_start,
+            tokens,
+            jnp.zeros_like(tokens),
+        )
+        prompt_mask = jnp.where(
+            jnp.arange(seq_len) < gen_start,
+            mask,
+            jnp.zeros_like(mask),
+        )
+        prompt_ar = jnp.where(
+            jnp.arange(seq_len) < gen_start,
+            mask_ar,
+            jnp.zeros_like(mask_ar),
+        )
+
+        gen_mask = jnp.arange(seq_len) >= gen_start
+        gen_mask = jnp.roll(mask, -gen_start, axis=0)
+        gen = jnp.where(
+            gen_mask,
+            jnp.roll(tokens, -gen_start, axis=0),
+            0,
+        )
+        gen_ar = jnp.ones_like(gen_mask)
+
+        return {
+            "prompt": prompt,
+            "prompt_mask": prompt_mask,
+            "prompt_ar": prompt_ar,
+            "gen": gen,
+            "gen_mask": gen_mask,
+            "gen_ar": gen_ar,
+        }
+
+    split_tokens = jax.vmap(_split_tokens)(batch.tokens, batch.tokens_mask, batch.tokens_ar, batch.gen_start)
+
     rollout_batch = RolloutBatch(
         sensor_data=batch.sensors,
         sensor_masks=batch.sensors_mask,
-        prompt=batch.tokens,
-        prompt_mask=batch.tokens_mask,
-        prompt_ar=batch.tokens_ar,
+        prompt=split_tokens["prompt"],
+        prompt_mask=split_tokens["prompt_mask"],
+        prompt_ar=split_tokens["prompt_ar"],
     )
     out_tokens = decode_fn(
         rollout_batch,
         target_key_order=target_key_order,
     )
-    gt_action_tokens = tokenize_fn(batch.actions)
 
     return mesh.sjit(
         _compute_action_metrics_shim,
@@ -71,7 +108,7 @@ def compute_gen_stats(
         tokenizer_config,
         out_tokens,
         None,
-        gt_action_tokens,
+        split_tokens["gen"][:, :tokenizer_config.num_action_tokens],
         batch.actions,
     )
 

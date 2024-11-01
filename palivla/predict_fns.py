@@ -104,6 +104,9 @@ def _decode_with_logp(
         mesh, P() if replicate_out else P("devices")
     )
 
+    if target_key_order is not None:
+        target_key_order = tuple(target_key_order)
+
     # Prefill the model cache and generate logits for first token.
     logits, cache = jax.jit(
         _prefill_cache,

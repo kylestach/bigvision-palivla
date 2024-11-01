@@ -1,5 +1,6 @@
 import jax
 import jax.numpy as jnp
+import orbax.checkpoint as ocp
 
 import tensorflow as tf
 import tqdm
@@ -14,7 +15,7 @@ from scalax.sharding import (
 import wandb
 import numpy as np
 
-from palivla.dataset import make_base_dataset, transform_dataset
+from palivla.dataset import make_base_dataset, make_base_single_dataset, transform_dataset
 from palivla.load_model import make_optimizer
 from palivla.spec import OptimizerSpec
 from palivla.train_state import PaliVLATrainState
@@ -47,7 +48,10 @@ def main(_):
     # Make the basic dataset
     # We have to do this first, since we need to know how the dataset is set up before we can construct the model
     train_ds = make_base_dataset(config, train=True)
-    # eval_ds = make_base_dataset(config, train=False)
+    eval_datasets = {
+        dataset_name: make_base_single_dataset(config, train=False)
+        for dataset_name in config.eval_datasets
+    }
 
     batch_shape = {
         "text": jax.ShapeDtypeStruct(shape=(1, 10), dtype=jnp.int32),
