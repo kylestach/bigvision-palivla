@@ -20,6 +20,7 @@ However, the names of modules are made to match the old ones for easy loading.
 from typing import Optional, Sequence, Union
 
 from absl import logging
+from einops import rearrange
 from big_vision import utils
 from big_vision.models import common
 import flax
@@ -199,6 +200,7 @@ class _Model(nn.Module):
   # or "dots_with_no_batch_dims_saveable" for more speed (memory costly)
   remat_policy: str = "nothing_saveable"
   dtype_mm: str = "float32"
+  image_size: int = 224
 
   @nn.compact
   def __call__(self, image, *, train=False):
@@ -214,9 +216,16 @@ class _Model(nn.Module):
     n, h, w, c = x.shape
     x = jnp.reshape(x, [n, h * w, c])
 
+    # Resize posemb to image size if necessary
+    mh, mw = self.image_size // self.patch_size[0], self.image_size // self.patch_size[1]
+    posemb = get_posemb(self, self.posemb, (mh, mw), c, "pos_embedding", x.dtype)
+    if (mh, mw) != (h, w):
+      posemb = rearrange(posemb, "() (h w) c -> h w c", h=mh, w=mw)
+      posemb = jax.image.resize(posemb, (h, w, c), method="linear")
+      posemb = rearrange(posemb, "h w c -> () (h w) c")
+
     # Add posemb before adding extra token.
-    x = out["with_posemb"] = x + get_posemb(
-        self, self.posemb, (h, w), c, "pos_embedding", x.dtype)
+    x = out["with_posemb"] = x + posemb
 
     if self.pool_type == "tok":
       cls = self.param("cls", nn.initializers.zeros, (1, 1, c), x.dtype)

@@ -1,8 +1,11 @@
 __pycache__
-/models
-/checkpoints
 .venv
 notebooks
 **/*.mp4
 *.ipynb
 wandb/
+*.egg-info
+
+/trained_tokenizers
+/models
+/checkpoints
