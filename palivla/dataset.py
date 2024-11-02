@@ -2,12 +2,25 @@ from functools import partial
 import tensorflow as tf
 from ml_collections import ConfigDict
 import numpy as np
+import itertools
 
 from palivla.tokenizer import Tokenizer
 from octo.data.dataset import make_interleaved_dataset, make_single_dataset
 from octo.data.oxe import make_oxe_dataset_kwargs_and_weights
 import dlimp
 
+modality_to_keys = {
+    'visual': ['image_primary', 'image_wrist'],
+    'tactile': ['digit_image_left', 'digit_image_right'],
+    'audio': ['mel_spectro']
+}
+
+idx_to_modalities = [(), ('visual',), ('tactile',), ('audio',), ('visual', 'tactile'), ('visual', 'audio'), ('tactile', 'audio'), ('visual', 'tactile', 'audio')]
+modality_idx_to_obs_keys= [
+    list(
+        itertools.chain.from_iterable([modality_to_keys[modality] for modality in idx_to_modalities[i]])
+    ) for i in range(8)
+]
 
 def process_rephrase_tf(
     data, rephrase_prob: float, num_gpt_gen: int, num_modalities: int
@@ -50,8 +63,12 @@ def process_rephrase_tf(
     data["task"]["language_instruction"] = tf.where(
         should_rephrase, rephrases[modality_idx, rephrase_idx], targets[modality_idx]
     )
+    
+    # save modality to properly do modality-based generative loss
+    data["task"]["modality_type"] = modality_idx 
 
     return data
+
 
 
 def mel_spectro_to_image(data):

@@ -13,6 +13,7 @@ import flax.linen as nn
 from big_vision.models.proj.paligemma.gemma_bv import Model as GemmaModel
 from big_vision.models.vit import Model as ViTModel
 
+from palivla.load_model import load_pretrained_tactile_encoder
 from palivla.spec import ModuleSpec
 from palivla.types import Data, Info
 from scalax.sharding import MeshShardingHelper, ShardingRule, PartitionSpec
@@ -451,8 +452,9 @@ def load_from_pretrained(
         None,
         path,
         base_model_cfg,
-    )
-
+    ) | load_pretrained_tactile_encoder()
+    
+    
     model_spec = ModuleSpec.create(PaliVLAModel, model_cfg)
     palivla_model = model_spec.instantiate()
 

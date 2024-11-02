@@ -1,11 +1,15 @@
 import fnmatch
 from functools import partial
 from typing import Dict, List, Optional
+import flax.traverse_util
 import jax
 import jax.numpy as jnp
 import ml_collections
 from ml_collections import ConfigDict, FrozenConfigDict
 import optax
+import tensorflow as tf
+import numpy as np
+import flax
 
 from big_vision.models.proj.paligemma import paligemma
 from big_vision.trainers.proj.paligemma import predict_fns
@@ -16,6 +20,7 @@ from palivla.tokenizer import Tokenizer
 from palivla.spec import ModuleSpec
 from palivla.utils import key_string
 
+
 model_config = {
     "llm": {"vocab_size": 257_152},
     "img": {
@@ -24,6 +29,18 @@ model_config = {
         "scan": True,
     },
 }
+
+def load_pretrained_tactile_encoder(
+    restore_path='gs://619c8f721786ba/ported_weights/tvl/tvl_vitbgs_params_jax.npz',
+):
+    with tf.io.gfile.GFile(restore_path, 'rb') as f:
+        ckpt_dict = np.load(f, allow_pickle=False)
+    keys, values = zip(*list(ckpt_dict.items()))
+    tvl_flat_params = {tuple(k.split('|')): v for k, v in zip(keys, values)}
+    return flax.traverse_util.unflatten_dict(tvl_flat_params)
+
+from functools import partial
+
 
 def get_model_spec(**kwargs):
     return ModuleSpec.create(

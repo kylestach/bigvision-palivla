@@ -2,6 +2,7 @@ import chex
 import jax
 import jax.numpy as jnp
 
+from functools import partial
 import tensorflow as tf
 import tqdm
 from absl import app, flags
@@ -20,7 +21,7 @@ from jax.experimental import multihost_utils
 import orbax.checkpoint as ocp
 from flax.core.frozen_dict import freeze
 
-from palivla.dataset import make_base_dataset, transform_dataset
+from palivla.dataset import make_base_dataset, transform_dataset, modality_idx_to_obs_keys
 from palivla.load_model import make_optimizer
 from palivla.spec import OptimizerSpec
 from palivla.train_state import PaliVLATrainState
@@ -98,18 +99,25 @@ def main(_):
     per_host_train_batch_size = config.batch_size // jax.process_count()
     per_host_eval_batch_size = config.eval_batch_size // jax.process_count()
 
-    def make_training_batch(batch):
+    def make_training_batch(batch, fuse_modal_loss: bool = False):
         sensors = {
             k: batch["observation"][k]
             for k in batch["observation"]
             if k in model.model_state.model.modality_mappings
         }
+        valid_obs_keys = modality_idx_to_obs_keys[int(batch['task']['modality_idx'])]
         batch_size = jax.tree.leaves(sensors)[0].shape[0]
-        sensors_mask = {
-            k: np.ones((batch_size,), dtype=jnp.bool_)
-            for k in sensors
-        }
-
+        if fuse_modal_loss:
+            sensors_mask = {
+                k: np.ones((batch_size,), dtype=jnp.bool_) if k in valid_obs_keys else np.zeros((batch_size,), dtype=jnp.bool_)
+                for k in sensors
+            }
+        else:
+            sensors_mask = {
+                k: np.ones((batch_size,), dtype=jnp.bool_)
+                for k in sensors
+            }
+        
         return mesh.local_data_to_global_array(
             TrainingBatch(
                 sensors=sensors,
@@ -121,9 +129,9 @@ def main(_):
                 tokens_mask=batch["mask_input"]
             )
         )
-
+    process_batch = partial(make_training_batch, fuse_modal_loss=config.get('fuse_modal_loss', False))
     train_it = map(
-        make_training_batch,
+        process_batch,
         transform_dataset(
             train_ds,
             model.tokenizer,
@@ -134,7 +142,7 @@ def main(_):
         .iterator(),
     )
     gen_eval_it = map(
-        make_training_batch,
+        process_batch,
         transform_dataset(
             eval_ds,
             model.tokenizer,
@@ -145,7 +153,7 @@ def main(_):
         .iterator(),
     )
     gen_train_it = map(
-        make_training_batch,
+        process_batch,
         transform_dataset(
             train_ds,
             model.tokenizer,
