@@ -1,6 +1,8 @@
 import jax
 from jax.experimental import multihost_utils
 import numpy as np
+from palivla.types import Params
+import tensorflow as tf
 
 
 def freeze_structure(structure):
@@ -45,4 +47,11 @@ def host_broadcast_str(x: str | None) -> str:
     decoded = "".join([chr(u) for u in encoded])
 
     return decoded.rstrip()
+
+
+def load_tvl_weights(pretrained_path: str) -> dict[tuple, np.ndarray]:
+    with tf.io.gfile.GFile(pretrained_path, 'rb') as f:
+        ckpt_dict = np.load(f, allow_pickle=False)
+    keys, values = zip(*list(ckpt_dict.items()))
+    return {tuple(k.split('|')): v for k, v in zip(keys, values)}
 

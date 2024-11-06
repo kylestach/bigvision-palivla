@@ -155,17 +155,21 @@ def compute_stats(
     return loss, metrics
 
 
-def step_fn(
+def _step_fn(
+    detokenize_fn,
+    train: bool,
+    use_fuse_masks: bool,
+    tokenizer_config: Tokenizer.TokenizerConfig,
     train_state: TrainState,
     batch: TrainingBatch,
     key: chex.PRNGKey,
-    tokenizer_config: Tokenizer.TokenizerConfig,
-    detokenize_fn,
-    train: bool,
 ):
     def loss_fn(params, batch, key: chex.PRNGKey):
         all_inputs = batch.sensors | {"text": batch.tokens[..., :-1]}
         all_masks = batch.sensors_mask | {
+            "text": jnp.ones_like(batch.tokens[..., :-1], dtype=jnp.bool_)
+        }
+        fuse_masks = batch.modality_combo_mask | {
             "text": jnp.ones_like(batch.tokens[..., :-1], dtype=jnp.bool_)
         }
 
@@ -173,8 +177,10 @@ def step_fn(
             {"params": params},
             all_inputs,
             data_masks=all_masks,
+            fuse_masks=fuse_masks,
             text_ar_mask=batch.tokens_ar[..., :-1],
             train=train,
+            target_key_order=train_state.model.target_key_order,
             rngs={"dropout": key},
         )
 
@@ -217,3 +223,25 @@ def step_fn(
     )
 
     return train_state, info, key
+
+
+def step_fn_fuse(
+    detokenize_fn,
+    train: bool,
+    tokenizer_config: Tokenizer.TokenizerConfig,
+    train_state: TrainState,
+    batch: TrainingBatch,
+    key: chex.PRNGKey,
+):
+    return _step_fn(detokenize_fn=detokenize_fn, train=train, use_fuse_masks=True, tokenizer_config=tokenizer_config, train_state=train_state, batch=batch, key=key)
+
+
+def step_fn(
+    detokenize_fn,
+    train: bool,
+    tokenizer_config: Tokenizer.TokenizerConfig,
+    train_state: TrainState,
+    batch: TrainingBatch,
+    key: chex.PRNGKey,
+):
+    return _step_fn(detokenize_fn=detokenize_fn, train=train, use_fuse_masks=False, tokenizer_config=tokenizer_config, train_state=train_state, batch=batch, key=key)

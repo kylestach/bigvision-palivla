@@ -3,6 +3,8 @@ from typing import Dict, Sequence, Tuple
 
 import chex
 import einops
+import flax.traverse_util
+import flax.traverse_util
 import jax
 import jax.numpy as jnp
 from einops import repeat
@@ -18,7 +20,9 @@ from palivla.types import Data, Info
 from scalax.sharding import MeshShardingHelper, ShardingRule, PartitionSpec
 
 from flax.core import FrozenDict, freeze
-
+import flax
+import tensorflow as tf
+import numpy as np
 
 def make_gather_indices(
     total_num_tokens: int, embeds_sizes: jax.Array, reordering: jax.Array
@@ -85,6 +89,7 @@ def pack_embeddings(embeds: jax.Array, masks: jax.Array):
 def collect_embeddings(
     embeds: Dict[str, jax.Array],
     embed_masks: Dict[str, jax.Array],
+    fuse_masks: Dict[str, jax.Array],
     language_embeds: jax.Array,
     language_masks: jax.Array,
     language_ar_mask: jax.Array,
@@ -122,6 +127,7 @@ def collect_embeddings(
     # Add the language embeddings to the _end_ of the embeds and masks.
     embeds = embeds | {"text": language_embeds}
     embed_masks = embed_masks | {"text": language_masks}
+    fuse_masks = fuse_masks | {"text": language_masks}
     ar_masks = {
         k: jnp.zeros(v.shape[0], dtype=jnp.bool_) for k, v in embeds.items()
     } | {"text": language_ar_mask}
@@ -138,6 +144,7 @@ def collect_embeddings(
     )
 
     concat_masks = jnp.concatenate([embed_masks[k] for k in key_order], axis=0)
+    concat_fuse_masks =  jnp.concatenate([fuse_masks[k] for k in key_order], axis=0)
     group_ids = {k: jnp.full(embeds[k].shape[0], i) for i, k in enumerate(key_order)}
 
     def _gather_values(data, indices):
@@ -148,6 +155,7 @@ def collect_embeddings(
     packed_embeds = _gather_values(embeds, gather_indices)
     packed_masks = _gather_values(embed_masks, gather_indices)
     packed_ar = _gather_values(ar_masks, gather_indices)
+    packed_fuse = _gather_values(fuse_masks, gather_indices)
     packed_group_membership = jnp.where(packed_masks, _gather_values(group_ids, gather_indices), -1)
 
     # Find the first and last (+1) true element
@@ -158,7 +166,7 @@ def collect_embeddings(
         for i, k in enumerate(key_order)
     }
 
-    return packed_embeds, packed_masks, packed_ar, groups
+    return packed_embeds, packed_masks, packed_ar, packed_fuse, groups
 
 
 def get_default_config():
@@ -232,7 +240,7 @@ class PaliVLAModel(nn.Module):
         }
 
     def embed_modalities(
-        self, data: Data, masks: Dict[str, jax.Array]
+        self, data: Data, masks: Dict[str, jax.Array], fuse_masks: Dict[str, jax.Array]
     ) -> Tuple[Data, Data, Info]:
         """
         Get embeddings for all modalities.
@@ -240,6 +248,7 @@ class PaliVLAModel(nn.Module):
 
         embeds = {}
         embed_masks = {}
+        fuse_emb_masks = {}
         info = {}
 
         for modality, encoder_name in self.modality_mappings.items():
@@ -274,11 +283,20 @@ class PaliVLAModel(nn.Module):
                 embed_masks[modality] = repeat(
                     masks[modality], "... -> ... t", t=embeds[modality].shape[1],
                 )
+            
+                fuse_emb_masks[modality] = repeat(
+                    fuse_masks[modality], "... -> ... t", t=embeds[modality].shape[1],
+                )
             else:
                 mask = masks[modality]
                 mask = jnp.concatenate([mask[:, :1], mask], axis=1)
                 chex.assert_shape(mask, embeds[modality].shape[:-1])
                 embed_masks[modality] = mask
+                
+                fuse_mask = fuse_masks[modality]
+                fuse_mask = jnp.concatenate([fuse_mask[:, :1], fuse_mask], axis=1)
+                chex.assert_shape(fuse_mask, embeds[modality].shape[:-1])
+                fuse_emb_masks[modality] = fuse_mask
 
             info.update({f"{modality}/{k}": v for k, v in m_info.items()})
 
@@ -290,43 +308,47 @@ class PaliVLAModel(nn.Module):
         for modality in missing_modalities:
             embeds[modality] = jnp.zeros((0, 0), dtype=jnp.float16)
             embed_masks[modality] = jnp.zeros((0,), dtype=jnp.bool_)
+            fuse_emb_masks[modality] = jnp.zeros((0,), dtype=jnp.bool_)
 
         batch_size = jax.tree.leaves(data)[0].shape[0]
         embed_dim = self.llm.embdim
         chex.assert_shape(list(embeds.values()), (batch_size, None, embed_dim))
 
-        return embeds, embed_masks, info
+        return embeds, embed_masks, fuse_emb_masks, info
 
     def make_model_inputs(
         self,
         data: Data,
         masks: Data | None,
+        fuse_masks: Data | None,
         text_ar_mask: jax.Array,
         target_key_order: Sequence[str] | None = None,
         rng: jax.Array | None = None,
     ):
-        data_embeds, data_masks, info = self.embed_modalities(data, masks)
+        data_embeds, data_masks, fuse_masks, info = self.embed_modalities(data, masks, fuse_masks)
 
         # Text is handled separately so it always goes last
         embeds_without_text = {k: v for k, v in data_embeds.items() if k != "text"}
         embed_masks_without_text = {k: v for k, v in data_masks.items() if k != "text"}
+        fuse_masks_without_text = {k: v for k, v in fuse_masks.items() if k != "text"}
 
         if rng is not None:
             batch_size = jax.tree.leaves(data)[0].shape[0]
             rng = jax.random.split(rng, batch_size)
 
-        packed_embeds, packed_masks, packed_ar, groups = jax.vmap(
+        packed_embeds, packed_masks, packed_ar, packed_fuse, groups = jax.vmap(
             partial(collect_embeddings, target_key_order=target_key_order)
         )(
             embeds_without_text,
             embed_masks_without_text,
+            fuse_masks_without_text,
             data_embeds["text"],
             data_masks["text"],
             text_ar_mask,
             rng=rng,
         )
 
-        return packed_embeds, packed_masks, packed_ar, groups, info
+        return packed_embeds, packed_masks, packed_ar, packed_fuse, groups, info
 
     def __call__(
         self,
@@ -334,7 +356,9 @@ class PaliVLAModel(nn.Module):
         text_ar_mask: jax.Array,
         *,
         train: bool = False,
+        use_fuse_masks: bool = True,
         data_masks: Dict[str, jax.Array] | None = None,
+        fuse_masks: Dict[str, jax.Array] | None = None,
         target_key_order: Sequence[str] | None = None,
     ):
         if data_masks is None:
@@ -344,16 +368,29 @@ class PaliVLAModel(nn.Module):
             data,
             data_masks,
         )
+        
+        if fuse_masks is None:
+            fuse_masks = data_masks
+        else:
+            fuse_masks = jax.tree.map(
+                lambda x, m: jnp.ones(x.shape[0], dtype=jnp.bool_) if m is None else m,
+                data,
+                fuse_masks,
+            )
 
-        packed_embeds, packed_masks, packed_ar, groups, info = self.make_model_inputs(
+        packed_embeds, packed_masks, packed_ar, packed_fuse, groups, info = self.make_model_inputs(
             data,
             data_masks,
+            fuse_masks,
             text_ar_mask,
             target_key_order=target_key_order,
             rng=self.make_rng("dropout") if target_key_order is None else None,
         )
-
-        attn_mask = make_attn_mask(packed_masks, packed_ar)
+        if use_fuse_masks:
+            mask_to_use = packed_fuse
+        else:
+            mask_to_use = packed_masks
+        attn_mask = make_attn_mask(mask_to_use, packed_ar)
 
         _, llm_info = self.llm(packed_embeds, mask=attn_mask, train=train)
 
@@ -456,7 +493,7 @@ def load_from_pretrained(
     )
 
     model_spec = ModuleSpec.create(PaliVLAModel, model_cfg)
-    palivla_model = model_spec.instantiate()
+    palivla_model: PaliVLAModel = model_spec.instantiate()
 
     def _init_params_fn(param_replacements):
         params = palivla_model.lazy_init(
@@ -469,7 +506,24 @@ def load_from_pretrained(
             chex.assert_trees_all_equal_shapes(params[k], v)
             jax.debug.print(f"Replacing param {k}")
             params[k] = v
-
+        
+        flat_params =  flax.traverse_util.flatten_dict(params)
+        for encoder_name, spec in palivla_model.encoder_specs.items():
+            if encoder_name in {'llm', 'img'} or spec.load_fn is None:
+                continue
+            jax.debug.print(f"Replacing params for {encoder_name}")
+            loaded_params = spec.load_fn(**spec.load_kwargs)
+            for k, param in flat_params.items():
+                if k[0] == encoder_name:
+                    loaded_key = k[1:]
+                    loaded_param = jnp.array(loaded_params[loaded_key])
+                    assert param.dtype == loaded_param.dtype, f'Loaded param had dtype {loaded_param.dtype}, expected {param.dtype}'
+                    if param.shape != loaded_param.shape:
+                        jax.debug.print(f'Received parameter of shape {loaded_param.shape} when trying to load param for {k}, expected {param.shape}. Skipping.')
+                        continue
+                    flat_params[k] = loaded_param
+        
+        params = flax.traverse_util.unflatten_dict(flat_params)
         params = jax.tree.map(lambda x: x.astype(param_dtype), params)
 
         return params
@@ -483,4 +537,5 @@ def load_from_pretrained(
     else:
         init_params_fn = jax.jit(_init_params_fn)
 
-    return model_spec, init_params_fn(base_params)
+    init_params = init_params_fn(base_params)
+    return model_spec, init_params

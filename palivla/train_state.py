@@ -24,7 +24,7 @@ from palivla.model import load_from_pretrained
 from palivla.spec import ModuleSpec, OptimizerSpec, restore_gluon_module
 from palivla.tokenizer import Tokenizer
 from palivla.preprocess.sentencepiece_model_pb2 import ModelProto as SentencepieceModelProto
-from palivla.train_step import TrainingBatch, step_fn
+from palivla.train_step import TrainingBatch, step_fn, step_fn_fuse
 from palivla.types import RolloutBatch
 from palivla.predict_fns import _decode
 
@@ -497,12 +497,14 @@ class PaliVLATrainState:
 
     @cached_property
     def step_fn(self):
+        __step_fn = partial(step_fn, self.detokenize_action, True, self.tokenizer.config)
         if self.mesh is None:
             _step_fn = partial(jax.jit, step_fn)
+            raise ValueError
         else:
             _step_fn = partial(
                 self.mesh.sjit,
-                step_fn,
+                __step_fn,
                 args_sharding_constraint=(
                     self.model_state.sharding_metadata.model_sharding_rule,
                     self.data_sharding,
@@ -511,7 +513,37 @@ class PaliVLATrainState:
             )
 
         return _step_fn(
-            static_argnums=(3, 4, 5),
+            # static argnums was not working - not sure why
+            in_shardings=(
+                self.model_state.sharding_metadata.model_sharding_rule,
+                self.data_sharding,
+                None,
+            ),
+            out_shardings=(
+                self.model_state.sharding_metadata.model_sharding_rule,
+                None,
+                None,
+            ),
+        )
+    
+    @cached_property
+    def fuse_step_fn(self):
+        __step_fn = partial(step_fn_fuse, self.detokenize_action, True, self.tokenizer.config)
+        if self.mesh is None:
+            _step_fn = partial(jax.jit, step_fn)
+        else:
+            _step_fn = partial(
+                self.mesh.sjit,
+                __step_fn,
+                args_sharding_constraint=(
+                    self.model_state.sharding_metadata.model_sharding_rule,
+                    self.data_sharding,
+                    None,
+                ),
+            )
+
+        return _step_fn(
+            # static argnums was not working - not sure why
             in_shardings=(
                 self.model_state.sharding_metadata.model_sharding_rule,
                 self.data_sharding,
@@ -536,10 +568,14 @@ class PaliVLATrainState:
                 self.model_state,
                 self.prepare_batch(batch),
                 self.rng,
-                self.tokenizer.config,
-                self.detokenize_action,
-                True,
             )
+            
+            self.model_state, info, self.rng = self.fuse_step_fn(
+                self.model_state,
+                self.prepare_batch(batch),
+                self.rng,
+            )
+            
 
         return info
 

@@ -12,6 +12,7 @@ import orbax.checkpoint as ocp
 from scalax.sharding import MeshShardingHelper, PartitionSpec
 
 from palivla.utils import freeze_structure
+from palivla.types import Params
 
 T = TypeVar("T")
 
@@ -20,27 +21,40 @@ T = TypeVar("T")
 class CtorSpec(Generic[T]):
     ctor: Callable[..., T]
     config: FrozenDict[str, Any]
+    load_fn: Callable[..., Params] | None = None
+    load_kwargs: FrozenDict[str, Any] | None = None
 
     @classmethod
     def is_ctor_spec_dict(cls, data: Any) -> bool:
         return isinstance(data, Mapping) and "__ctor" in data and "config" in data
 
     @classmethod
-    def create(cls, ctor: Callable[..., T] | str, config: Dict[str, Any]) -> "CtorSpec[T]":
+    def create(cls, ctor: Callable[..., T] | str, config: Dict[str, Any], load_fn: Callable[..., Params] | None = None, load_kwargs: Dict[str, Any] | None = None) -> "CtorSpec[T]":
         config = jax.tree.map(
             lambda x: CtorSpec.from_dict(x) if CtorSpec.is_ctor_spec_dict(x) else x,
             config,
             is_leaf=CtorSpec.is_ctor_spec_dict,
         )
         config = freeze_structure(config)
-        return cls(ctor=ctor, config=freeze(config))
+        load_kwargs = freeze_structure(load_kwargs)
+        return cls(ctor=ctor, config=freeze(config), load_fn=load_fn, load_kwargs=load_kwargs)
 
     @classmethod
     def from_name(cls, ctor_full_name: str, config: Dict[str, Any]):
         ctor_module = importlib.import_module(".".join(ctor_full_name.split(".")[:-1]))
         ctor_name = ctor_full_name.split(".")[-1]
         ctor = getattr(ctor_module, ctor_name)
-        return cls.create(ctor, config)
+        
+        load_fn_str = config.pop("load_fn", None)
+        load_kwargs = config.pop("load_kwargs", {})
+        if load_fn_str:
+            load_module = importlib.import_module(".".join(load_fn_str.split(".")[:-1]))
+            load_fn_name = load_fn_str.split(".")[-1]
+            load_fn = getattr(load_module, load_fn_name)
+        else:
+            load_fn = None
+            
+        return cls.create(ctor, config, load_fn, load_kwargs)
 
     def instantiate(self, **kwargs) -> T:
         return self.ctor(**self.config, **kwargs)

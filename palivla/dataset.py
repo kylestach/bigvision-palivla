@@ -4,11 +4,39 @@ import tensorflow as tf
 from ml_collections import ConfigDict
 import numpy as np
 
-from orca.octo.data.utils.data_utils import NormalizationType
+from octo.data.utils.data_utils import NormalizationType
 from palivla.tokenizer import Tokenizer
 from octo.data.dataset import make_interleaved_dataset, make_single_dataset
 from octo.data.oxe import make_oxe_dataset_kwargs_and_weights, make_oxe_dataset_kwargs
 import dlimp
+
+# modality_to_keys = {
+#     'visual': ['image_primary', 'image_wrist'],
+#     'tactile': ['image_digit_left', 'image_digit_right'],
+#     'audio': ['mel_spectro']
+# }
+
+# idx_to_modalities = [(), ('visual',), ('tactile',), ('audio',), ('visual', 'tactile'), ('visual', 'audio'), ('tactile', 'audio'), ('visual', 'tactile', 'audio')]
+
+
+def get_combo_mask(data, obs_mask):
+    idx = data['modality_idx']
+    obs_mask['image_primary'] &= (
+        (idx == 1) | (idx == 4) | (idx == 5) | (idx == 7)
+    )
+    obs_mask['image_wrist'] &= (
+        (idx == 1) | (idx == 4) | (idx == 5) | (idx == 7)
+    )
+    obs_mask['image_digit_left'] &= (
+        (idx == 2) | (idx == 4) | (idx == 6) | (idx == 7)
+    )
+    obs_mask['image_digit_right'] &= (
+        (idx == 2) | (idx == 4) | (idx == 6) | (idx == 7)
+    )
+    obs_mask['mel_spectro'] &= (
+        (idx == 3) | (idx == 5) | (idx == 6) | (idx == 7)
+    )
+    return obs_mask
 
 
 def process_rephrase_tf(
@@ -47,6 +75,7 @@ def process_rephrase_tf(
         tf.math.log(probabilities)[None], num_samples=1
     )
     modality_idx = tf.squeeze(tf.squeeze(modality_idx, axis=-1), axis=-1)
+    data['modality_idx'] = modality_idx
     rephrase_idx = tf.random.uniform([], maxval=num_gpt_gen, dtype=tf.int64)
 
     data["task"]["language_instruction"] = tf.where(
@@ -130,9 +159,42 @@ def make_base_dataset(
     traj_transform_threads: int,
     traj_read_threads: int,
 ) -> dlimp.DLataset:
+    
     dataset_kwargs_list, sample_weights = (
         make_oxe_dataset_kwargs_and_weights(**oxe_kwargs)
     )
+    dataset = make_interleaved_dataset(
+        dataset_kwargs_list,
+        sample_weights,
+        train=train,
+        shuffle_buffer_size=shuffle_buffer_size,
+        frame_transform_kwargs=frame_transform_kwargs,
+        traj_transform_kwargs=traj_transform_kwargs,
+        batch_size=batch_size,
+        balance_weights=balance_weights,
+        traj_transform_threads=traj_transform_threads,
+        traj_read_threads=traj_read_threads,
+    )
+
+    return dataset
+
+def make_base_dataset_fuse(
+    *,
+    dataset_kwargs_list: list[dict],
+    train: bool,
+    shuffle_buffer_size: int,
+    frame_transform_kwargs: dict,
+    traj_transform_kwargs: dict,
+    batch_size: Optional[int] = None,
+    balance_weights: bool,
+    traj_transform_threads: int,
+    traj_read_threads: int,
+) -> dlimp.DLataset:
+    sample_weights = [ 1.0 for _ in dataset_kwargs_list ]
+    sample_weight_norm = sum(sample_weights)
+    sample_weights = [weight / sample_weight_norm for weight in sample_weights]
+    sample_weights[-1] += 1 - sum(sample_weights)
+    
     dataset = make_interleaved_dataset(
         dataset_kwargs_list,
         sample_weights,
@@ -200,8 +262,11 @@ def make_frame_transform(
             data = process_rephrase_tf(data, **multimodal_rephrasing_kwargs)
             data = mel_spectro_to_image(data)
             data = tactile_to_image(data)
-            data = make_stacked_images(data)
-
+            fuse_mask = {}
+            for k, v in data['observation']['pad_mask_dict'].items():
+                fuse_mask[k] = tf.identity(tf.convert_to_tensor(v))
+            data['modality_combo_mask'] = get_combo_mask(data, fuse_mask)
+            
         if chunk_relative_actions:
             # Gripper is absolute, rest is relative
             if gripper_relative_actions:
