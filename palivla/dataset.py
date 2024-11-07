@@ -16,25 +16,25 @@ import dlimp
 #     'audio': ['mel_spectro']
 # }
 
-# idx_to_modalities = [(), ('visual',), ('tactile',), ('audio',), ('visual', 'tactile'), ('visual', 'audio'), ('tactile', 'audio'), ('visual', 'tactile', 'audio')]
+# idx_to_modalities = [('simple'), (), ('visual',), ('tactile',), ('audio',), ('visual', 'tactile'), ('visual', 'audio'), ('tactile', 'audio'), ('visual', 'tactile', 'audio')]
 
 
 def get_combo_mask(data, obs_mask):
     idx = data['modality_idx']
     obs_mask['image_primary'] &= (
-        (idx == 1) | (idx == 4) | (idx == 5) | (idx == 7)
+        (idx == 0) | (idx == 2) | (idx == 5) | (idx == 6) | (idx == 8)
     )
     obs_mask['image_wrist'] &= (
-        (idx == 1) | (idx == 4) | (idx == 5) | (idx == 7)
+        (idx == 0) | (idx == 2) | (idx == 5) | (idx == 6) | (idx == 8)
     )
     obs_mask['image_digit_left'] &= (
-        (idx == 2) | (idx == 4) | (idx == 6) | (idx == 7)
+        (idx == 0) | (idx == 3) | (idx == 5) | (idx == 7) | (idx == 8)
     )
     obs_mask['image_digit_right'] &= (
-        (idx == 2) | (idx == 4) | (idx == 6) | (idx == 7)
+        (idx == 0) | (idx == 3) | (idx == 5) | (idx == 7) | (idx == 8)
     )
     obs_mask['mel_spectro'] &= (
-        (idx == 3) | (idx == 5) | (idx == 6) | (idx == 7)
+        (idx == 0) | (idx == 4) | (idx == 6) | (idx == 7) | (idx == 8)
     )
     return obs_mask
 

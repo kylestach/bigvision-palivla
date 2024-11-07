@@ -48,8 +48,7 @@ def main(_):
     # Make the basic dataset
     # We have to do this first, since we need to know how the dataset is set up before we can construct the model
     train_ds = make_base_dataset_fuse(**config.dataset_kwargs, train=True)
-    eval_datasets = {
-    }
+    # eval_ds = make_base_dataset_fuse(**config.dataset_kwargs, train=True)
 
     batch_shape = {
         "text": jax.ShapeDtypeStruct(shape=(1, 10), dtype=jnp.int32),
@@ -148,28 +147,28 @@ def main(_):
     )
 
     batch = next(train_it)
-    # gen_eval_it = map(
+    # eval_it = map(
     #     make_training_batch,
     #     transform_dataset(
     #         eval_ds,
     #         model.tokenizer,
-    #         generation=True,
+    #         generation=False,
     #         **config.extra_dataset_transform_kwargs,
     #     )
     #     .batch(per_host_eval_batch_size)
     #     .iterator(),
     # )
-    gen_train_it = map(
-        make_training_batch,
-        transform_dataset(
-            train_ds,
-            model.tokenizer,
-            generation=True,
-            **config.extra_dataset_transform_kwargs,
-        )
-        .batch(per_host_train_batch_size)
-        .iterator(),
-    )
+    # gen_train_it = map(
+    #     make_training_batch,
+    #     transform_dataset(
+    #         train_ds,
+    #         model.tokenizer,
+    #         generation=True,
+    #         **config.extra_dataset_transform_kwargs,
+    #     )
+    #     .batch(per_host_train_batch_size)
+    #     .iterator(),
+    # )
 
     # W&B setup
     if jax.process_index() == 0:
@@ -214,29 +213,29 @@ def main(_):
                     wandb.log(avg_info, step=i)
                 wandb_logs = []
 
-            # if (i + 1) % config.eval_interval == 0:
-            #     eval_info = {}
-            #     # eval_batch = next(gen_eval_it)
-            #     # eval_info = model.eval_step(
-            #     #     eval_batch, "eval/gen_", include_regular_stats=False
-            #     # )
+            if (i + 1) % config.eval_interval == 0:
+                eval_info = {}
+                # eval_batch = next(gen_eval_it)
+                # eval_info = model.eval_step(
+                #     eval_batch, "eval/gen_", include_regular_stats=False
+                # )
 
-            #     train_batch_for_eval = next(gen_train_it)
-            #     train_info = model.eval_step(
-            #         train_batch_for_eval, "train/gen_", include_regular_stats=False
-            #     )
+                # train_batch_for_eval = next(gen_train_it)
+                # train_info = model.eval_step(
+                #     train_batch_for_eval, "train/gen_", include_regular_stats=False
+                # )
 
-            #     if jax.process_index() == 0:
-            #         wandb.log(
-            #             eval_info | train_info,
-            #             commit=False,
-            #             step=i,
-            #         )
+                # if jax.process_index() == 0:
+                #     wandb.log(
+                #         eval_info | train_info,
+                #         commit=False,
+                #         step=i,
+                #     )
 
-            # if (i + 1) % config.save_interval == 0:
-            #     if config.save_path is not None:
-            #         print(f"Saving model to {config.save_path}/{i}")
-            #         checkpoint_save_manager.save(i+1, args=model.save_args())
+            if (i + 1) % config.save_interval == 0:
+                if config.save_path is not None:
+                    print(f"Saving model to {config.save_path}/{i}")
+                    checkpoint_save_manager.save(i+1, args=model.save_args())
     checkpoint_save_manager.wait_until_finished()
 
 

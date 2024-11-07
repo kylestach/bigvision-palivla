@@ -18,8 +18,6 @@ def get_config():
     model_config = get_default_config()
 
     model_config['prompt_autoregressive'] = True
-    # use_wrist = "wrist" in config_str_list
-    # use_proprio = "proprio" in config_str_list
 
     model_config["modality_mappings"] = {
         "image_primary": "img",
@@ -66,22 +64,6 @@ def get_config():
             "flatten_result": True,
         }
     }
-    
-    
-
-
-    # if use_wrist:
-    #     model_config["modality_mappings"]["image_wrist"] = "img"
-    #     model_config["target_key_order"] = model_config["target_key_order"] + ("image_wrist",)
-
-    # if use_proprio:
-    #     model_config["modality_mappings"]["proprio"] = "proprio"
-    #     model_config["target_key_order"] = model_config["target_key_order"] + ("proprio",)
-    #     model_config["encoder_specs"]["proprio"] = {
-    #         "__ctor": "flax.linen.Dense",
-    #         "config": {"features": llm_embdim},
-    #     }
-
     
     img_obs_keys = {
         'primary': 'image_0', 
@@ -206,7 +188,7 @@ def get_config():
                 "multimodal_rephrasing_kwargs": {
                     "rephrase_prob": 0.5,
                     "num_gpt_gen": 20,
-                    "num_modalities": 8,
+                    "num_modalities": 9,
                 },
                 "proprio_dropout_prob": 0.0,
                 "require_language": False,
