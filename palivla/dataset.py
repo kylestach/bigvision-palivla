@@ -4,7 +4,7 @@ import tensorflow as tf
 from ml_collections import ConfigDict
 import numpy as np
 
-from orca.octo.data.utils.data_utils import NormalizationType
+from octo.data.utils.data_utils import NormalizationType
 from palivla.tokenizer import Tokenizer
 from octo.data.dataset import make_interleaved_dataset, make_single_dataset
 from octo.data.oxe import make_oxe_dataset_kwargs_and_weights, make_oxe_dataset_kwargs

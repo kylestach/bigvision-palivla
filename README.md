@@ -496,3 +496,20 @@ This is not an official Google Product.
 Unless explicitly noted otherwise, everything in the big_vision codebase
 (including models and colabs) is released under the Apache2 license.
 See the LICENSE file for the full license text.
+
+# Notes
+
+```
+pip install --upgrade "jax[tpu]" -f https://storage.googleapis.com/jax-releases/libtpu_releases.html
+pip show wandb
+pip install scalax huggingface_hub
+
+sudo gsutil cp gs://big_vision/paligemma_tokenizer.model .
+
+
+import kagglehub
+MODEL_PATH = kagglehub.model_download('google/paligemma/jax/paligemma-3b-pt-224', 'paligemma-3b-pt-224.f16.npz')
+cp /home/mitsuhiko/.cache/kagglehub/models/google/paligemma/jax/paligemma-3b-pt-224/1/paligemma-3b-pt-224.f16.npz .
+```
+
+- skipped proprio nomalization in octo loader

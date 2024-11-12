@@ -23,7 +23,8 @@ from palivla.eval_step import compute_eval_stats, compute_gen_stats
 from palivla.model import load_from_pretrained
 from palivla.spec import ModuleSpec, OptimizerSpec, restore_gluon_module
 from palivla.tokenizer import Tokenizer
-from palivla.preprocess.sentencepiece_model_pb2 import ModelProto as SentencepieceModelProto
+# from palivla.preprocess.sentencepiece_model_pb2 import ModelProto as SentencepieceModelProto
+from sentencepiece.sentencepiece_model_pb2 import ModelProto as SentencepieceModelProto
 from palivla.train_step import TrainingBatch, step_fn
 from palivla.types import RolloutBatch
 from palivla.predict_fns import _decode
@@ -497,12 +498,17 @@ class PaliVLATrainState:
 
     @cached_property
     def step_fn(self):
+        __step_fn = partial(step_fn, 
+            tokenizer_config=self.tokenizer.config,
+            detokenize_fn=self.detokenize_action,
+            train=True,
+        )
         if self.mesh is None:
             _step_fn = partial(jax.jit, step_fn)
         else:
             _step_fn = partial(
                 self.mesh.sjit,
-                step_fn,
+                __step_fn,
                 args_sharding_constraint=(
                     self.model_state.sharding_metadata.model_sharding_rule,
                     self.data_sharding,
@@ -511,7 +517,7 @@ class PaliVLATrainState:
             )
 
         return _step_fn(
-            static_argnums=(3, 4, 5),
+            # static_argnums=(3, 4, 5),
             in_shardings=(
                 self.model_state.sharding_metadata.model_sharding_rule,
                 self.data_sharding,
@@ -536,9 +542,9 @@ class PaliVLATrainState:
                 self.model_state,
                 self.prepare_batch(batch),
                 self.rng,
-                self.tokenizer.config,
-                self.detokenize_action,
-                True,
+                # self.tokenizer.config,
+                # self.detokenize_action,
+                # True,
             )
 
         return info

@@ -67,6 +67,8 @@ def get_config():
                     "warmup_steps": 500,
                     "weight_decay": 5e-6,
                     "grad_norm_clip": 10.0,
+                    "b1": 0.9,
+                    "b2": 0.99,
                 },
                 "embed_optimizer_kwargs": {
                     "init_learning_rate": 0,
@@ -74,6 +76,8 @@ def get_config():
                     "warmup_steps": 100,
                     "weight_decay": 0.0,
                     "grad_norm_clip": 10.0,
+                    "b1": 0.9,
+                    "b2": 0.99,
                 },
                 "img_optimizer_kwargs": {
                     "init_learning_rate": 0,
@@ -81,6 +85,8 @@ def get_config():
                     "warmup_steps": 500,
                     "weight_decay": 5e-6,
                     "grad_norm_clip": 10.0,
+                    "b1": 0.9,
+                    "b2": 0.99,
                 },
             }
         }
