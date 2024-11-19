@@ -11,9 +11,9 @@ import numpy as np
 from functools import partial
 import orbax.checkpoint as ocp
 from tensorflow_text import SentencepieceTokenizer
-from palivla.dataset import prepare_image
+# from palivla.dataset import prepare_image
 from palivla.tokenizer import Tokenizer
-from palivla.load_model import load_model
+from palivla.load_model import load_model_params_decode
 from scalax.sharding import MeshShardingHelper, FSDPShardingRule, PartitionSpec
 from flax.training.train_state import TrainState
 from jax.experimental import multihost_utils
@@ -22,6 +22,7 @@ from ml_collections import config_flags
 
 def main(_):
     # jax.distributed.initialize()
+    import pdb; pdb.set_trace()
 
     config = flags.FLAGS.config
 
@@ -30,7 +31,7 @@ def main(_):
     tokenizer = Tokenizer.from_tokenizer(language_tokenizer)
 
     print("Loading model params...")
-    model, params, decode = load_model(config, tokenizer)
+    model, params, decode = load_model_params_decode(config, tokenizer)
 
     # Sharding
     mesh = MeshShardingHelper(
@@ -139,6 +140,7 @@ def main(_):
 
     images = tf.zeros((1, 224, 224, 3), dtype=tf.uint8)
     instructions = tf.constant("place the mushroom in the pot")
+    import pdb; pdb.set_trace()
 
     decoded_actions = do_inference(images, instructions)
     print(decoded_actions)
@@ -146,7 +148,7 @@ def main(_):
 
 if __name__ == "__main__":
     config_flags.DEFINE_config_file(
-        "config", "bridge_config.py", "Path to the config file."
+        "config", "/nfs/nfs2/users/mitsuhiko/codes/bigvision-palivla/palivla/configs/bridge_config.py", "Path to the config file."
     )
     flags.DEFINE_string(
         "dataset_name", "bridge_dataset", "Name of the dataset to use for inference."

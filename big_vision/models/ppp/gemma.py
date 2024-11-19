@@ -42,6 +42,7 @@ import jax.numpy as jnp
 import ml_collections
 import numpy as np
 import orbax.checkpoint
+import copy
 
 
 def get_config(variant):
@@ -173,6 +174,16 @@ class Embedder(nn.Module):
         (self.vocab_size, self.embed_dim),
     )
 
+    self.value_embedding_table = self.param(
+        "value_embedding",
+        nn.initializers.variance_scaling(
+            scale=1.0, mode="fan_in", distribution="normal",
+            in_axis=1, out_axis=0,),
+        (1, self.embed_dim),
+    )
+
+    self.target_value_embedding_table = copy.deepcopy(self.value_embedding_table)
+
   def encode(self, x):
     x = self.input_embedding_table[(x,)]
     x *= jnp.sqrt(self.embed_dim).astype(x.dtype)
@@ -180,6 +191,13 @@ class Embedder(nn.Module):
 
   def decode(self, x):
     return jnp.dot(x, self.input_embedding_table.T)
+
+  def value(self, x):
+    return jnp.dot(x, self.value_embedding_table.T)
+
+  def target_value(self, x):
+    return jnp.dot(x, self.target_value_embedding_table.T)
+  
 
 
 class Attention(nn.Module):
@@ -361,7 +379,9 @@ class Model(nn.Module):
       embed_only=False,
       pre_logits=None,
       positions=None, mask=None,
-      decode=False, deterministic=True,
+      decode=False, deterministic=True, 
+      value=False,
+      target_value=False,
   ):
     """Embed only, or complete forward pass.
 
@@ -387,9 +407,15 @@ class Model(nn.Module):
         embed_dim=self.width,
         name="embedder")
 
+
     if pre_logits is not None:
       x = out["pre_logits"] = pre_logits
-      logits = out["logits"] = embedder.decode(x)
+      if value:
+        logits = out["values"] = embedder.value(x)
+      elif target_value:
+        logits = out["target_values"] = embedder.target_value(x)
+      else:
+        logits = out["logits"] = embedder.decode(x)
       return logits, out
 
     x = []

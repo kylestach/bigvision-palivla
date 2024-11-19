@@ -82,7 +82,6 @@ def compute_gen_stats(
             "gen_mask": gen_mask,
             "gen_ar": gen_ar,
         }
-    import pdb; pdb.set_trace()
     split_tokens = jax.vmap(_split_tokens)(batch.tokens, batch.tokens_mask, batch.tokens_ar, batch.gen_start)
 
     rollout_batch = RolloutBatch(

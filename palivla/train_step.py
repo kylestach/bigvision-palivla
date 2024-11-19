@@ -46,7 +46,7 @@ def get_action_tokens(
     pred_action_logits = jax.vmap(_get_action_tokens, in_axes=(-1, None), out_axes=-1)(
         pred_logits, action_token_starts
     )
-    gt_action_tokens = _get_action_tokens(tokens, action_token_starts)
+    gt_action_tokens = _get_action_tokens(tokens, action_token_starts) # gt = ground truth
 
     return {
         "pred_action_tokens": pred_action_tokens,
@@ -137,6 +137,7 @@ def compute_stats(
     action_token_info = get_action_tokens(
         pred_logits, labels, tokenizer_config.num_action_tokens, tokenizer_config.begin_of_action_token
     )
+
     metrics = compute_action_metrics(
         detokenize_fn,
         **action_token_info,
@@ -145,7 +146,6 @@ def compute_stats(
         tokenizer_config=tokenizer_config,
         log_segment_prefix=log_segment_prefix,
     )
-
     loss = jnp.mean(
         output_pred_mask
         * optax.softmax_cross_entropy_with_integer_labels(pred_logits, labels)
@@ -169,7 +169,7 @@ def step_fn(
             "text": jnp.ones_like(batch.tokens[..., :-1], dtype=jnp.bool_)
         }
 
-        logits, _ = train_state.apply_fn(
+        logits, info = train_state.apply_fn(
             {"params": params},
             all_inputs,
             data_masks=all_masks,
@@ -177,8 +177,31 @@ def step_fn(
             train=train,
             rngs={"dropout": key},
         )
+        # pre_logits = info["text_pre_logits"]
+        values = info["values"]
 
-        return compute_stats(
+        # value loss
+        # 1. TD loss
+        value_token_starts = jnp.argmax(batch.tokens[..., 1:] == tokenizer_config.end_of_action_token, axis=-1)
+        _get_values = jax.vmap(
+            lambda x, i: jax.lax.dynamic_slice(x, (i,), (1,)),
+        )
+        qs = jax.vmap(_get_values, in_axes=(-1, None), out_axes=-1)(
+            values, value_token_starts
+        ).squeeze()
+
+        critic_loss =  ((qs - batch.mc_returns) ** 2).mean()
+
+        critic_metrics = {
+            "critic/critic_loss": critic_loss,
+            "critic/q_pred": qs.mean(),
+            "critic/q_gt": batch.mc_returns.mean(),
+        }
+
+        # logits: (128, 59, 257152)
+        # pre_logits: (128, 59, 2048)
+        # values: (128, 59, 1)
+        actor_loss, actor_metrics = compute_stats(
             detokenize_fn=partial(detokenize_fn, obs=batch.sensors),
             pred_logits=logits,
             tokens=batch.tokens,
@@ -187,6 +210,10 @@ def step_fn(
             tokenizer_config=tokenizer_config,
             log_segment_prefix="train/tf_",
         )
+
+        actor_metrics.update(critic_metrics)
+
+        return actor_loss + critic_loss, actor_metrics
 
     grad_fn = jax.grad(loss_fn, has_aux=True)
 

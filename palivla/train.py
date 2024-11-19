@@ -122,9 +122,14 @@ def main(_):
                 tokens=batch["tokens"],
                 tokens_ar=batch["mask_ar"],
                 tokens_loss=batch.get("mask_loss", None),
-                tokens_mask=batch["mask_input"]
+                tokens_mask=batch["mask_input"],
+                rewards=batch["reward"],
+                td_mask=batch["td_mask"],
+                mc_returns=batch["mc_return"],
+
             )
         )
+
 
     train_it = map(
         make_training_batch,

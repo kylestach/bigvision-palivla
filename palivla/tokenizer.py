@@ -73,6 +73,7 @@ class Tokenizer:
         eos_token: int = struct.field(pytree_node=True)
         pad_token: int = struct.field(pytree_node=True)
         begin_of_action_token: int = struct.field(pytree_node=True)
+        end_of_action_token: int = struct.field(pytree_node=True)
         max_pad_length: int = struct.field(pytree_node=False)
         min_action_value: float = struct.field(pytree_node=True)
         max_action_value: float = struct.field(pytree_node=True)
@@ -89,6 +90,7 @@ class Tokenizer:
                 eos_token=language_tokenizer.string_to_id("<eos>").numpy().item(),
                 pad_token=language_tokenizer.string_to_id("<pad>").numpy().item(),
                 begin_of_action_token=language_tokenizer.string_to_id("\n").numpy().item(),
+                end_of_action_token=language_tokenizer.string_to_id("\t").numpy().item(),
                 max_pad_length=60,
                 min_action_value=getattr(action_tokenizer, "min_action_value", None),
                 max_action_value=getattr(action_tokenizer, "max_action_value", None),
@@ -145,6 +147,7 @@ class Tokenizer:
                         ],
                         "causal": [
                             "action",
+                            [config.end_of_action_token],
                         ],
                         "pad": [
                             [pad_token] * config.max_pad_length,
@@ -208,6 +211,7 @@ class Tokenizer:
         instruction = tf.strings.lower(instruction)
         instruction = tf.strings.regex_replace(instruction, "[.?!]", "")
         instruction = tf.strings.regex_replace(instruction, "\n", " ")
+        instruction = tf.strings.regex_replace(instruction, "\t", " ")
         instruction = tf.strings.strip(instruction)
         instruction = tf.strings.join([tf.constant("act "), instruction])
 
@@ -220,8 +224,8 @@ class Tokenizer:
         tokens = (
             self._jax_action_tokenize_fn({"params": self.action_tokenizer_params}, data, obs=obs) + self.config.action_vocab_offset
         )
-        if is_single_sample:
-            tokens = tokens[0]
+        # if is_single_sample:
+        #     tokens = tokens[0]
         return tokens
 
     def detokenize_action(self, tokens, obs=None):

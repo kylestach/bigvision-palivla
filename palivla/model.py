@@ -365,6 +365,7 @@ class PaliVLAModel(nn.Module):
         all_pre_logits = llm_info["pre_logits"]
         text_start, text_end = groups["text"]
 
+
         _, text_length_padded = data["text"].shape
 
         @jax.vmap
@@ -384,10 +385,15 @@ class PaliVLAModel(nn.Module):
             all_pre_logits, text_start, text_end, data_masks["text"]
         )
         text_logits = self.llm.compute_logits(text_pre_logits, train=train)
+        values = self.llm.compute_values(text_pre_logits, train=train)
+        target_values = self.llm.compute_target_values(text_pre_logits, train=train)
 
         info["text_logits"] = text_logits
         info["text_tokens"] = jnp.argmax(text_logits, axis=-1)
         info["text_logit_masks"] = text_logit_masks
+        info["text_pre_logits"] = text_pre_logits
+        info["values"] = values
+        info["target_values"] = target_values
 
         return text_logits, info
 
@@ -454,6 +460,7 @@ def load_from_pretrained(
         path,
         base_model_cfg,
     )
+    
 
     model_spec = ModuleSpec.create(PaliVLAModel, model_cfg)
     palivla_model = model_spec.instantiate()
@@ -464,6 +471,9 @@ def load_from_pretrained(
             data=batch_shape,
             text_ar_mask=jnp.ones(batch_shape["text"].shape, dtype=jnp.bool_),
         )["params"]
+
+        # add value head to pre-trained weights to avoid shape mismatch
+        param_replacements["llm"]["embedder"]["value_embedding"] = params["llm"]["embedder"]["value_embedding"]
 
         for k, v in param_replacements.items():
             chex.assert_trees_all_equal_shapes(params[k], v)

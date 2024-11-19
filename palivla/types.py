@@ -24,7 +24,11 @@ class TrainingBatch:
     tokens_ar: jax.Array
     tokens_loss: jax.Array
     tokens_mask: jax.Array
+    rewards: jax.Array
+    td_mask: jax.Array
+    mc_returns: jax.Array
     gen_start: jax.Array | None = None
+
 
 
 @dataclass
