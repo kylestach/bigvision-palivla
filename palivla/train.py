@@ -114,10 +114,24 @@ def main(_):
             if k != "text"
         }
 
+        sensors_next = {
+            k: batch["next_observation"][k]
+            for k in batch["next_observation"]
+            if k in model.model_state.model.modality_mappings and k != "text"
+        }
+
+        sensors_next_mask = {
+            k: np.squeeze(batch["next_observation"]["pad_mask_dict"][k], axis=-1)
+            for k in model.model_state.model.modality_mappings
+            if k != "text"
+        }
+
         return mesh.local_data_to_global_array(
             TrainingBatch(
                 sensors=sensors,
                 sensors_mask=sensors_mask,
+                sensors_next=sensors_next,
+                sensors_next_mask=sensors_next_mask,
                 actions=batch["action"],
                 tokens=batch["tokens"],
                 tokens_ar=batch["mask_ar"],
@@ -126,6 +140,8 @@ def main(_):
                 rewards=batch["reward"],
                 td_mask=batch["td_mask"],
                 mc_returns=batch["mc_return"],
+                next_actions= batch["next_action"],
+                next_tokens=batch["next_tokens"],
 
             )
         )

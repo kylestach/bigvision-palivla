@@ -257,6 +257,21 @@ class Tokenizer:
             "mask_input": tokens != self.config.pad_token,
         }
 
+    def prepare_next_tokens_for_training(self, data, language_token_instructions):
+        tokens = {
+            "prompt": language_token_instructions[: self.config.max_pad_length - 10],
+            "action": self._tf_action_tokenize_fn(
+                self.action_tokenizer_params, data["next_action"][-1], None
+            )
+            + self.config.action_vocab_offset,
+        }
+
+        tokens, mask_ar, mask_loss = self.compose_token_structure(tokens)
+
+        return {
+            "next_tokens": tokens,
+        }
+
     def prepare_tokens_for_generation(self, data, language_token_instructions):
         tokens = {
             "prompt": language_token_instructions[: self.config.max_pad_length - 10],

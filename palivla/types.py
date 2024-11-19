@@ -18,6 +18,8 @@ Info = Dict[str, Any]
 class TrainingBatch:
     sensors: Dict[str, jax.Array]
     sensors_mask: jax.Array
+    sensors_next: Dict[str, jax.Array]
+    sensors_next_mask: jax.Array
     # actions_mask: jax.Array
     actions: jax.Array
     tokens: jax.Array
@@ -27,6 +29,8 @@ class TrainingBatch:
     rewards: jax.Array
     td_mask: jax.Array
     mc_returns: jax.Array
+    next_actions: jax.Array
+    next_tokens: jax.Array
     gen_start: jax.Array | None = None
 
 

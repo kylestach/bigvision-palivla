@@ -120,6 +120,15 @@ def compute_action_metrics(
         else {}
     )
 
+def get_value(pred_values, tokens, tokenizer_config: Tokenizer.TokenizerConfig):
+    value_token_starts = jnp.argmax(tokens == tokenizer_config.end_of_action_token, axis=-1)
+    _get_values = jax.vmap(
+        lambda x, i: jax.lax.dynamic_slice(x, (i,), (1,))
+    )
+    qs = jax.vmap(_get_values, in_axes=(-1, None), out_axes=-1)(
+        pred_values, value_token_starts
+    ).squeeze()
+    return qs
 
 def compute_stats(
     *,
@@ -179,24 +188,46 @@ def step_fn(
         )
         # pre_logits = info["text_pre_logits"]
         values = info["values"]
+        qs = get_value(values, batch.tokens[..., 1:], tokenizer_config)
 
-        # value loss
-        # 1. TD loss
-        value_token_starts = jnp.argmax(batch.tokens[..., 1:] == tokenizer_config.end_of_action_token, axis=-1)
-        _get_values = jax.vmap(
-            lambda x, i: jax.lax.dynamic_slice(x, (i,), (1,)),
+
+        # mc regression
+        # critic_loss =  ((qs - batch.mc_returns) ** 2).mean()
+        # critic_metrics = {
+        #     "critic/critic_loss": critic_loss,
+        #     "critic/mc_mse": critic_loss,
+        #     "critic/q_pred": qs.mean(),
+        #     "critic/q_gt": batch.mc_returns.mean(),
+        # }
+
+
+        # sarsa loss
+
+        _, next_value_info = train_state.apply_fn(
+            {"params": params},
+            batch.sensors_next | {"text": batch.next_tokens[..., :-1]},
+            data_masks=batch.sensors_next_mask | {
+                "text": jnp.ones_like(batch.next_tokens[..., :-1], dtype=jnp.bool_)
+            },
+            text_ar_mask=batch.tokens_ar[..., :-1],
+            train=False,
+            rngs={"dropout": key},
         )
-        qs = jax.vmap(_get_values, in_axes=(-1, None), out_axes=-1)(
-            values, value_token_starts
-        ).squeeze()
+        next_values = next_value_info["values"]
+        next_qs = get_value(next_values, batch.next_tokens[..., 1:], tokenizer_config)
+        td_target = batch.rewards + batch.td_mask * next_qs * 0.98
+        td_target = jax.lax.stop_gradient(td_target)
 
-        critic_loss =  ((qs - batch.mc_returns) ** 2).mean()
-
+        critic_loss = ((qs - td_target) ** 2).mean()
         critic_metrics = {
             "critic/critic_loss": critic_loss,
+            "critic/td_loss": critic_loss,
             "critic/q_pred": qs.mean(),
             "critic/q_gt": batch.mc_returns.mean(),
+            "critic/td_target": td_target.mean(),
+            "critic/next_q_pred": next_qs.mean(),
         }
+        # #################
 
         # logits: (128, 59, 257152)
         # pre_logits: (128, 59, 2048)

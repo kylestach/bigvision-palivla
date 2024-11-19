@@ -234,9 +234,15 @@ def make_frame_transform(
                 data = data | tokenizer.prepare_tokens_for_training(
                     data, language_token_instructions
                 )
+                
+                # tokenize next action for sarsa
+                data = data | tokenizer.prepare_next_tokens_for_training(
+                    data, language_token_instructions
+                )
 
         data["proprio"] = tf.squeeze(data["observation"]["proprio"], axis=0)
         data["action"] = tf.squeeze(data["action"], axis=0)
+        data["next_action"] = tf.squeeze(data["next_action"], axis=0)
 
         return data
 
@@ -259,6 +265,7 @@ def transform_dataset(
 
     if require_language:
         dataset = dataset.filter(has_language)
+
     dataset = dataset.map(
         make_frame_transform(
             multimodal_rephrasings,
