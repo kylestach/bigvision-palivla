@@ -59,7 +59,6 @@ def main(_):
         "image_wrist": jax.ShapeDtypeStruct(shape=(1, 224, 224, 3), dtype=jnp.uint8),
         "proprio": jax.ShapeDtypeStruct(shape=(1, 6), dtype=jnp.float32),
     }
-
     if config.resume_from_checkpoint_dir is None:
         action_shape = (train_ds.element_spec["action"]).shape
         action_dim = action_shape[-1]
@@ -141,7 +140,8 @@ def main(_):
                 td_mask=batch["td_mask"],
                 mc_returns=batch["mc_return"],
                 next_actions= batch["next_action"],
-                next_tokens=batch["next_tokens"],
+                next_tokens=batch.get("next_tokens", None),
+                gen_start=batch.get("gen_start", None),
 
             )
         )
@@ -224,24 +224,24 @@ def main(_):
                     wandb.log(avg_info, step=i)
                 wandb_logs = []
 
-            # if (i + 1) % config.eval_interval == 0:
-            #     eval_info = {}
-            #     # eval_batch = next(gen_eval_it)
-            #     # eval_info = model.eval_step(
-            #     #     eval_batch, "eval/gen_", include_regular_stats=False
-            #     # )
+            if (i + 1) % config.eval_interval == 0:
+                eval_info = {}
+                # eval_batch = next(gen_eval_it)
+                # eval_info = model.eval_step(
+                #     eval_batch, "eval/gen_", include_regular_stats=False
+                # )
 
-            #     train_batch_for_eval = next(gen_train_it)
-            #     train_info = model.eval_step(
-            #         train_batch_for_eval, "train/gen_", include_regular_stats=False
-            #     )
+                train_batch_for_eval = next(gen_train_it)
+                train_info = model.eval_step(
+                    train_batch_for_eval, "train/gen_", include_regular_stats=False
+                )
 
-            #     if jax.process_index() == 0:
-            #         wandb.log(
-            #             eval_info | train_info,
-            #             commit=False,
-            #             step=i,
-            #         )
+                if jax.process_index() == 0:
+                    wandb.log(
+                        eval_info | train_info,
+                        commit=False,
+                        step=i,
+                    )
 
             if (i + 1) % config.save_interval == 0:
                 if config.save_path is not None:

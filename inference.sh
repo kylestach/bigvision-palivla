@@ -1,0 +1,6 @@
+export TPU_VISIBLE_DEVICES=0 
+export TPU_CHIPS_PER_HOST_BOUNDS=1,1,1 
+export TPU_HOST_BOUNDS=1,1,1 
+export TPU_MESH_CONTROLLER_ADDRESS=localhost:8476 
+export TPU_MESH_CONTROLLER_PORT=8476
+python inference_test.py

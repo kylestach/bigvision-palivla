@@ -22,16 +22,14 @@ from ml_collections import config_flags
 
 def main(_):
     # jax.distributed.initialize()
-    import pdb; pdb.set_trace()
 
     config = flags.FLAGS.config
 
     with open(config.tokenizer_path, "rb") as f:
         language_tokenizer = SentencepieceTokenizer(f.read())
-    tokenizer = Tokenizer.from_tokenizer(language_tokenizer)
 
     print("Loading model params...")
-    model, params, decode = load_model_params_decode(config, tokenizer)
+    model, params, decode = load_model_params_decode(config, language_tokenizer)
 
     # Sharding
     mesh = MeshShardingHelper(
@@ -152,5 +150,11 @@ if __name__ == "__main__":
     )
     flags.DEFINE_string(
         "dataset_name", "bridge_dataset", "Name of the dataset to use for inference."
+    )
+    flags.DEFINE_string(
+        "resume_from_checkpoint_dir", "gs://rail-tpus-mitsuhiko-central2/logs/test/vivid-pine-1/", "Path to the checkpoint directory."
+    )
+    flags.DEFINE_integer(
+        "resume_from_checkpoint_step", 50000, "Step to resume from."
     )
     app.run(main)

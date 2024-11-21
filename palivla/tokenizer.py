@@ -52,7 +52,7 @@ class BinActionTokenizer(ActionTokenizer):
 
     def detokenize(self, tokens, obs=None, action_dim: int | None = None):
         values = tokens / self.vocab_size
-        values = jnp.where((values < 0) | (values > 1), jnp.nan, values)
+        # values = jnp.where((values < 0) | (values > 1), jnp.nan, values)
         data = (
             values * (self.max_action_value - self.min_action_value)
             + self.min_action_value
@@ -281,10 +281,14 @@ class Tokenizer:
             tokens, include_keys={"prefix", "pad"}
         )
 
+        # MN: check if this is correct
+        gen_start = tf.argmax(tokens == self.config.begin_of_action_token, axis=-1) + 1
+
         return {
             "tokens": tokens,
             "mask_ar": mask_ar,
             "mask_input": tokens != self.config.pad_token,
+            "gen_start": gen_start,
         }
 
     def extract_action(self, data):

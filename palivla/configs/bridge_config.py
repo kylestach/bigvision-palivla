@@ -10,13 +10,13 @@ def get_config():
 
     return ConfigDict(
         {
-            "wandb_project": "palivla-value",
+            "wandb_project": "palivla-value-test",
             "paligemma_weights_path": placeholder(str),
             "language_tokenizer_path": placeholder(str),
             "action_tokenizer_path": placeholder(str),
             "model_load_fn": "big_vision.models.proj.paligemma.paligemma.load",
             "tokenizer_path": "models/paligemma_tokenizer.model",
-            "model_path": "models/paligemma",
+            "model_path": "models/paligemma-3b-pt-224.f16.npz",
             "save_path": placeholder(str),
             "batch_size": 192,
             "eval_batch_size": 128,

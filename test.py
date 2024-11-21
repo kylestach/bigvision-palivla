@@ -2,12 +2,14 @@ import os
 import re
 
 DEFAULT_TRAIN_ARGS = {
-    "eval_interval": 100,
+    "eval_interval": 10,
     "save_interval": 50000,
     "data_axis_size": 1,
     "fsdp_axis_size": -1,
     "paligemma_weights_path": "models/paligemma-3b-pt-224.f16.npz",
     "language_tokenizer_path": "models/paligemma_tokenizer.model",
+    # "resume_from_checkpoint_dir": "gs://rail-tpus-mitsuhiko-central2/logs/test/vivid-pine-1/",
+    # "resume_from_checkpoint_step": 50000,
 }
 
 if not os.path.exists(DEFAULT_TRAIN_ARGS["paligemma_weights_path"]):
@@ -84,7 +86,6 @@ cd {config["src_dir"]}
 PYTHONPATH=. python {train_script} --config {config_file} \
     {train_args_str}
 
-read -p "Press any key to continue..."
 """
 
 if os.environ.get("VERBOSE", "0") == "1":

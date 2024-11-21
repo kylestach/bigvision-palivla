@@ -65,7 +65,7 @@ def compute_action_metrics(
     action_dim: int,
     tokenizer_config: Tokenizer.TokenizerConfig,
     log_segment_prefix=None,
-):
+):  
     decoded_actions = detokenize_fn(pred_action_tokens)
     decoded_actions_gt = detokenize_fn(gt_action_tokens)
 
@@ -177,6 +177,7 @@ def step_fn(
         all_masks = batch.sensors_mask | {
             "text": jnp.ones_like(batch.tokens[..., :-1], dtype=jnp.bool_)
         }
+        key, key_value = jax.random.split(key)
 
         logits, info = train_state.apply_fn(
             {"params": params},
@@ -211,7 +212,7 @@ def step_fn(
             },
             text_ar_mask=batch.tokens_ar[..., :-1],
             train=False,
-            rngs={"dropout": key},
+            rngs={"dropout": key_value},
         )
         next_values = next_value_info["values"]
         next_qs = get_value(next_values, batch.next_tokens[..., 1:], tokenizer_config)
