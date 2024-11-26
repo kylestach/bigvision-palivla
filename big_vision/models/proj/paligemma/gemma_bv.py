@@ -156,7 +156,7 @@ class Model(nn.Module):
     )
     return self.compute_logits(aux["pre_logits"][:, -1:])
 
-  def extend_cache(self, x):
+  def extend_cache(self, x, value=False):
     """Extends decoding cache with `x` [B, 1, E] and returns logits."""
     assert x.shape[1] == 1, "Only supports extend the cache by one token."
     if self.model.scan:
@@ -176,11 +176,15 @@ class Model(nn.Module):
     mask = jnp.logical_and(
         jnp.arange(cache_size)[None, None, :] >= cache_begin[:, None, None],
         jnp.arange(cache_size)[None, None, :] < cache_end[:, None, None])
-
-    logits, _ = self.model(
+    
+    logits, out = self.model(
         tokens=None, embedded_prefix=x,
         positions=positions[:, None], mask=mask, decode=True)
-    return logits
+
+    if value:
+        return out["values"].squeeze()
+    else:
+      return logits
 
   @property
   def embdim(self):

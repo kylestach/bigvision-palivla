@@ -513,3 +513,11 @@ cp /home/mitsuhiko/.cache/kagglehub/models/google/paligemma/jax/paligemma-3b-pt-
 ```
 
 - skipped proprio nomalization in octo loader
+
+
+```
+pip install typing-extensions==4.6.0
+pip install mediapy ipykernel opencv_python
+sudo apt-get install ffmpeg libsm6 libxext6  -y
+
+```

@@ -121,6 +121,7 @@ def _decode_with_logp(
         model=model,
         max_decode_len=max_decode_len,
     )
+
     logits, cache = jax.block_until_ready((logits, cache))
     # Mask indicating real examples. False if example is used to pad the batch.
     if "_mask" in data:
@@ -145,13 +146,14 @@ def _decode_with_logp(
     extend_cache = jax.jit(
         _extend_cache,
         donate_argnums=1,
-        static_argnames=("model",),
+        static_argnames=("model", "value"),
     )
 
     # Keep sampling tokens from last logits until EOS or max_decode_len.
     state = None
     # Setting `eos_look_behind>0` removes blocking transfer with small batches.
     stops = collections.deque(maxlen=1 + eos_look_behind)
+    
     for idx in range(max_decode_len):
         tokens, state = decode_sample_output(
             state, logits, max_decode_len=max_decode_len, sampler=sampler
@@ -168,6 +170,8 @@ def _decode_with_logp(
         logits, cache = extend_cache(params, cache, tokens, model=model)
         logits, cache = jax.block_until_ready((logits, cache))
 
+    values, _ = extend_cache(params, cache, tokens, model=model, value=True)
+
     # Select the best of n sample for each example.
     _, tokens, logp = jax.jit(
         _bon_select,
@@ -175,12 +179,14 @@ def _decode_with_logp(
         static_argnames=("n", "eos_token"),
     )(state, n=best_of_n, eos_token=eos_token)
 
-    return tokens, logp
+
+    # return tokens[..., :-1], logp[..., :-1], values
+    return tokens, logp, values
 
 
 def _decode(params, batch, masks, text_ar_mask, **kwargs):
-    tokens, _ = _decode_with_logp(params, batch, masks, text_ar_mask, **kwargs)
-    return tokens
+    tokens, _, values = _decode_with_logp(params, batch, masks, text_ar_mask, **kwargs)
+    return tokens, values
 
 
 def _bon_repeat(tree, *, n):
@@ -288,14 +294,15 @@ def _prefill_cache(
 
 
 def _extend_cache(
-    params: Params, cache: Variables, tokens: jnp.ndarray, *, model: PaliVLAModel
+    params: Params, cache: Variables, tokens: jnp.ndarray, *, model: PaliVLAModel, value=False
 ):
     """Extend the model cache for decoding with one token per sequence."""
     variables = {"params": params, "cache": cache}
     x, _ = model.apply(variables, tokens, method=model.embed_text)
     last_logits, variables = model.apply(
-        variables, x, method=model.extend_cache, mutable=("cache",)
+        variables, x, method=model.extend_cache, mutable=("cache",), value=value
     )
+    
     return last_logits, variables["cache"]
 
 

@@ -92,7 +92,7 @@ def compute_gen_stats(
         prompt_mask=split_tokens["prompt_mask"],
         prompt_ar=split_tokens["prompt_ar"],
     )
-    out_tokens = decode_fn(
+    out_tokens, _ = decode_fn(
         rollout_batch,
         target_key_order=target_key_order,
     )

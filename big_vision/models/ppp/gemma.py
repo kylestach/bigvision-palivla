@@ -496,6 +496,8 @@ class Model(nn.Module):
 
     x = RMSNorm(name="final_norm")(x)
     out["pre_logits"] = x
+    out["values"] = embedder.value(x)
+    out["target_values"] = embedder.target_value(x)
 
     x = embedder.decode(x)
     out["logits"] = x

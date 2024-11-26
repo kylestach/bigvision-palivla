@@ -204,6 +204,7 @@ class Tokenizer:
             axis=0,
         )[: self.config.max_pad_length]
 
+
         return tokens, mask_ar, mask_loss
 
     def tokenize_language_instruction(self, data):

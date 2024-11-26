@@ -10,7 +10,7 @@ def get_config():
 
     return ConfigDict(
         {
-            "wandb_project": "palivla-value-test",
+            "wandb_project": "palivla-value",
             "paligemma_weights_path": placeholder(str),
             "language_tokenizer_path": placeholder(str),
             "action_tokenizer_path": placeholder(str),

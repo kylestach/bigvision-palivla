@@ -21,9 +21,18 @@ from ml_collections import config_flags
 from palivla.train_state import PaliVLATrainState
 from palivla.types import TrainingBatch, RolloutBatch
 
+def unnormalize_action_minmax(action, unnormalization_statistics):
+    mask = unnormalization_statistics.get(
+        "mask", jnp.ones_like(unnormalization_statistics["mean"], dtype=bool)
+    )
+    action = action[..., : len(mask)]
+    action = jnp.where(
+        mask,
+        (action + 1) / 2 * (unnormalization_statistics["p99"] - unnormalization_statistics["p01"]) + unnormalization_statistics["p01"],
+        action,
+    )
 
-
-
+    return action
 
 def unnormalize_action(action, unnormalization_statistics):
     mask = unnormalization_statistics.get(
@@ -63,9 +72,11 @@ def main(_):
             model_sharding=model_sharding,
             data_sharding=data_sharding,
         )
+
     tokenizer = model.tokenizer
     decode = model.decode
     dataset_statistics = model.dataset_statistics
+
 
 
     optimizer = optax.identity()
@@ -91,7 +102,6 @@ def main(_):
                 prompt_mask=batch["mask_input"][None].numpy(),
                 prompt_ar=np.zeros_like(batch["mask_ar"][None]),
             )
-        
 
     # Do inference
     def do_inference(images, instructions):
@@ -105,25 +115,25 @@ def main(_):
         batch = batch | data
         rollout_batch = make_inference_batch(batch)
 
-        out_tokens = decode(
+        out_tokens, value = decode(
             rollout_batch, None
         )
         out_tokens = jax.device_get(multihost_utils.process_allgather(out_tokens))
-        import pdb; pdb.set_trace()
+        print(out_tokens)
         decoded_actions = tokenizer.detokenize_action(out_tokens)
 
         # Re-normalize actions using dataset statistics
         # decoded_actions = decoded_actions * action_std + action_mean
-        decoded_actions = unnormalize_action(decoded_actions, dataset_statistics[flags.FLAGS.dataset_name]["action"])
+        decoded_actions = unnormalize_action_minmax(decoded_actions, dataset_statistics[flags.FLAGS.dataset_name]["action"])
 
         return decoded_actions
 
-    images = tf.zeros((1, 224, 224, 3), dtype=tf.uint8)
-    images = tf.cast(images, tf.float32)  / 127.5 - 1.0
-    instructions = tf.constant("place the mushroom in the pot")
-
-    decoded_actions = do_inference(images, instructions)
-    print(decoded_actions)
+    for _ in range(10):
+        images = tf.random.normal((1, 224, 224, 3))
+        # images = tf.cast(images, tf.float32)  / 127.5 - 1.0
+        instructions = tf.constant("place the mushroom in the pot")
+        decoded_actions = do_inference(images, instructions)
+        print(decoded_actions)
 
 
 if __name__ == "__main__":
@@ -134,9 +144,10 @@ if __name__ == "__main__":
         "dataset_name", "bridge_dataset", "Name of the dataset to use for inference."
     )
     flags.DEFINE_string(
-        "resume_from_checkpoint_dir", "gs://rail-tpus-mitsuhiko-central2/logs/test/vivid-pine-1/", "Path to the checkpoint directory."
+        "resume_from_checkpoint_dir", "gs://rail-tpus-mitsuhiko-central2/logs/test/clean-field-7/", "Path to the checkpoint directory."
+        # "resume_from_checkpoint_dir", "/nfs/nfs2/users/mitsuhiko/codes/bigvision-palivla/checkpoints", "Path to the checkpoint directory."
     )
     flags.DEFINE_integer(
-        "resume_from_checkpoint_step", 50000, "Step to resume from."
+        "resume_from_checkpoint_step", 100000, "Step to resume from."
     )
     app.run(main)

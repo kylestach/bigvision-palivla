@@ -187,52 +187,55 @@ def step_fn(
             train=train,
             rngs={"dropout": key},
         )
-        # pre_logits = info["text_pre_logits"]
+
+
         values = info["values"]
         qs = get_value(values, batch.tokens[..., 1:], tokenizer_config)
 
 
         # mc regression
-        # critic_loss =  ((qs - batch.mc_returns) ** 2).mean()
-        # critic_metrics = {
-        #     "critic/critic_loss": critic_loss,
-        #     "critic/mc_mse": critic_loss,
-        #     "critic/q_pred": qs.mean(),
-        #     "critic/q_gt": batch.mc_returns.mean(),
-        # }
+        critic_loss =  ((qs - batch.mc_returns) ** 2).mean()
+        critic_metrics = {
+            "critic/critic_loss": critic_loss,
+            "critic/mc_mse": critic_loss,
+            "critic/q_pred": qs.mean(),
+            "critic/q_gt": batch.mc_returns.mean(),
+        }
 
 
         # sarsa loss
 
-        _, next_value_info = train_state.apply_fn(
-            {"params": params},
-            batch.sensors_next | {"text": batch.next_tokens[..., :-1]},
-            data_masks=batch.sensors_next_mask | {
-                "text": jnp.ones_like(batch.next_tokens[..., :-1], dtype=jnp.bool_)
-            },
-            text_ar_mask=batch.tokens_ar[..., :-1],
-            train=False,
-            rngs={"dropout": key_value},
-        )
-        next_values = next_value_info["values"]
-        next_qs = get_value(next_values, batch.next_tokens[..., 1:], tokenizer_config)
-        td_target = batch.rewards + batch.td_mask * next_qs * 0.98
-        td_target = jax.lax.stop_gradient(td_target)
+        # _, next_value_info = train_state.apply_fn(
+        #     {"params": params},
+        #     batch.sensors_next | {"text": batch.next_tokens[..., :-1]},
+        #     data_masks=batch.sensors_next_mask | {
+        #         "text": jnp.ones_like(batch.next_tokens[..., :-1], dtype=jnp.bool_)
+        #     },
+        #     text_ar_mask=batch.tokens_ar[..., :-1],
+        #     train=False,
+        #     rngs={"dropout": key_value},
+        # )
+        # next_values = next_value_info["values"]
+        # next_qs = get_value(next_values, batch.next_tokens[..., 1:], tokenizer_config)
+        # td_target = batch.rewards + batch.td_mask * next_qs * 0.98
+        # td_target = jax.lax.stop_gradient(td_target)
 
-        critic_loss = ((qs - td_target) ** 2).mean()
-        critic_metrics = {
-            "critic/critic_loss": critic_loss,
-            "critic/td_loss": critic_loss,
-            "critic/q_pred": qs.mean(),
-            "critic/q_gt": batch.mc_returns.mean(),
-            "critic/td_target": td_target.mean(),
-            "critic/next_q_pred": next_qs.mean(),
-        }
+        # critic_loss = ((qs - td_target) ** 2).mean()
+        # critic_metrics = {
+        #     "critic/critic_loss": critic_loss,
+        #     "critic/td_loss": critic_loss,
+        #     "critic/q_pred": qs.mean(),
+        #     "critic/q_gt": batch.mc_returns.mean(),
+        #     "critic/td_target": td_target.mean(),
+        #     "critic/next_q_pred": next_qs.mean(),
+        # }
+
         # #################
 
         # logits: (128, 59, 257152)
         # pre_logits: (128, 59, 2048)
         # values: (128, 59, 1)
+
         actor_loss, actor_metrics = compute_stats(
             detokenize_fn=partial(detokenize_fn, obs=batch.sensors),
             pred_logits=logits,
@@ -242,6 +245,7 @@ def step_fn(
             tokenizer_config=tokenizer_config,
             log_segment_prefix="train/tf_",
         )
+        # return actor_loss, actor_metrics
 
         actor_metrics.update(critic_metrics)
 

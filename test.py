@@ -3,13 +3,13 @@ import re
 
 DEFAULT_TRAIN_ARGS = {
     "eval_interval": 10,
-    "save_interval": 50000,
+    "save_interval": 10000,
     "data_axis_size": 1,
     "fsdp_axis_size": -1,
     "paligemma_weights_path": "models/paligemma-3b-pt-224.f16.npz",
     "language_tokenizer_path": "models/paligemma_tokenizer.model",
-    # "resume_from_checkpoint_dir": "gs://rail-tpus-mitsuhiko-central2/logs/test/vivid-pine-1/",
-    # "resume_from_checkpoint_step": 50000,
+    # "resume_from_checkpoint_dir": "gs://rail-tpus-mitsuhiko-central2/logs/test/zesty-bird-3/",
+    # "resume_from_checkpoint_step": 10000,
 }
 
 if not os.path.exists(DEFAULT_TRAIN_ARGS["paligemma_weights_path"]):

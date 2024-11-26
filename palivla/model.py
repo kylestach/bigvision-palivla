@@ -419,10 +419,10 @@ class PaliVLAModel(nn.Module):
         else:
             return self._fallback_prefill_cache(x, input_mask, mask_ar, cache_size)
 
-    def extend_cache(self, x):
+    def extend_cache(self, x, value):
         """Advances decoding cache with `x` [B, 1, E]."""
         if hasattr(self.llm, "prefill_cache"):
-            return self.llm.extend_cache(x)
+            return self.llm.extend_cache(x, value)
         else:
             return self._fallback_extend_cache(x)
 

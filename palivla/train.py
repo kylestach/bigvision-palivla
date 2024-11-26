@@ -230,7 +230,6 @@ def main(_):
                 # eval_info = model.eval_step(
                 #     eval_batch, "eval/gen_", include_regular_stats=False
                 # )
-
                 train_batch_for_eval = next(gen_train_it)
                 train_info = model.eval_step(
                     train_batch_for_eval, "train/gen_", include_regular_stats=False
