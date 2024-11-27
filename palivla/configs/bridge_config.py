@@ -88,6 +88,15 @@ def get_config():
                     "b1": 0.9,
                     "b2": 0.99,
                 },
+                "value_optimizer_kwargs": {
+                    "init_learning_rate": 0,
+                    "learning_rate": 5e-5,
+                    "warmup_steps": 100,
+                    "weight_decay": 0.0,
+                    "grad_norm_clip": 10.0,
+                    "b1": 0.9,
+                    "b2": 0.99,
+                },
             }
         }
     )

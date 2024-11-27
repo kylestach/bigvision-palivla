@@ -76,12 +76,13 @@ def load_model_params_decode(config: ConfigDict, tokenizer: Tokenizer):
 
 def component_label_fn(nested_params_dict):
     label_rules = [
+        ("llm/value_head/**", "value"),
         # Assign the input/output embeddings and the image connector to "embed"
-        ("*/embedder", "embed"),
-        ("img/head", "embed"),
+        ("*/embedder/**", "embed"),
+        ("img/head/**", "embed"),
         # Assign the llm and the image encoder to "llm" and "img" respectively
-        ("llm/*", "llm"),
-        ("img/*", "img"),
+        ("llm/**", "llm"),
+        ("img/**", "img"),
         # Assign the rest to "embed"
         # This includes any other modality-specific encoders
         ("*", "embed"),
@@ -94,6 +95,8 @@ def component_label_fn(nested_params_dict):
                 return label
         return path_str
 
+    # for debugging
+    # jax.tree_util.tree_map_with_path(lambda path, _: print(key_string(path)), nested_params_dict)
     return jax.tree_util.tree_map_with_path(label_fn, nested_params_dict)
 
 
@@ -111,7 +114,7 @@ def adamw_cosine_warmup(*, learning_rate, warmup_steps, total_steps, global_norm
 
 def make_optimizer(**config):
     @optax.inject_hyperparams
-    def _make_optimizer(llm_learning_rate, img_learning_rate, embed_learning_rate):
+    def _make_optimizer(llm_learning_rate, img_learning_rate, embed_learning_rate, value_learning_rate):
         def _make_opt(lr, weight_decay, grad_norm_clip, b1, b2):
             if config['optimizer'] == "adamw":
                 return optax.chain(
@@ -147,12 +150,20 @@ def make_optimizer(**config):
             config['llm_optimizer_kwargs']['b1'],
             config['llm_optimizer_kwargs']['b2'],
         )
+        value_optimizer = _make_opt(
+            value_learning_rate,
+            config['value_optimizer_kwargs']['weight_decay'],
+            config['value_optimizer_kwargs']['grad_norm_clip'],
+            config['value_optimizer_kwargs']['b1'],
+            config['value_optimizer_kwargs']['b2'],
+        )
 
         return optax.multi_transform(
             {
                 "llm": llm_optimizer,
                 "img": img_optimizer,
                 "embed": embed_optimizer,
+                "value": value_optimizer,
             },
             component_label_fn,
         )
@@ -169,6 +180,7 @@ def make_optimizer(**config):
         _make_learning_rate(config['llm_optimizer_kwargs']),
         _make_learning_rate(config['img_optimizer_kwargs']),
         _make_learning_rate(config['embed_optimizer_kwargs']),
+        _make_learning_rate(config['value_optimizer_kwargs']),
     )
 
 
