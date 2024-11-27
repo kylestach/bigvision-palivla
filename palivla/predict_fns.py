@@ -158,19 +158,22 @@ def _decode_with_logp(
         tokens, state = decode_sample_output(
             state, logits, max_decode_len=max_decode_len, sampler=sampler
         )
+        print(idx, tokens)
 
         if idx + 1 >= max_decode_len:
             break
 
-        stops.append(decode_early_stop(state, mask, eos_token=eos_token))
-        if len(stops) == stops.maxlen and jax.device_get(stops[0]):
-            break
+        # stops.append(decode_early_stop(state, mask, eos_token=eos_token))
+        # if len(stops) == stops.maxlen and jax.device_get(stops[0]):
+        #     break
 
         # Compute logits for next token
-        logits, cache = extend_cache(params, cache, tokens, model=model)
+        logits, cache = extend_cache(params, cache, tokens, model=model, value=True)
         logits, cache = jax.block_until_ready((logits, cache))
+        logits, values = logits
+        print(idx, values)
 
-    values, _ = extend_cache(params, cache, tokens, model=model, value=True)
+    # values, _ = extend_cache(params, cache, tokens, model=model, value=True)
 
     # Select the best of n sample for each example.
     _, tokens, logp = jax.jit(

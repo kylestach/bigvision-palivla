@@ -193,7 +193,9 @@ class Embedder(nn.Module):
     return jnp.dot(x, self.input_embedding_table.T)
 
   def value(self, x):
-    return jnp.dot(x, self.value_embedding_table.T)
+    for layer in self.value_mlp:
+      x = layer(x)
+    return x
 
   def target_value(self, x):
     return jnp.dot(x, self.target_value_embedding_table.T)
@@ -411,7 +413,9 @@ class Model(nn.Module):
     if pre_logits is not None:
       x = out["pre_logits"] = pre_logits
       if value:
+        # stop grad
         logits = out["values"] = embedder.value(x)
+        # logits = out["values"] = embedder.value(jax.lax.stop_gradient(x))
       elif target_value:
         logits = out["target_values"] = embedder.target_value(x)
       else:

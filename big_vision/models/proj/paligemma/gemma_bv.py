@@ -182,7 +182,7 @@ class Model(nn.Module):
         positions=positions[:, None], mask=mask, decode=True)
 
     if value:
-        return out["values"].squeeze()
+        return logits, out["values"].squeeze()
     else:
       return logits
 

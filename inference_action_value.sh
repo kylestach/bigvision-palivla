@@ -3,7 +3,7 @@ export TPU_CHIPS_PER_HOST_BOUNDS=1,1,1
 export TPU_HOST_BOUNDS=1,1,1 
 export TPU_MESH_CONTROLLER_ADDRESS=localhost:8476 
 export TPU_MESH_CONTROLLER_PORT=8476
-python inference_test.py \
+python inference_action_value.py \
 --config.save_interval 50000 \
 --config.data_axis_size 1 \
 --config.fsdp_axis_size -1 \

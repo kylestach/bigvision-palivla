@@ -380,7 +380,6 @@ class PaliVLAModel(nn.Module):
                 jnp.arange(text_length_padded) < (text_end - text_start - 1)
             ) & mask
             return text_pre_logits, text_logit_masks
-
         text_pre_logits, text_logit_masks = extract_text_pre_logits(
             all_pre_logits, text_start, text_end, data_masks["text"]
         )

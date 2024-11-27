@@ -190,7 +190,7 @@ def step_fn(
 
 
         values = info["values"]
-        qs = get_value(values, batch.tokens[..., 1:], tokenizer_config)
+        qs = get_value(values, batch.tokens[..., :-1], tokenizer_config)
 
 
         # mc regression
@@ -216,7 +216,7 @@ def step_fn(
         #     rngs={"dropout": key_value},
         # )
         # next_values = next_value_info["values"]
-        # next_qs = get_value(next_values, batch.next_tokens[..., 1:], tokenizer_config)
+        # next_qs = get_value(next_values, batch.next_tokens[..., :-1], tokenizer_config)
         # td_target = batch.rewards + batch.td_mask * next_qs * 0.98
         # td_target = jax.lax.stop_gradient(td_target)
 
@@ -249,7 +249,7 @@ def step_fn(
 
         actor_metrics.update(critic_metrics)
 
-        return actor_loss + critic_loss, actor_metrics
+        return actor_loss + critic_loss * 0.1, actor_metrics
 
     grad_fn = jax.grad(loss_fn, has_aux=True)
 

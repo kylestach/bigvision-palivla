@@ -2,7 +2,7 @@ import os
 import re
 
 DEFAULT_TRAIN_ARGS = {
-    "eval_interval": 10,
+    "eval_interval": 1000,
     "save_interval": 10000,
     "data_axis_size": 1,
     "fsdp_axis_size": -1,
