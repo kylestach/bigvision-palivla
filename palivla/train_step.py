@@ -178,7 +178,7 @@ def _step_fn(
             all_inputs,
             data_masks=all_masks,
             fuse_masks=fuse_masks,
-            text_ar_mask=batch.tokens_ar[..., :-1],
+            text_ar_mask=batch.tokens_ar_generation[..., :-1] if use_fuse_masks else batch.tokens_ar[..., :-1],
             train=train,
             target_key_order=train_state.model.target_key_order,
             rngs={"dropout": key},
@@ -189,7 +189,7 @@ def _step_fn(
             pred_logits=logits,
             tokens=batch.tokens,
             actions=batch.actions,
-            mask_loss=batch.tokens_loss,
+            mask_loss= (batch.tokens_loss_generation_only & batch.modality_combo_loss_mask) if use_fuse_masks else batch.tokens_loss,
             tokenizer_config=tokenizer_config,
             log_segment_prefix="train/tf_",
         )

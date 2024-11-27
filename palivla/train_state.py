@@ -562,21 +562,28 @@ class PaliVLATrainState:
     def prepare_batch(self, batch: TrainingBatch):
         return batch.replace(sensors=self.prepare_sensors(batch.sensors))
 
+    def append_identity_to_metrics(self, metrics: dict, identity_suffix: str):
+        processed_metrics = {}
+        for key, val in metrics.items(): 
+            processed_metrics[f'{key}_{identity_suffix}'] = val
+        return processed_metrics
+
     def train_step(self, batch: TrainingBatch):
         with self.mesh.mesh, nn.logical_axis_rules([("act_batch", "fsdp")]):
-            self.model_state, info, self.rng = self.step_fn(
+            batch = self.prepare_batch(batch)
+            self.model_state, base_info, self.rng = self.step_fn(
                 self.model_state,
-                self.prepare_batch(batch),
+                batch,
                 self.rng,
             )
             
-            self.model_state, info, self.rng = self.fuse_step_fn(
+            self.model_state, fuse_info, self.rng = self.fuse_step_fn(
                 self.model_state,
-                self.prepare_batch(batch),
+                batch,
                 self.rng,
             )
-            
-
+            fuse_info = self.append_identity_to_metrics(fuse_info, "fuse")
+            info = base_info | fuse_info
         return info
 
     def decode(

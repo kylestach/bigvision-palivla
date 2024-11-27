@@ -26,6 +26,9 @@ class TrainingBatch:
     tokens_mask: jax.Array
     gen_start: jax.Array | None = None
     modality_combo_mask: Dict[str, jax.Array] | None = None
+    modality_combo_loss_mask: jax.Array | None = None
+    tokens_loss_generation_only: jax.Array | None = None
+    tokens_ar_generation: jax.Array | None = None
 
 
 @dataclass

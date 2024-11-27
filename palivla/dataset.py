@@ -38,6 +38,16 @@ def get_combo_mask(data, obs_mask):
     )
     return obs_mask
 
+def get_combo_loss_mask(data):
+    idx = data['modality_idx']
+
+    loss_mask = tf.ones(shape=(), dtype=tf.bool)
+    # mic_mask = 1 if trajectory has valid audio data (and doesn't have valid tactile annotations)
+    # and = 0 if trajectory doesn't (but does have valid tactile annotations)
+    mic_mask = tf.cast(data['observation']['mic_mask'], tf.bool)
+    loss_mask &= ((tf.math.logical_not(mic_mask) & ((idx == 0) | (idx == 2) | (idx == 3) | (idx == 5) | (idx == 8))) | (mic_mask & ((idx == 2) | (idx == 4) | (idx == 6) | (idx == 8 ))))
+    return loss_mask
+
 
 def process_rephrase_tf(
     data, rephrase_prob: float, num_gpt_gen: int, num_modalities: int
@@ -266,6 +276,7 @@ def make_frame_transform(
             for k, v in data['observation']['pad_mask_dict'].items():
                 fuse_mask[k] = tf.identity(tf.convert_to_tensor(v))
             data['modality_combo_mask'] = get_combo_mask(data, fuse_mask)
+            data['modality_combo_loss_mask'] = get_combo_loss_mask(data)
             
         if chunk_relative_actions:
             # Gripper is absolute, rest is relative

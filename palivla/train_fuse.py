@@ -131,6 +131,9 @@ def main(_):
                 tokens_loss=batch.get("mask_loss", None),
                 tokens_mask=batch["mask_input"],
                 modality_combo_mask=modality_combo_mask,
+                modality_combo_loss_mask=batch.get("modality_combo_loss_mask", None),
+                tokens_loss_generation_only=batch.get("mask_loss_generation_only", None),
+                tokens_ar_generation=batch.get("mask_ar_generation", None),
             )
         )
 
@@ -158,17 +161,17 @@ def main(_):
     #     .batch(per_host_eval_batch_size)
     #     .iterator(),
     # )
-    # gen_train_it = map(
-    #     make_training_batch,
-    #     transform_dataset(
-    #         train_ds,
-    #         model.tokenizer,
-    #         generation=True,
-    #         **config.extra_dataset_transform_kwargs,
-    #     )
-    #     .batch(per_host_train_batch_size)
-    #     .iterator(),
-    # )
+    gen_train_it = map(
+        make_training_batch,
+        transform_dataset(
+            train_ds,
+            model.tokenizer,
+            generation=True,
+            **config.extra_dataset_transform_kwargs,
+        )
+        .batch(per_host_train_batch_size)
+        .iterator(),
+    )
 
     # W&B setup
     if jax.process_index() == 0:

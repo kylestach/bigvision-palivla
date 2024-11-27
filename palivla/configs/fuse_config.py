@@ -17,7 +17,7 @@ def get_config():
     llm_embdim = get_config(variant).width
     model_config = get_default_config()
 
-    model_config['prompt_autoregressive'] = True
+    model_config['prompt_autoregressive'] = False
 
     model_config["modality_mappings"] = {
         "image_primary": "img",
@@ -62,6 +62,7 @@ def get_config():
             "use_film": False,
             "num_classes": llm_embdim,
             "flatten_result": True,
+            "normalize_input": False,
         }
     }
     
@@ -74,7 +75,6 @@ def get_config():
         'digit_right_background': 'digit_1_background'
     }
     sensor_obs_keys = {
-        # 'uniform_tac': 'uniform_tac',
         'mel_spectro': 'mel_spectro',
         'mic_mask': 'has_mic',
     }
