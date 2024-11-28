@@ -233,10 +233,6 @@ class CrossEntropyValueHead(nn.Module):
     self.layers = [
         nn.Dense(256, kernel_init=nn.initializers.xavier_uniform()),
         nn.gelu,
-        # nn.Dense(256, kernel_init=nn.initializers.xavier_uniform()),
-        # nn.gelu,
-        # nn.Dense(256, kernel_init=nn.initializers.xavier_uniform()),
-        # nn.gelu,
         nn.Dense(self.num_bins, kernel_init=nn.initializers.xavier_uniform()),
     ]
 
@@ -252,6 +248,8 @@ class CrossEntropyValueHead(nn.Module):
 
     probs = jax.nn.softmax(x, axis=-1)
     values = self.probs_to_target(probs)
+    # add additional dimention for values
+    values = values[..., None]
     return values, x
 
 

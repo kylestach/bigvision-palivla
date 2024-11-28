@@ -190,27 +190,67 @@ def step_fn(
         )
 
         values = info["values"]
+        qs = get_value(values, batch.tokens[..., 1:], tokenizer_config)
 
         if "value_logits" in info:
             # TODO: add better handling for detecting hlgauss
             value_logits = info["value_logits"] # (batch_size, 59, 256)
             value_logits = get_value(value_logits, batch.tokens[..., 1:], tokenizer_config)
-            target_q = batch.mc_returns
+
             scalar_target_to_dist_fn = hl_gauss_transform(
                 min_value=-1.0 / (1 - 0.98),
                 max_value=0.0 / (1 - 0.98),
                 num_bins = 256,
             )[0]
+            
+
+            # HL Gauss + MC regression
+            # target_q = batch.mc_returns
+            # critic_loss = cross_entropy_loss_on_scalar(
+            #     value_logits,
+            #     target_q,
+            #     scalar_target_to_dist_fn,
+            # ).mean()
+            # critic_metrics = {
+            #     "critic/critic_loss": critic_loss,
+            #     "critic/q_gt": batch.mc_returns.mean(),
+            #     "critic/q_pred": qs.mean(),
+            # }
+
+            # HL Gauss + SARSA
+            _, next_value_info = train_state.apply_fn(
+                {"params": params},
+                batch.sensors_next | {"text": batch.next_tokens[..., :-1]},
+                data_masks=batch.sensors_next_mask | {
+                    "text": jnp.ones_like(batch.next_tokens[..., :-1], dtype=jnp.bool_)
+                },
+                text_ar_mask=batch.tokens_ar[..., :-1],
+                train=False,
+                rngs={"dropout": key_value},
+            )
+
+            next_qs = next_value_info["values"]
+            next_qs = get_value(next_qs, batch.next_tokens[..., 1:], tokenizer_config)
+
+            td_target = batch.rewards + batch.td_mask * next_qs * 0.98
+            td_target = jax.lax.stop_gradient(td_target)
+
             critic_loss = cross_entropy_loss_on_scalar(
                 value_logits,
-                target_q,
+                td_target,
                 scalar_target_to_dist_fn,
             ).mean()
             critic_metrics = {
                 "critic/critic_loss": critic_loss,
                 "critic/q_gt": batch.mc_returns.mean(),
+                "critic/q_pred": qs.mean(),
+                "critic/td_target": td_target.mean(),
+                "critic/next_q_pred": next_qs.mean(),
             }
-            # import pdb; pdb.set_trace()
+
+
+
+
     
         # qs = get_value(values, batch.tokens[..., 1:], tokenizer_config)
         # # mc regression
@@ -229,14 +269,14 @@ def step_fn(
         #     {"params": params},
         #     batch.sensors_next | {"text": batch.next_tokens[..., :-1]},
         #     data_masks=batch.sensors_next_mask | {
-        #         "text": jnp.ones_like(batch.next_tokens[..., 1:], dtype=jnp.bool_)
+        #         "text": jnp.ones_like(batch.next_tokens[..., :-1], dtype=jnp.bool_)
         #     },
         #     text_ar_mask=batch.tokens_ar[..., :-1],
         #     train=False,
         #     rngs={"dropout": key_value},
         # )
         # next_values = next_value_info["values"]
-        # next_qs = get_value(next_values, batch.next_tokens[..., :-1], tokenizer_config)
+        # next_qs = get_value(next_values, batch.next_tokens[..., 1:], tokenizer_config)
         # td_target = batch.rewards + batch.td_mask * next_qs * 0.98
         # td_target = jax.lax.stop_gradient(td_target)
 
