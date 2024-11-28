@@ -193,13 +193,32 @@ class Embedder(nn.Module):
     return jnp.dot(x, self.input_embedding_table.T)
 
   def value(self, x):
-    for layer in self.value_mlp:
-      x = layer(x)
-    return x
+    x = jax.lax.stop_gradient(x)
+    return jnp.dot(x, self.value_embedding_table.T)
 
   def target_value(self, x):
     return jnp.dot(x, self.target_value_embedding_table.T)
-  
+
+
+class ValueHead(nn.Module):
+  embed_dim: int
+
+  def setup(self):
+    self.layers = [
+        nn.Dense(256, kernel_init=nn.initializers.xavier_uniform()),
+        nn.gelu,
+        # nn.Dense(256, kernel_init=nn.initializers.xavier_uniform()),
+        # nn.gelu,
+        # nn.Dense(256, kernel_init=nn.initializers.xavier_uniform()),
+        # nn.gelu,
+        nn.Dense(1, kernel_init=nn.initializers.xavier_uniform()),
+    ]
+
+  def __call__(self, x):
+    # x = jax.lax.stop_gradient(x)
+    for layer in self.layers:
+      x = layer(x)
+    return x
 
 
 class Attention(nn.Module):
@@ -409,13 +428,14 @@ class Model(nn.Module):
         embed_dim=self.width,
         name="embedder")
 
-
+    value_head = ValueHead(embed_dim=self.width, name="value_head")
+    
     if pre_logits is not None:
       x = out["pre_logits"] = pre_logits
       if value:
         # stop grad
-        logits = out["values"] = embedder.value(x)
-        # logits = out["values"] = embedder.value(jax.lax.stop_gradient(x))
+        logits = out["values"] = value_head(pre_logits)
+        # logits = out["values"] = embedder.value(x)
       elif target_value:
         logits = out["target_values"] = embedder.target_value(x)
       else:
@@ -500,8 +520,10 @@ class Model(nn.Module):
 
     x = RMSNorm(name="final_norm")(x)
     out["pre_logits"] = x
-    out["values"] = embedder.value(x)
-    out["target_values"] = embedder.target_value(x)
+
+    out["values"] = value_head(x)
+    # out["values"] = embedder.value(x)
+    # out["target_values"] = embedder.target_value(x)
 
     x = embedder.decode(x)
     out["logits"] = x

@@ -190,7 +190,7 @@ def step_fn(
 
 
         values = info["values"]
-        qs = get_value(values, batch.tokens[..., :-1], tokenizer_config)
+        qs = get_value(values, batch.tokens[..., 1:], tokenizer_config)
 
 
         # mc regression
@@ -209,7 +209,7 @@ def step_fn(
         #     {"params": params},
         #     batch.sensors_next | {"text": batch.next_tokens[..., :-1]},
         #     data_masks=batch.sensors_next_mask | {
-        #         "text": jnp.ones_like(batch.next_tokens[..., :-1], dtype=jnp.bool_)
+        #         "text": jnp.ones_like(batch.next_tokens[..., 1:], dtype=jnp.bool_)
         #     },
         #     text_ar_mask=batch.tokens_ar[..., :-1],
         #     train=False,
@@ -249,7 +249,7 @@ def step_fn(
 
         actor_metrics.update(critic_metrics)
 
-        return actor_loss + critic_loss * 0.1, actor_metrics
+        return actor_loss + critic_loss, actor_metrics
 
     grad_fn = jax.grad(loss_fn, has_aux=True)
 

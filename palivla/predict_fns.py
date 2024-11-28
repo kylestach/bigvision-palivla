@@ -153,15 +153,16 @@ def _decode_with_logp(
     state = None
     # Setting `eos_look_behind>0` removes blocking transfer with small batches.
     stops = collections.deque(maxlen=1 + eos_look_behind)
-    
+    max_decode_len = 8
+    value_list = []
     for idx in range(max_decode_len):
         tokens, state = decode_sample_output(
             state, logits, max_decode_len=max_decode_len, sampler=sampler
         )
         print(idx, tokens)
 
-        if idx + 1 >= max_decode_len:
-            break
+        # if idx + 1 >= max_decode_len:
+        #     break
 
         # stops.append(decode_early_stop(state, mask, eos_token=eos_token))
         # if len(stops) == stops.maxlen and jax.device_get(stops[0]):
@@ -172,6 +173,7 @@ def _decode_with_logp(
         logits, cache = jax.block_until_ready((logits, cache))
         logits, values = logits
         print(idx, values)
+        value_list.append(values)
 
     # values, _ = extend_cache(params, cache, tokens, model=model, value=True)
 
@@ -183,8 +185,8 @@ def _decode_with_logp(
     )(state, n=best_of_n, eos_token=eos_token)
 
 
-    # return tokens[..., :-1], logp[..., :-1], values
-    return tokens, logp, values
+    return tokens[..., :-1], logp[..., :-1], value_list
+    # return tokens, logp, values
 
 
 def _decode(params, batch, masks, text_ar_mask, **kwargs):
