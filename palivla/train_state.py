@@ -614,3 +614,13 @@ class PaliVLATrainState:
             )
 
         return jax.device_get(results)
+
+
+    def soft_update_target(self, tau=0.005):
+        new_target_params = jax.tree_map(
+            lambda p, tp: p * tau + tp * (1 - tau), 
+            self.model_state.params["llm"]["value_head"],
+            self.model_state.params["llm"]["target_value_head"]
+        )
+        # replace target_value_head in params
+        self.model_state.params["llm"]["target_value_head"] = new_target_params

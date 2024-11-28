@@ -224,33 +224,35 @@ class ValueHead(nn.Module):
 
 
 class CrossEntropyValueHead(nn.Module):
-  embed_dim: int
-  q_low: float
-  q_high: float
-  num_bins: int
+    embed_dim: int
+    q_low: float
+    q_high: float
+    num_bins: int
+    stop_grad: bool = False
+    
+    def setup(self):
+        self.layers = [
+            nn.Dense(256, kernel_init=nn.initializers.xavier_uniform()),
+            nn.gelu,
+            nn.Dense(self.num_bins, kernel_init=nn.initializers.xavier_uniform()),
+        ]
 
-  def setup(self):
-    self.layers = [
-        nn.Dense(256, kernel_init=nn.initializers.xavier_uniform()),
-        nn.gelu,
-        nn.Dense(self.num_bins, kernel_init=nn.initializers.xavier_uniform()),
-    ]
+        # set up the histogram loss transform
+        self.target_to_probs, self.probs_to_target = hl_gauss_transform(
+            self.q_low, self.q_high, self.num_bins
+        )
 
-    # set up the histogram loss transform
-    self.target_to_probs, self.probs_to_target = hl_gauss_transform(
-        self.q_low, self.q_high, self.num_bins
-    )
 
-  def __call__(self, x):
-    # x = jax.lax.stop_gradient(x)
-    for layer in self.layers:
-      x = layer(x)
+    def __call__(self, x):
+        if self.stop_grad:
+            x = jax.lax.stop_gradient(x)
+        for layer in self.layers:
+            x = layer(x)
 
-    probs = jax.nn.softmax(x, axis=-1)
-    values = self.probs_to_target(probs)
-    # add additional dimention for values
-    values = values[..., None]
-    return values, x
+        probs = jax.nn.softmax(x, axis=-1)
+        values = self.probs_to_target(probs)
+        values = values[..., None]
+        return values, x
 
 
 
@@ -472,6 +474,14 @@ class Model(nn.Module):
           num_bins = 256,
           name="value_head"
       )
+      target_value_head = CrossEntropyValueHead(
+          embed_dim=self.width,
+          q_low = q_low,
+          q_high = q_high,
+          num_bins = 256,
+          stop_grad=True,
+          name="target_value_head"
+      )
     elif self.value_head_type == "linear":
       value_head = ValueHead(embed_dim=self.width, name="value_head")
     else:
@@ -492,7 +502,13 @@ class Model(nn.Module):
           logits = out["values"] = value_head(pre_logits)
         # logits = out["values"] = embedder.value(x)
       elif target_value:
-        logits = out["target_values"] = embedder.target_value(x)
+        if isinstance(value_head, CrossEntropyValueHead):
+          logits, value_logits = target_value_head(x)
+          out["target_values"] = logits
+          out["target_value_logits"] = value_logits
+          return (logits, value_logits), out
+        else:
+          logits = out["target_values"] = embedder.target_value(x)
       else:
         logits = out["logits"] = embedder.decode(x)
       return logits, out
@@ -579,6 +595,7 @@ class Model(nn.Module):
     if isinstance(value_head, CrossEntropyValueHead):
       # outputs: (q, q_logits)
       out["values"], out["value_logits"] = value_head(x)
+      out["target_values"], out["target_value_logits"] = target_value_head(x)
     else:
       out["values"] = value_head(x)
     # out["values"] = embedder.value(x)

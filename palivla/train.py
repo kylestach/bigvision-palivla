@@ -209,7 +209,7 @@ def main(_):
         for i in pbar:
             batch = next(train_it)
             info = model.train_step(batch)
-
+            model.soft_update_target()
             info = jax.device_get(info)
             wandb_logs.append(info)
             pbar.set_postfix(

@@ -229,7 +229,7 @@ def step_fn(
                 rngs={"dropout": key_value},
             )
 
-            next_qs = next_value_info["values"]
+            next_qs = next_value_info["target_values"]
             next_qs = get_value(next_qs, batch.next_tokens[..., 1:], tokenizer_config)
 
             td_target = batch.rewards + batch.td_mask * next_qs * 0.98
