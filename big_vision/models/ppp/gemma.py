@@ -43,6 +43,7 @@ import ml_collections
 import numpy as np
 import orbax.checkpoint
 import copy
+from big_vision.distributional import hl_gauss_transform
 
 
 def get_config(variant):
@@ -221,6 +222,40 @@ class ValueHead(nn.Module):
     return x
 
 
+
+class CrossEntropyValueHead(nn.Module):
+  embed_dim: int
+  q_low: float
+  q_high: float
+  num_bins: int
+
+  def setup(self):
+    self.layers = [
+        nn.Dense(256, kernel_init=nn.initializers.xavier_uniform()),
+        nn.gelu,
+        # nn.Dense(256, kernel_init=nn.initializers.xavier_uniform()),
+        # nn.gelu,
+        # nn.Dense(256, kernel_init=nn.initializers.xavier_uniform()),
+        # nn.gelu,
+        nn.Dense(self.num_bins, kernel_init=nn.initializers.xavier_uniform()),
+    ]
+
+    # set up the histogram loss transform
+    self.target_to_probs, self.probs_to_target = hl_gauss_transform(
+        self.q_low, self.q_high, self.num_bins
+    )
+
+  def __call__(self, x):
+    # x = jax.lax.stop_gradient(x)
+    for layer in self.layers:
+      x = layer(x)
+
+    probs = jax.nn.softmax(x, axis=-1)
+    values = self.probs_to_target(probs)
+    return values, x
+
+
+
 class Attention(nn.Module):
   """Attention module."""
 
@@ -392,6 +427,7 @@ class Model(nn.Module):
 
   scan: bool = False
   remat_policy: str = "none"
+  value_head_type: str = "hlgauss"
 
   @nn.compact
   def __call__(
@@ -428,13 +464,34 @@ class Model(nn.Module):
         embed_dim=self.width,
         name="embedder")
 
-    value_head = ValueHead(embed_dim=self.width, name="value_head")
+    if self.value_head_type == "hlgauss":
+      q_low = -1.0 / (1 - 0.98)
+      q_high = 0.0 / (1 - 0.98)
+      value_head = CrossEntropyValueHead(
+          embed_dim=self.width,
+          q_low = q_low,
+          q_high = q_high,
+          num_bins = 256,
+          name="value_head"
+      )
+    elif self.value_head_type == "linear":
+      value_head = ValueHead(embed_dim=self.width, name="value_head")
+    else:
+      raise ValueError(f"Unknown value_head_type: {self.value_head_type}")
+
     
     if pre_logits is not None:
       x = out["pre_logits"] = pre_logits
       if value:
         # stop grad
-        logits = out["values"] = value_head(pre_logits)
+        if isinstance(value_head, CrossEntropyValueHead):
+          # outputs: (q, q_logits)
+          logits, value_logits = value_head(x)
+          out["values"] = logits
+          out["value_logits"] = value_logits
+          return (logits, value_logits), out
+        else:
+          logits = out["values"] = value_head(pre_logits)
         # logits = out["values"] = embedder.value(x)
       elif target_value:
         logits = out["target_values"] = embedder.target_value(x)
@@ -521,7 +578,11 @@ class Model(nn.Module):
     x = RMSNorm(name="final_norm")(x)
     out["pre_logits"] = x
 
-    out["values"] = value_head(x)
+    if isinstance(value_head, CrossEntropyValueHead):
+      # outputs: (q, q_logits)
+      out["values"], out["value_logits"] = value_head(x)
+    else:
+      out["values"] = value_head(x)
     # out["values"] = embedder.value(x)
     # out["target_values"] = embedder.target_value(x)
 

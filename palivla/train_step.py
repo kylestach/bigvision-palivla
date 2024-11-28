@@ -8,6 +8,7 @@ from flax.training.train_state import TrainState
 from palivla.tokenizer import ActionTokenizer, Tokenizer
 from palivla.load_model import components_by_label
 from palivla.types import TrainingBatch
+from big_vision.distributional import cross_entropy_loss_on_scalar, hl_gauss_transform
 
 
 def smooth_nll_loss(logits, labels, sigma, base_action_token, action_vocab_size):
@@ -188,19 +189,38 @@ def step_fn(
             rngs={"dropout": key},
         )
 
-
         values = info["values"]
-        qs = get_value(values, batch.tokens[..., 1:], tokenizer_config)
 
-
-        # mc regression
-        critic_loss =  ((qs - batch.mc_returns) ** 2).mean()
-        critic_metrics = {
-            "critic/critic_loss": critic_loss,
-            "critic/mc_mse": critic_loss,
-            "critic/q_pred": qs.mean(),
-            "critic/q_gt": batch.mc_returns.mean(),
-        }
+        if "value_logits" in info:
+            # TODO: add better handling for detecting hlgauss
+            value_logits = info["value_logits"] # (batch_size, 59, 256)
+            value_logits = get_value(value_logits, batch.tokens[..., 1:], tokenizer_config)
+            target_q = batch.mc_returns
+            scalar_target_to_dist_fn = hl_gauss_transform(
+                min_value=-1.0 / (1 - 0.98),
+                max_value=0.0 / (1 - 0.98),
+                num_bins = 256,
+            )[0]
+            critic_loss = cross_entropy_loss_on_scalar(
+                value_logits,
+                target_q,
+                scalar_target_to_dist_fn,
+            ).mean()
+            critic_metrics = {
+                "critic/critic_loss": critic_loss,
+                "critic/q_gt": batch.mc_returns.mean(),
+            }
+            # import pdb; pdb.set_trace()
+    
+        # qs = get_value(values, batch.tokens[..., 1:], tokenizer_config)
+        # # mc regression
+        # critic_loss =  ((qs - batch.mc_returns) ** 2).mean()
+        # critic_metrics = {
+        #     "critic/critic_loss": critic_loss,
+        #     "critic/mc_mse": critic_loss,
+        #     "critic/q_pred": qs.mean(),
+        #     "critic/q_gt": batch.mc_returns.mean(),
+        # }
 
 
         # sarsa loss

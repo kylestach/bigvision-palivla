@@ -385,6 +385,10 @@ class PaliVLAModel(nn.Module):
         )
         text_logits = self.llm.compute_logits(text_pre_logits, train=train)
         values = self.llm.compute_values(text_pre_logits, train=train)
+        if isinstance(values, tuple):
+            assert self.llm.model.value_head_type == "hlgauss"
+            values, value_logits = values[0], values[1]
+            info["value_logits"] = value_logits
         # target_values = self.llm.compute_target_values(text_pre_logits, train=train)
 
         info["text_logits"] = text_logits
