@@ -146,8 +146,7 @@ def main(_):
             rngs={"dropout": key},
         )
         values = info["values"]
-        # qs = get_value(values, batch.tokens[..., 1:][None], tokenizer.config)
-        qs = get_value(values, batch.tokens[..., :-1][None], tokenizer.config)
+        qs = get_value(values, batch.tokens[..., 1:][None], tokenizer.config)
 
         return qs
 
