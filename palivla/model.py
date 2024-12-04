@@ -253,8 +253,9 @@ class PaliVLAModel(nn.Module):
 
         for modality, encoder_name in self.modality_mappings.items():
             # Embed the data
+            # jax.debug.print("Embedding modality {mod} with encoder {enc}", mod=modality, enc=encoder_name)
             encoder = self.encoders[encoder_name]
-
+            # jax.debug.print("Shape: {shape}", shape=data[modality].shape)
             result = encoder(data[modality])
 
             # Some encoders return a tuple of (embeddings, info), others just return the embeddings.
@@ -262,6 +263,7 @@ class PaliVLAModel(nn.Module):
                 embeds[modality], m_info = result
             else:
                 embeds[modality], m_info = result, {}
+            # jax.debug.print("Encoded shape: {shape}", shape=embeds[modality].shape)
 
             m_info["embed"] = embeds[modality]
 

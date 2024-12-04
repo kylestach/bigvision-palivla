@@ -9,6 +9,7 @@ from palivla.tokenizer import Tokenizer
 from octo.data.dataset import make_interleaved_dataset, make_single_dataset
 from octo.data.oxe import make_oxe_dataset_kwargs_and_weights, make_oxe_dataset_kwargs
 import dlimp
+import jax
 
 # modality_to_keys = {
 #     'visual': ['image_primary', 'image_wrist'],
@@ -313,6 +314,11 @@ def make_frame_transform(
 
         data["proprio"] = tf.squeeze(data["observation"]["proprio"], axis=0)
         data["action"] = tf.squeeze(data["action"], axis=0)
+
+        all_key_str = " ".join(data.keys())
+        key_str = " ".join(data["observation"].keys())
+        # jax.debug.print("All keys: {all_key_str}" , all_key_str = all_key_str)
+        # jax.debug.print("Keys: {key_str}" , key_str = key_str)
 
         return data
 

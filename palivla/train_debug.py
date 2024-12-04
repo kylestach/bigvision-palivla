@@ -15,13 +15,12 @@ from scalax.sharding import (
 import wandb
 import numpy as np
 
-from palivla.dataset import make_base_dataset_fuse, make_base_dataset, make_base_single_dataset, transform_dataset
+from palivla.dataset import make_base_dataset, make_base_single_dataset, transform_dataset
 from palivla.load_model import make_optimizer
 from palivla.spec import OptimizerSpec
 from palivla.train_state import PaliVLATrainState
 from palivla.train_step import TrainingBatch
 from palivla.utils import host_broadcast_str
-
 
 jax.config.update("jax_compilation_cache_dir", "/tmp/jax_cache")
 jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
@@ -31,6 +30,7 @@ tf.config.set_visible_devices([], "GPU")
 
 def main(_):
     jax.distributed.initialize()
+
     # Turn off debug logs
     tf.get_logger().setLevel("WARNING")
     absl_logging.set_verbosity(absl_logging.WARNING)
@@ -47,16 +47,16 @@ def main(_):
 
     # Make the basic dataset
     # We have to do this first, since we need to know how the dataset is set up before we can construct the model
-    train_ds = make_base_dataset_fuse(**config.dataset_kwargs, train=True)
-    # eval_ds = make_base_dataset_fuse(**config.dataset_kwargs, train=True)
+    train_ds = make_base_dataset(config, train=True)
+    eval_datasets = {
+        dataset_name: make_base_single_dataset(config, train=False)
+        for dataset_name in config.eval_datasets
+    }
 
     batch_shape = {
         "text": jax.ShapeDtypeStruct(shape=(1, 10), dtype=jnp.int32),
         "image_primary": jax.ShapeDtypeStruct(shape=(1, 224, 224, 3), dtype=jnp.uint8),
         "image_wrist": jax.ShapeDtypeStruct(shape=(1, 224, 224, 3), dtype=jnp.uint8),
-        "image_digit_left": jax.ShapeDtypeStruct(shape=(1, 224, 224, 3), dtype=jnp.float32),
-        "image_digit_right": jax.ShapeDtypeStruct(shape=(1, 224, 224, 3), dtype=jnp.float32),
-        "mel_spectro": jax.ShapeDtypeStruct(shape=(1, 224, 224, 3), dtype=jnp.float32),
         "proprio": jax.ShapeDtypeStruct(shape=(1, 6), dtype=jnp.float32),
     }
 
@@ -113,43 +113,17 @@ def main(_):
             for k in model.model_state.model.modality_mappings
             if k != "text"
         }
-        
-        modality_combo_mask = {
-            k: np.squeeze(batch["modality_combo_mask"][k], axis=-1)
-            for k in model.model_state.model.modality_mappings
-            if k != "text"
-        }
-        train_batch = TrainingBatch(
+
+        return mesh.local_data_to_global_array(
+            TrainingBatch(
                 sensors=sensors,
                 sensors_mask=sensors_mask,
                 actions=batch["action"],
-                actions_mask=batch["action_pad_mask"],
                 tokens=batch["tokens"],
                 tokens_ar=batch["mask_ar"],
                 tokens_loss=batch.get("mask_loss", None),
-                tokens_mask=batch["mask_input"],
-                modality_combo_mask=modality_combo_mask,
-                modality_combo_loss_mask=batch.get("modality_combo_loss_mask", None),
-                tokens_loss_generation_only=batch.get("mask_loss_generation_only", None),
-                tokens_ar_generation=batch.get("mask_ar_generation", None),
+                tokens_mask=batch["mask_input"]
             )
-        # jax.debug.print("TRAINING BATCH " + " ".join(train_batch.sensors.keys()))
-        return mesh.local_data_to_global_array(
-            # TrainingBatch(
-            #     sensors=sensors,
-            #     sensors_mask=sensors_mask,
-            #     actions=batch["action"],
-            #     actions_mask=batch["action_pad_mask"],
-            #     tokens=batch["tokens"],
-            #     tokens_ar=batch["mask_ar"],
-            #     tokens_loss=batch.get("mask_loss", None),
-            #     tokens_mask=batch["mask_input"],
-            #     modality_combo_mask=modality_combo_mask,
-            #     modality_combo_loss_mask=batch.get("modality_combo_loss_mask", None),
-            #     tokens_loss_generation_only=batch.get("mask_loss_generation_only", None),
-            #     tokens_ar_generation=batch.get("mask_ar_generation", None),
-            # )
-            train_batch
         )
 
     train_it = map(
@@ -163,14 +137,12 @@ def main(_):
         .batch(per_host_train_batch_size)
         .iterator(),
     )
-
-    batch = next(train_it)
-    # eval_it = map(
+    # gen_eval_it = map(
     #     make_training_batch,
     #     transform_dataset(
     #         eval_ds,
     #         model.tokenizer,
-    #         generation=False,
+    #         generation=True,
     #         **config.extra_dataset_transform_kwargs,
     #     )
     #     .batch(per_host_eval_batch_size)
@@ -238,17 +210,17 @@ def main(_):
                 #     eval_batch, "eval/gen_", include_regular_stats=False
                 # )
 
-                # train_batch_for_eval = next(gen_train_it)
-                # train_info = model.eval_step(
-                #     train_batch_for_eval, "train/gen_", include_regular_stats=False
-                # )
+                train_batch_for_eval = next(gen_train_it)
+                train_info = model.eval_step(
+                    train_batch_for_eval, "train/gen_", include_regular_stats=False
+                )
 
-                # if jax.process_index() == 0:
-                #     wandb.log(
-                #         eval_info | train_info,
-                #         commit=False,
-                #         step=i,
-                #     )
+                if jax.process_index() == 0:
+                    wandb.log(
+                        eval_info | train_info,
+                        commit=False,
+                        step=i,
+                    )
 
             if (i + 1) % config.save_interval == 0:
                 if config.save_path is not None:

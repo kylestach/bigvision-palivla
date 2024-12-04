@@ -577,13 +577,14 @@ class PaliVLATrainState:
                 self.rng,
             )
             
-            self.model_state, fuse_info, self.rng = self.fuse_step_fn(
-                self.model_state,
-                batch,
-                self.rng,
-            )
-            fuse_info = self.append_identity_to_metrics(fuse_info, "fuse")
-            info = base_info | fuse_info
+            # self.model_state, fuse_info, self.rng = self.fuse_step_fn(
+            #     self.model_state,
+            #     batch,
+            #     self.rng,
+            # )
+            # fuse_info = self.append_identity_to_metrics(fuse_info, "fuse")
+            # info = base_info | fuse_info
+            info = base_info
         return info
 
     def decode(
