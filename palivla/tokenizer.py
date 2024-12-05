@@ -273,7 +273,7 @@ class Tokenizer:
             "next_tokens": tokens,
         }
 
-    def prepare_tokens_for_generation(self, data, language_token_instructions):
+    def prepare_tokens_for_generation(self, data, language_token_instructions, prefix=''):
         tokens = {
             "prompt": language_token_instructions[: self.config.max_pad_length - 10],
         }
@@ -286,9 +286,28 @@ class Tokenizer:
         gen_start = tf.argmax(tokens == self.config.begin_of_action_token, axis=-1) + 1
 
         return {
-            "tokens": tokens,
-            "mask_ar": mask_ar,
-            "mask_input": tokens != self.config.pad_token,
+            f"{prefix}tokens": tokens,
+            f"{prefix}mask_ar": mask_ar,
+            f"{prefix}mask_input": tokens != self.config.pad_token,
+            f"{prefix}gen_start": gen_start,
+        }
+
+    def prepare_next_tokens_for_generation(self, data, language_token_instructions):
+        tokens = {
+            "prompt": language_token_instructions[: self.config.max_pad_length - 10],
+        }
+
+        tokens, mask_ar, mask_loss = self.compose_token_structure(
+            tokens, include_keys={"prefix", "pad"}
+        )
+
+        # MN: check if this is correct
+        gen_start = tf.argmax(tokens == self.config.begin_of_action_token, axis=-1) + 1
+
+        return {
+            "next_tokens": tokens,
+            "next_mask_ar": mask_ar,
+            "next_mask_input": tokens != self.config.pad_token,
             "gen_start": gen_start,
         }
 

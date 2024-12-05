@@ -519,6 +519,8 @@ class PaliVLATrainState:
             tokenizer_config=self.tokenizer.config,
             detokenize_fn=self.detokenize_action,
             train=True,
+            tokenize_fn=self.tokenize_action,
+            decode_fn=self.decode,
         )
         if self.mesh is None:
             _step_fn = partial(jax.jit, step_fn)
@@ -570,10 +572,10 @@ class PaliVLATrainState:
         return info
 
     def decode(
-        self, batch: RolloutBatch, target_key_order: Sequence[str] | None = None
+        self, batch: RolloutBatch, target_key_order: Sequence[str] | None = None, params: FrozenDict | None = None
     ):
         return _decode(
-            self.model_state.params,
+            params if params is not None else self.model_state.params,
             batch.sensor_data | {"text": batch.prompt},
             batch.sensor_masks | {"text": batch.prompt_mask},
             batch.prompt_ar,

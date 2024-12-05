@@ -29,9 +29,13 @@ class TrainingBatch:
     rewards: jax.Array
     td_mask: jax.Array
     mc_returns: jax.Array
-    next_actions: jax.Array
+    # next_actions: jax.Array
     next_tokens: jax.Array
+    # next_mask_ar: jax.Array
+    next_mask_input: jax.Array
     gen_start: jax.Array | None = None
+    gen_tokens: jax.Array | None = None
+    gen_mask_input: jax.Array | None = None
 
 
 

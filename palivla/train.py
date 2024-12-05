@@ -139,9 +139,16 @@ def main(_):
                 rewards=batch["reward"],
                 td_mask=batch["td_mask"],
                 mc_returns=batch["mc_return"],
-                next_actions= batch["next_action"],
+                # next_actions= batch["next_action"],
                 next_tokens=batch.get("next_tokens", None),
+                # next_mask_ar=batch.get("next_mask_ar", None),
+                next_mask_input=batch.get("next_mask_input", None),
                 gen_start=batch.get("gen_start", None),
+                gen_tokens=batch.get("gen_tokens", None),
+                gen_mask_input=batch.get("gen_mask_input", None),
+
+
+                
 
             )
         )

@@ -9,6 +9,7 @@ from palivla.tokenizer import ActionTokenizer, Tokenizer
 from palivla.load_model import components_by_label
 from palivla.types import TrainingBatch
 from big_vision.distributional import cross_entropy_loss_on_scalar, hl_gauss_transform
+from palivla.types import RolloutBatch
 
 
 def smooth_nll_loss(logits, labels, sigma, base_action_token, action_vocab_size):
@@ -55,6 +56,15 @@ def get_action_tokens(
         "gt_action_tokens": gt_action_tokens,
     }
 
+def replace_action_tokens(
+    tokens, target_action_tokens, begin_of_action_token: int
+):
+    _replace_action_tokens = jax.vmap(
+        lambda x, i, s: jax.lax.dynamic_update_slice(x, i, (s,))
+    )
+    action_token_starts = jnp.argmax(tokens == begin_of_action_token, axis=-1) + 1
+    return _replace_action_tokens(tokens, target_action_tokens, action_token_starts)
+    
 
 def compute_action_metrics(
     detokenize_fn,
@@ -172,6 +182,8 @@ def step_fn(
     target_params,
     tokenizer_config: Tokenizer.TokenizerConfig,
     detokenize_fn,
+    tokenize_fn,
+    decode_fn,
     train: bool,
 ):
     def loss_fn(params, batch, key: chex.PRNGKey):
@@ -179,7 +191,7 @@ def step_fn(
         all_masks = batch.sensors_mask | {
             "text": jnp.ones_like(batch.tokens[..., :-1], dtype=jnp.bool_)
         }
-        key, key_value = jax.random.split(key)
+        rng, key = jax.random.split(key)
 
         logits, info = train_state.apply_fn(
             {"params": params},
@@ -190,113 +202,6 @@ def step_fn(
             rngs={"dropout": key},
         )
 
-        values = info["values"]
-        qs = get_value(values, batch.tokens[..., 1:], tokenizer_config)
-
-        if "value_logits" in info:
-            # TODO: add better handling for detecting hlgauss
-            value_logits = info["value_logits"] # (batch_size, 59, 256)
-            value_logits = get_value(value_logits, batch.tokens[..., 1:], tokenizer_config)
-
-            scalar_target_to_dist_fn = hl_gauss_transform(
-                min_value=-1.0 / (1 - 0.98),
-                max_value=0.0 / (1 - 0.98),
-                num_bins = 256,
-            )[0]
-            
-
-            # HL Gauss + MC regression
-            # target_q = batch.mc_returns
-            # critic_loss = cross_entropy_loss_on_scalar(
-            #     value_logits,
-            #     target_q,
-            #     scalar_target_to_dist_fn,
-            # ).mean()
-            # critic_metrics = {
-            #     "critic/critic_loss": critic_loss,
-            #     "critic/q_gt": batch.mc_returns.mean(),
-            #     "critic/q_pred": qs.mean(),
-            # }
-
-            # HL Gauss + SARSA
-            _, next_value_info = train_state.apply_fn(
-                {"params": target_params},
-                batch.sensors_next | {"text": batch.next_tokens[..., :-1]},
-                data_masks=batch.sensors_next_mask | {
-                    "text": jnp.ones_like(batch.next_tokens[..., :-1], dtype=jnp.bool_)
-                },
-                text_ar_mask=batch.tokens_ar[..., :-1],
-                train=False,
-                rngs={"dropout": key_value},
-            )
-
-            next_qs = next_value_info["values"]
-            next_qs = get_value(next_qs, batch.next_tokens[..., 1:], tokenizer_config)
-
-            td_target = batch.rewards + batch.td_mask * next_qs * 0.98
-            td_target = jax.lax.stop_gradient(td_target) # just in case
-
-            critic_loss = cross_entropy_loss_on_scalar(
-                value_logits,
-                td_target,
-                scalar_target_to_dist_fn,
-            ).mean()
-            critic_metrics = {
-                "critic/critic_loss": critic_loss,
-                "critic/q_gt": batch.mc_returns.mean(),
-                "critic/q_pred": qs.mean(),
-                "critic/td_target": td_target.mean(),
-                "critic/next_q_pred": next_qs.mean(),
-            }
-
-
-
-
-    
-        # qs = get_value(values, batch.tokens[..., 1:], tokenizer_config)
-        # # mc regression
-        # critic_loss =  ((qs - batch.mc_returns) ** 2).mean()
-        # critic_metrics = {
-        #     "critic/critic_loss": critic_loss,
-        #     "critic/mc_mse": critic_loss,
-        #     "critic/q_pred": qs.mean(),
-        #     "critic/q_gt": batch.mc_returns.mean(),
-        # }
-
-
-        # sarsa loss
-
-        # _, next_value_info = train_state.apply_fn(
-        #     {"params": params},
-        #     batch.sensors_next | {"text": batch.next_tokens[..., :-1]},
-        #     data_masks=batch.sensors_next_mask | {
-        #         "text": jnp.ones_like(batch.next_tokens[..., :-1], dtype=jnp.bool_)
-        #     },
-        #     text_ar_mask=batch.tokens_ar[..., :-1],
-        #     train=False,
-        #     rngs={"dropout": key_value},
-        # )
-        # next_values = next_value_info["values"]
-        # next_qs = get_value(next_values, batch.next_tokens[..., 1:], tokenizer_config)
-        # td_target = batch.rewards + batch.td_mask * next_qs * 0.98
-        # td_target = jax.lax.stop_gradient(td_target)
-
-        # critic_loss = ((qs - td_target) ** 2).mean()
-        # critic_metrics = {
-        #     "critic/critic_loss": critic_loss,
-        #     "critic/td_loss": critic_loss,
-        #     "critic/q_pred": qs.mean(),
-        #     "critic/q_gt": batch.mc_returns.mean(),
-        #     "critic/td_target": td_target.mean(),
-        #     "critic/next_q_pred": next_qs.mean(),
-        # }
-
-        # #################
-
-        # logits: (128, 59, 257152)
-        # pre_logits: (128, 59, 2048)
-        # values: (128, 59, 1)
-
         actor_loss, actor_metrics = compute_stats(
             detokenize_fn=partial(detokenize_fn, obs=batch.sensors),
             pred_logits=logits,
@@ -306,7 +211,166 @@ def step_fn(
             tokenizer_config=tokenizer_config,
             log_segment_prefix="train/tf_",
         )
-        # return actor_loss, actor_metrics
+
+        qs = get_value(info["values"], batch.tokens[..., 1:], tokenizer_config)
+        value_logits = get_value(info["value_logits"], batch.tokens[..., 1:], tokenizer_config)
+        del info
+
+        scalar_target_to_dist_fn = hl_gauss_transform(
+            min_value=-1.0 / (1 - 0.98),
+            max_value=0.0 / (1 - 0.98),
+            num_bins = 256,
+        )[0]
+
+        """
+        CQL + HL Gauss
+        """
+        # TD target
+        rollout_batch = RolloutBatch(
+            sensor_data=batch.sensors_next,
+            sensor_masks=batch.sensors_next_mask,
+            prompt=batch.next_tokens,
+            prompt_mask=batch.next_mask_input,
+            prompt_ar=jnp.zeros_like(batch.next_mask_input),
+        )
+        
+        _, q_pi_next = decode_fn(
+            rollout_batch,
+            target_key_order=None,
+            params=target_params,
+        )  # out_tokens: (batch_size, 7), value: (batch_size,)
+
+        td_target = batch.rewards + batch.td_mask * q_pi_next * 0.98
+        td_target = jax.lax.stop_gradient(td_target) # just in case
+        td_loss = cross_entropy_loss_on_scalar(
+            value_logits,
+            td_target,
+            scalar_target_to_dist_fn,
+        ).mean()
+        
+        # # sample policy actions and compute  q_pi
+        rollout_batch = RolloutBatch(
+            sensor_data=batch.sensors,
+            sensor_masks=batch.sensors_mask,
+            prompt=batch.gen_tokens,
+            prompt_mask=batch.gen_mask_input,
+            prompt_ar=jnp.zeros_like(batch.tokens_ar),
+        )
+        policy_tokens, _ = decode_fn(
+            rollout_batch,
+            target_key_order=None,
+            params=target_params, # need to use taret_params otherwie somehow there where be OOM error
+        )
+        policy_tokens = jax.lax.stop_gradient(policy_tokens) # just in case
+        policy_tokens = replace_action_tokens(batch.tokens, policy_tokens, tokenizer_config.begin_of_action_token)
+        rng, key = jax.random.split(rng)
+        _, info = train_state.apply_fn(
+            {"params": params},
+            batch.sensors | {"text": policy_tokens[..., :-1]},
+            data_masks=batch.sensors_mask | {
+                "text": jnp.ones_like(policy_tokens[..., :-1], dtype=jnp.bool_)
+            },
+            text_ar_mask=batch.tokens_ar[..., :-1],
+            train=True,
+            rngs={"dropout": key},
+        )
+        q_pi = get_value(info["values"], policy_tokens[..., 1:], tokenizer_config)
+        del info
+
+        # # compute q_rand
+        rng, key = jax.random.split(rng)
+        random_actions = jax.random.uniform(
+                key,
+                shape=batch.actions.shape,
+                minval=-1.0,
+                maxval=1.0,
+        )
+        random_tokens = tokenize_fn(random_actions, obs=batch.sensors)
+        random_tokens = replace_action_tokens(batch.tokens, random_tokens, tokenizer_config.begin_of_action_token)
+        rng, key = jax.random.split(rng)
+        _, info = train_state.apply_fn(
+            {"params": params},
+            batch.sensors | {"text": random_tokens[..., :-1]},
+            data_masks=batch.sensors_next_mask | {
+                "text": jnp.ones_like(random_tokens[..., :-1], dtype=jnp.bool_)
+            },
+            text_ar_mask=batch.tokens_ar[..., :-1],
+            train=True,
+            rngs={"dropout": key},
+        )
+        q_rand = get_value(info["values"], random_tokens[..., 1:], tokenizer_config)
+        del info
+
+
+        cql_cat_q = jnp.stack([q_rand, q_pi, q_pi_next, qs], axis=-1)
+
+        # cql_cat_q = jnp.stack([q_pi, qs], axis=-1)
+        lse_q = jax.scipy.special.logsumexp(cql_cat_q, axis=1)
+        cql_loss = jnp.mean(lse_q - qs)
+
+        cql_alpha = 5.0
+        critic_loss = td_loss + cql_alpha * cql_loss
+
+        critic_metrics = {
+            "critic/critic_loss": critic_loss,
+            "critic/td_loss": td_loss,
+            "critic/cql_loss": cql_loss,
+            "critic/q_gt": batch.mc_returns.mean(),
+            "critic/q_pred": qs.mean(),
+            "critic/td_target": td_target.mean(),
+            "critic/q_pi_next": q_pi_next.mean(),
+            "critic/q_pi": q_pi.mean(),
+            "critic/q_rand": q_rand.mean(),
+            "critic/lse_q": lse_q.mean(),
+        }
+
+
+
+        
+        # HL Gauss + MC regression
+        # target_q = batch.mc_returns
+        # critic_loss = cross_entropy_loss_on_scalar(
+        #     value_logits,
+        #     target_q,
+        #     scalar_target_to_dist_fn,
+        # ).mean()
+        # critic_metrics = {
+        #     "critic/critic_loss": critic_loss,
+        #     "critic/q_gt": batch.mc_returns.mean(),
+        #     "critic/q_pred": qs.mean(),
+        # }
+
+        # HL Gauss + SARSA
+        # _, next_value_info = train_state.apply_fn(
+        #     {"params": target_params},
+        #     batch.sensors_next | {"text": batch.next_tokens[..., :-1]},
+        #     data_masks=batch.sensors_next_mask | {
+        #         "text": jnp.ones_like(batch.next_tokens[..., :-1], dtype=jnp.bool_)
+        #     },
+        #     text_ar_mask=batch.tokens_ar[..., :-1],
+        #     train=False,
+        #     rngs={"dropout": key_value},
+        # )
+
+        # next_qs = next_value_info["values"]
+        # next_qs = get_value(next_qs, batch.next_tokens[..., 1:], tokenizer_config)
+
+        # td_target = batch.rewards + batch.td_mask * next_qs * 0.98
+        # td_target = jax.lax.stop_gradient(td_target) # just in case
+
+        # critic_loss = cross_entropy_loss_on_scalar(
+        #     value_logits,
+        #     td_target,
+        #     scalar_target_to_dist_fn,
+        # ).mean()
+        # critic_metrics = {
+        #     "critic/critic_loss": critic_loss,
+        #     "critic/q_gt": batch.mc_returns.mean(),
+        #     "critic/q_pred": qs.mean(),
+        #     "critic/td_target": td_target.mean(),
+        #     "critic/next_q_pred": next_qs.mean(),
+        # }
+
 
         actor_metrics.update(critic_metrics)
 

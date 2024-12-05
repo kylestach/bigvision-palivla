@@ -235,8 +235,16 @@ def make_frame_transform(
                     data, language_token_instructions
                 )
                 
+                data = data | tokenizer.prepare_tokens_for_generation(
+                    data, language_token_instructions, prefix='gen_'
+                )
                 # tokenize next action for sarsa
-                data = data | tokenizer.prepare_next_tokens_for_training(
+                # data = data | tokenizer.prepare_next_tokens_for_training(
+                #     data, language_token_instructions
+                # )
+
+                # tokenize next states for CQL
+                data = data | tokenizer.prepare_next_tokens_for_generation(
                     data, language_token_instructions
                 )
 
