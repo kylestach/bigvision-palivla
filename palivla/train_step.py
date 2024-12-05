@@ -169,6 +169,7 @@ def step_fn(
     train_state: TrainState,
     batch: TrainingBatch,
     key: chex.PRNGKey,
+    target_params,
     tokenizer_config: Tokenizer.TokenizerConfig,
     detokenize_fn,
     train: bool,
@@ -205,48 +206,48 @@ def step_fn(
             
 
             # HL Gauss + MC regression
-            target_q = batch.mc_returns
-            critic_loss = cross_entropy_loss_on_scalar(
-                value_logits,
-                target_q,
-                scalar_target_to_dist_fn,
-            ).mean()
-            critic_metrics = {
-                "critic/critic_loss": critic_loss,
-                "critic/q_gt": batch.mc_returns.mean(),
-                "critic/q_pred": qs.mean(),
-            }
-
-            # HL Gauss + SARSA
-            # _, next_value_info = train_state.apply_fn(
-            #     {"params": params},
-            #     batch.sensors_next | {"text": batch.next_tokens[..., :-1]},
-            #     data_masks=batch.sensors_next_mask | {
-            #         "text": jnp.ones_like(batch.next_tokens[..., :-1], dtype=jnp.bool_)
-            #     },
-            #     text_ar_mask=batch.tokens_ar[..., :-1],
-            #     train=False,
-            #     rngs={"dropout": key_value},
-            # )
-
-            # next_qs = next_value_info["target_values"]
-            # next_qs = get_value(next_qs, batch.next_tokens[..., 1:], tokenizer_config)
-
-            # td_target = batch.rewards + batch.td_mask * next_qs * 0.98
-            # td_target = jax.lax.stop_gradient(td_target)
-
+            # target_q = batch.mc_returns
             # critic_loss = cross_entropy_loss_on_scalar(
             #     value_logits,
-            #     td_target,
+            #     target_q,
             #     scalar_target_to_dist_fn,
             # ).mean()
             # critic_metrics = {
             #     "critic/critic_loss": critic_loss,
             #     "critic/q_gt": batch.mc_returns.mean(),
             #     "critic/q_pred": qs.mean(),
-            #     "critic/td_target": td_target.mean(),
-            #     "critic/next_q_pred": next_qs.mean(),
             # }
+
+            # HL Gauss + SARSA
+            _, next_value_info = train_state.apply_fn(
+                {"params": target_params},
+                batch.sensors_next | {"text": batch.next_tokens[..., :-1]},
+                data_masks=batch.sensors_next_mask | {
+                    "text": jnp.ones_like(batch.next_tokens[..., :-1], dtype=jnp.bool_)
+                },
+                text_ar_mask=batch.tokens_ar[..., :-1],
+                train=False,
+                rngs={"dropout": key_value},
+            )
+
+            next_qs = next_value_info["values"]
+            next_qs = get_value(next_qs, batch.next_tokens[..., 1:], tokenizer_config)
+
+            td_target = batch.rewards + batch.td_mask * next_qs * 0.98
+            td_target = jax.lax.stop_gradient(td_target) # just in case
+
+            critic_loss = cross_entropy_loss_on_scalar(
+                value_logits,
+                td_target,
+                scalar_target_to_dist_fn,
+            ).mean()
+            critic_metrics = {
+                "critic/critic_loss": critic_loss,
+                "critic/q_gt": batch.mc_returns.mean(),
+                "critic/q_pred": qs.mean(),
+                "critic/td_target": td_target.mean(),
+                "critic/next_q_pred": next_qs.mean(),
+            }
 
 
 
@@ -320,8 +321,16 @@ def step_fn(
     )
     params = optax.apply_updates(train_state.params, updates)
 
+    new_target_params = optax.incremental_update(
+           params,
+           target_params,
+           step_size=0.005,
+        )
+
+    # new_target_params = train_state.soft_update_target(params, params, 0.005)
+
     train_state = train_state.replace(
-        params=params, opt_state=opt_state, step=train_state.step + 1
+        params=params, opt_state=opt_state, step=train_state.step + 1, 
     )
 
     info = info | train_state.opt_state.hyperparams
@@ -337,6 +346,7 @@ def step_fn(
         | _norm_info(grads, "norm/grad")
         | _norm_info(updates, "norm/update")
         | _norm_info(train_state.params, "norm/param")
+        | _norm_info(new_target_params, "norm/target_param")
     )
 
-    return train_state, info, key
+    return train_state, info, key, new_target_params

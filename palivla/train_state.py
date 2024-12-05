@@ -28,6 +28,7 @@ from sentencepiece.sentencepiece_model_pb2 import ModelProto as SentencepieceMod
 from palivla.train_step import TrainingBatch, step_fn
 from palivla.types import RolloutBatch
 from palivla.predict_fns import _decode
+import copy
 
 
 class ShardingMetadata:
@@ -48,8 +49,8 @@ class TrainState(FlaxTrainState):
     model_spec: ModuleSpec = field(pytree_node=False)
     model: nn.Module = field(pytree_node=False)
     optimizer_spec: Optional[OptimizerSpec] = field(pytree_node=False)
-
     sharding_metadata: ShardingMetadata | None = field(pytree_node=False)
+    # target_params: FrozenDict | None = field(pytree_node=False)
 
     @classmethod
     def get_checkpoint_handlers(cls, name: str):
@@ -88,6 +89,7 @@ class TrainState(FlaxTrainState):
                 step=0,
                 apply_fn=model.apply,
                 tx=optimizer,
+                # target_params=copy.deepcopy(params),
             )
 
         if sharding_metadata is not None:
@@ -108,6 +110,7 @@ class TrainState(FlaxTrainState):
         model_spec: ModuleSpec,
         optimizer_spec: OptimizerSpec,
         sharding_metadata: ShardingMetadata | None = None,
+        # target_params: FrozenDict | None = None,
     ):
         model = model_spec.instantiate()
         optimizer = optimizer_spec.instantiate()
@@ -126,6 +129,7 @@ class TrainState(FlaxTrainState):
                 step=0,
                 apply_fn=model.apply,
                 tx=optimizer,
+                # target_params=target_params,
             )
 
         if sharding_metadata is not None:
@@ -256,7 +260,17 @@ class TrainState(FlaxTrainState):
             model=model,
             apply_fn=model.apply,
             tx=optimizer,
+            # target_params=copy.deepcopy(params), # TODO: fix this
         )
+
+    # def soft_update_target(self, params, target_params, tau=0.005):
+    #     new_target_params = jax.tree_map(
+    #         lambda p, tp: p * tau + tp * (1 - tau), 
+    #         params,
+    #         target_params
+    #     )
+    #     return new_target_params
+        # return self.replace(target_params=new_target_params)
 
 
 class PaliVLATrainState:
@@ -287,6 +301,8 @@ class PaliVLATrainState:
             action_tokenizer_params=self.action_tokenizer_state.params,
             config=self.tokenizer_config,
         )
+
+        self.target_params = copy.deepcopy(self.model_state.params)
 
     @classmethod
     def from_components(
@@ -328,6 +344,7 @@ class PaliVLATrainState:
             model_spec=model_spec,
             optimizer_spec=optimizer_spec,
             sharding_metadata=model_sharding_metadata,
+            # target_params = copy.deepcopy(params),
         )
 
         if action_tokenizer_weights_path is None:
@@ -513,6 +530,7 @@ class PaliVLATrainState:
                     self.model_state.sharding_metadata.model_sharding_rule,
                     self.data_sharding,
                     None,
+                    self.model_state.sharding_metadata.model_sharding_rule,
                 ),
             )
 
@@ -522,11 +540,13 @@ class PaliVLATrainState:
                 self.model_state.sharding_metadata.model_sharding_rule,
                 self.data_sharding,
                 None,
+                self.model_state.sharding_metadata.model_sharding_rule,
             ),
             out_shardings=(
                 self.model_state.sharding_metadata.model_sharding_rule,
                 None,
                 None,
+                self.model_state.sharding_metadata.model_sharding_rule,
             ),
         )
 
@@ -538,15 +558,15 @@ class PaliVLATrainState:
 
     def train_step(self, batch: TrainingBatch):
         with self.mesh.mesh, nn.logical_axis_rules([("act_batch", "fsdp")]):
-            self.model_state, info, self.rng = self.step_fn(
+            self.model_state, info, self.rng, self.target_params = self.step_fn(
                 self.model_state,
                 self.prepare_batch(batch),
                 self.rng,
+                self.target_params
                 # self.tokenizer.config,
                 # self.detokenize_action,
                 # True,
             )
-
         return info
 
     def decode(
@@ -615,12 +635,5 @@ class PaliVLATrainState:
 
         return jax.device_get(results)
 
-
-    def soft_update_target(self, tau=0.005):
-        new_target_params = jax.tree_map(
-            lambda p, tp: p * tau + tp * (1 - tau), 
-            self.model_state.params["llm"]["value_head"],
-            self.model_state.params["llm"]["target_value_head"]
-        )
-        # replace target_value_head in params
-        self.model_state.params["llm"]["target_value_head"] = new_target_params
+    # def target_update(self):
+    #     self.model_state = self.model_state.soft_update_target()
