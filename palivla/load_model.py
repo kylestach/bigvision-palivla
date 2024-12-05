@@ -77,7 +77,6 @@ def load_model_params_decode(config: ConfigDict, tokenizer: Tokenizer):
 def component_label_fn(nested_params_dict):
     label_rules = [
         ("llm/value_head/**", "value"),
-        ("llm/target_value_head/**", "value"),
         # Assign the input/output embeddings and the image connector to "embed"
         ("*/embedder/**", "embed"),
         ("img/head/**", "embed"),

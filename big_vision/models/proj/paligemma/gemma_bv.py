@@ -72,11 +72,6 @@ class Model(nn.Module):
   def compute_values(self, pre_logits, train=False):
     return self.model(None, pre_logits=pre_logits, deterministic=not train, value=True)[0]
 
-  def compute_target_values(self, pre_logits, train=False):
-    target_values = self.model(None, pre_logits=pre_logits, deterministic=not train, target_value=True)[0]
-    # stop grad
-    return jax.lax.stop_gradient(target_values)
-
   def __call__(self, embs, mask=None, train=False):
     # Turns float32[B,T,d_model] embedding sequence to logits.
     # call(emb_tokens(tokens)) should be a forward pass.

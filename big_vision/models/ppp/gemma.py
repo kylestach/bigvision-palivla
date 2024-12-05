@@ -183,8 +183,6 @@ class Embedder(nn.Module):
         (1, self.embed_dim),
     )
 
-    self.target_value_embedding_table = copy.deepcopy(self.value_embedding_table)
-
   def encode(self, x):
     x = self.input_embedding_table[(x,)]
     x *= jnp.sqrt(self.embed_dim).astype(x.dtype)
@@ -196,9 +194,6 @@ class Embedder(nn.Module):
   def value(self, x):
     x = jax.lax.stop_gradient(x)
     return jnp.dot(x, self.value_embedding_table.T)
-
-  def target_value(self, x):
-    return jnp.dot(x, self.target_value_embedding_table.T)
 
 
 class ValueHead(nn.Module):
@@ -438,7 +433,6 @@ class Model(nn.Module):
       positions=None, mask=None,
       decode=False, deterministic=True, 
       value=False,
-      target_value=False,
   ):
     """Embed only, or complete forward pass.
 
@@ -474,14 +468,6 @@ class Model(nn.Module):
           num_bins = 256,
           name="value_head"
       )
-      target_value_head = CrossEntropyValueHead(
-          embed_dim=self.width,
-          q_low = q_low,
-          q_high = q_high,
-          num_bins = 256,
-          stop_grad=True,
-          name="target_value_head"
-      )
     elif self.value_head_type == "linear":
       value_head = ValueHead(embed_dim=self.width, name="value_head")
     else:
@@ -501,14 +487,6 @@ class Model(nn.Module):
         else:
           logits = out["values"] = value_head(pre_logits)
         # logits = out["values"] = embedder.value(x)
-      elif target_value:
-        if isinstance(value_head, CrossEntropyValueHead):
-          logits, value_logits = target_value_head(x)
-          out["target_values"] = logits
-          out["target_value_logits"] = value_logits
-          return (logits, value_logits), out
-        else:
-          logits = out["target_values"] = embedder.target_value(x)
       else:
         logits = out["logits"] = embedder.decode(x)
       return logits, out
@@ -595,12 +573,8 @@ class Model(nn.Module):
     if isinstance(value_head, CrossEntropyValueHead):
       # outputs: (q, q_logits)
       out["values"], out["value_logits"] = value_head(x)
-      out["target_values"], out["target_value_logits"] = target_value_head(x)
     else:
       out["values"] = value_head(x)
-    # out["values"] = embedder.value(x)
-    # out["target_values"] = embedder.target_value(x)
-
     x = embedder.decode(x)
     out["logits"] = x
 

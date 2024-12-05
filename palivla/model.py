@@ -385,23 +385,16 @@ class PaliVLAModel(nn.Module):
         )
         text_logits = self.llm.compute_logits(text_pre_logits, train=train)
         values = self.llm.compute_values(text_pre_logits, train=train)
-        target_values = self.llm.compute_target_values(text_pre_logits, train=False)
         if isinstance(values, tuple):
             assert self.llm.model.value_head_type == "hlgauss"
             values, value_logits = values[0], values[1]
             info["value_logits"] = value_logits
             
-            target_values, target_value_logits = target_values[0], target_values[1]
-            info["target_value_logits"] = target_value_logits
-            info["target_values"] = target_values
-        # target_values = self.llm.compute_target_values(text_pre_logits, train=train)
-
         info["text_logits"] = text_logits
         info["text_tokens"] = jnp.argmax(text_logits, axis=-1)
         info["text_logit_masks"] = text_logit_masks
         info["text_pre_logits"] = text_pre_logits
         info["values"] = values
-        # info["target_values"] = target_values
 
         return text_logits, info
 
@@ -483,7 +476,6 @@ def load_from_pretrained(
         # add value head to pre-trained weights to avoid shape mismatch
         param_replacements["llm"]["embedder"]["value_embedding"] = params["llm"]["embedder"]["value_embedding"]
         param_replacements["llm"]["value_head"] = params["llm"]["value_head"]
-        param_replacements["llm"]["target_value_head"] = params["llm"]["value_head"]
 
         for k, v in param_replacements.items():
             chex.assert_trees_all_equal_shapes(params[k], v)
