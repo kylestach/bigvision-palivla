@@ -21,7 +21,7 @@ fi
 
 # Use default values if not found in cache
 ZONE=${ZONE:-europe-west4-b}
-N_WORKERS=${N_WORKERS:-16}
+N_WORKERS=${N_WORKERS:-32}
 
 echo "Connecting to $TPU_VM_NAME with $N_WORKERS workers in zone $ZONE..."
 

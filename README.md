@@ -500,14 +500,15 @@ See the LICENSE file for the full license text.
 # Notes
 
 ```
-pip install --upgrade "jax[tpu]" -f https://storage.googleapis.com/jax-releases/libtpu_releases.html
-pip show wandb
-pip install scalax huggingface_hub
+pip install --upgrade "jax[tpu]==0.4.35" -f https://storage.googleapis.com/jax-releases/libtpu_releases.html
+pip install wandb scalax huggingface_hub
 
 sudo gsutil cp gs://big_vision/paligemma_tokenizer.model .
 
 
 import kagglehub
+kagglehub.login()
+
 MODEL_PATH = kagglehub.model_download('google/paligemma/jax/paligemma-3b-pt-224', 'paligemma-3b-pt-224.f16.npz')
 cp /home/mitsuhiko/.cache/kagglehub/models/google/paligemma/jax/paligemma-3b-pt-224/1/paligemma-3b-pt-224.f16.npz .
 ```

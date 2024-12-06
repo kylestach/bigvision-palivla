@@ -100,6 +100,8 @@ def main(_):
     # We need to do this after the model is constructed, since we need to have a tokenizer
     per_host_train_batch_size = config.batch_size // jax.process_count()
     per_host_eval_batch_size = config.eval_batch_size // jax.process_count()
+    print("Num host: ", jax.process_count())
+    print("Per host train batch size: ", per_host_train_batch_size)
 
     def make_training_batch(batch):
         sensors = {

@@ -318,8 +318,15 @@ def step_fn(
         q_rand = get_value(info["values"], random_tokens[..., 1:], tokenizer_config)
         del info
 
+        calql_bound_rate = jnp.sum(q_pi < batch.mc_returns) / jnp.size(q_pi)
+        q_pi = jnp.maximum(q_pi, batch.mc_returns)
+        cqlql_bound_rate_next = jnp.sum(q_pi_next < batch.mc_returns) / jnp.size(q_pi_next)
+        q_pi_next = jnp.maximum(q_pi_next, batch.mc_returns)
 
         cql_cat_q = jnp.stack([q_rand, q_pi, q_pi_next, qs], axis=-1)
+
+
+        # cql_cat_q = jnp.stack([q_rand, q_pi, q_pi_next, qs], axis=-1)
 
         # cql_cat_q = jnp.stack([q_pi, qs], axis=-1)
         lse_q = jax.scipy.special.logsumexp(cql_cat_q, axis=1)
@@ -339,6 +346,8 @@ def step_fn(
             "critic/q_pi": q_pi.mean(),
             "critic/q_rand": q_rand.mean(),
             "critic/lse_q": lse_q.mean(),
+            "critic/calql_bound_rate": calql_bound_rate,
+            "critic/cqlql_bound_rate_next": cqlql_bound_rate_next,
         }
 
 

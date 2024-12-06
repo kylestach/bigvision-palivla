@@ -4,7 +4,7 @@ notebooks
 **/*.mp4
 wandb/
 *.egg-info
-
+*.swp
 /trained_tokenizers
 /models
 /checkpoints
