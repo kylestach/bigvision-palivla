@@ -38,7 +38,7 @@ def train_step(model: TrainState, batch: Data) -> Tuple[TrainState, Info]:
         return model.apply_fn(params, **batch, method="loss", train=True)
 
     grads, info = jax.grad(loss_fn, has_aux=True)(model.params)
-    model = model.apply_gradients(grads=grads)
+    model = model.dients(grads=grads)
     return model, info
 
 

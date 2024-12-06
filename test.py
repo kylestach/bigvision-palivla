@@ -44,7 +44,7 @@ TPU_PODS = {
         "setup_script": "source /nfs/nfs2/users/mitsuhiko/miniconda/etc/profile.d/conda.sh && conda activate big_vision",
         "src_dir": "/nfs/nfs2/users/mitsuhiko/codes/bigvision-palivla",
         "train_args": {
-            "batch_size": 32,
+            "batch_size": 4,
             "save_path": "gs://rail-tpus-mitsuhiko-central2/logs/test",
             "dataset_kwargs.oxe_kwargs.data_dir": "gs://rail-orca-central2/resize_256_256",
         },

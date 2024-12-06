@@ -1,7 +1,8 @@
 from functools import cached_property, partial
-from typing import Dict, Optional, Sequence
+from typing import Dict, Optional, Sequence, Any
 from flax.training.train_state import TrainState as FlaxTrainState
 from flax.struct import dataclass, field
+from flax import core
 from flax import linen as nn
 from flax.core.frozen_dict import FrozenDict, unfreeze, freeze
 import jax
@@ -50,7 +51,9 @@ class TrainState(FlaxTrainState):
     model: nn.Module = field(pytree_node=False)
     optimizer_spec: Optional[OptimizerSpec] = field(pytree_node=False)
     sharding_metadata: ShardingMetadata | None = field(pytree_node=False)
-    # target_params: FrozenDict | None = field(pytree_node=False)
+    critic_opt_state: optax.OptState = field(pytree_node=True)
+    critic_tx: optax.GradientTransformation = field(pytree_node=False)
+    target_params: core.FrozenDict[str, Any] = field(pytree_node=True)
 
     @classmethod
     def get_checkpoint_handlers(cls, name: str):
@@ -73,15 +76,18 @@ class TrainState(FlaxTrainState):
     ):
         model = model_spec.instantiate()
         optimizer = optimizer_spec.instantiate()
+        critic_optimizer = optimizer_spec.instantiate()
 
         def init_fn(rng):
             params = model.lazy_init(rng, batch_spec)
             opt_state = optimizer.init(params)
+            critic_opt_state = critic_optimizer.init(params)
 
             return cls(
                 name=name,
                 params=params,
                 opt_state=opt_state,
+                critic_opt_state=critic_opt_state,
                 model_spec=model_spec,
                 optimizer_spec=optimizer_spec,
                 sharding_metadata=sharding_metadata,
@@ -89,7 +95,8 @@ class TrainState(FlaxTrainState):
                 step=0,
                 apply_fn=model.apply,
                 tx=optimizer,
-                # target_params=copy.deepcopy(params),
+                critic_tx=critic_optimizer,
+                target_params=copy.deepcopy(params),
             )
 
         if sharding_metadata is not None:
@@ -110,13 +117,14 @@ class TrainState(FlaxTrainState):
         model_spec: ModuleSpec,
         optimizer_spec: OptimizerSpec,
         sharding_metadata: ShardingMetadata | None = None,
-        # target_params: FrozenDict | None = None,
     ):
         model = model_spec.instantiate()
         optimizer = optimizer_spec.instantiate()
+        critic_optimizer = optimizer_spec.instantiate()
 
         def init_fn(params):
             opt_state = optimizer.init(params)
+            critic_opt_state = critic_optimizer.init(params)
 
             return cls(
                 name=name,
@@ -129,7 +137,9 @@ class TrainState(FlaxTrainState):
                 step=0,
                 apply_fn=model.apply,
                 tx=optimizer,
-                # target_params=target_params,
+                critic_tx=critic_optimizer,
+                critic_opt_state=critic_opt_state,
+                target_params=copy.deepcopy(params),
             )
 
         if sharding_metadata is not None:
@@ -253,6 +263,7 @@ class TrainState(FlaxTrainState):
             name=name,
             params=params,
             opt_state=opt_state,
+            critic_opt_state=opt_state, # TODO: fix this
             model_spec=model_spec,
             optimizer_spec=optimizer_spec,
             sharding_metadata=sharding_metadata,
@@ -260,17 +271,9 @@ class TrainState(FlaxTrainState):
             model=model,
             apply_fn=model.apply,
             tx=optimizer,
-            # target_params=copy.deepcopy(params), # TODO: fix this
+            critic_tx=optimizer, # TODO: fix this
+            target_params=copy.deepcopy(params), # TODO: fix this
         )
-
-    # def soft_update_target(self, params, target_params, tau=0.005):
-    #     new_target_params = jax.tree_map(
-    #         lambda p, tp: p * tau + tp * (1 - tau), 
-    #         params,
-    #         target_params
-    #     )
-    #     return new_target_params
-        # return self.replace(target_params=new_target_params)
 
 
 class PaliVLATrainState:
@@ -302,7 +305,7 @@ class PaliVLATrainState:
             config=self.tokenizer_config,
         )
 
-        self.target_params = copy.deepcopy(self.model_state.params)
+        # self.target_params = copy.deepcopy(self.model_state.params)
 
     @classmethod
     def from_components(
@@ -532,7 +535,6 @@ class PaliVLATrainState:
                     self.model_state.sharding_metadata.model_sharding_rule,
                     self.data_sharding,
                     None,
-                    self.model_state.sharding_metadata.model_sharding_rule,
                 ),
             )
 
@@ -542,13 +544,11 @@ class PaliVLATrainState:
                 self.model_state.sharding_metadata.model_sharding_rule,
                 self.data_sharding,
                 None,
-                self.model_state.sharding_metadata.model_sharding_rule,
             ),
             out_shardings=(
                 self.model_state.sharding_metadata.model_sharding_rule,
                 None,
                 None,
-                self.model_state.sharding_metadata.model_sharding_rule,
             ),
         )
 
@@ -560,11 +560,10 @@ class PaliVLATrainState:
 
     def train_step(self, batch: TrainingBatch):
         with self.mesh.mesh, nn.logical_axis_rules([("act_batch", "fsdp")]):
-            self.model_state, info, self.rng, self.target_params = self.step_fn(
+            self.model_state, info, self.rng = self.step_fn(
                 self.model_state,
                 self.prepare_batch(batch),
                 self.rng,
-                self.target_params
                 # self.tokenizer.config,
                 # self.detokenize_action,
                 # True,
@@ -636,6 +635,3 @@ class PaliVLATrainState:
             )
 
         return jax.device_get(results)
-
-    # def target_update(self):
-    #     self.model_state = self.model_state.soft_update_target()

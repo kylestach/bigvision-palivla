@@ -179,13 +179,13 @@ def step_fn(
     train_state: TrainState,
     batch: TrainingBatch,
     key: chex.PRNGKey,
-    target_params,
     tokenizer_config: Tokenizer.TokenizerConfig,
     detokenize_fn,
     tokenize_fn,
     decode_fn,
     train: bool,
 ):
+
     def loss_fn(params, batch, key: chex.PRNGKey):
         all_inputs = batch.sensors | {"text": batch.tokens[..., :-1]}
         all_masks = batch.sensors_mask | {
@@ -212,6 +212,23 @@ def step_fn(
             log_segment_prefix="train/tf_",
         )
 
+        return actor_loss, actor_metrics
+
+    def critic_loss_fn(params, batch, key: chex.PRNGKey):
+        all_inputs = batch.sensors | {"text": batch.tokens[..., :-1]}
+        all_masks = batch.sensors_mask | {
+            "text": jnp.ones_like(batch.tokens[..., :-1], dtype=jnp.bool_)
+        }
+        rng, key = jax.random.split(key)
+
+        _, info = train_state.apply_fn(
+            {"params": params},
+            all_inputs,
+            data_masks=all_masks,
+            text_ar_mask=batch.tokens_ar[..., :-1],
+            train=train,
+            rngs={"dropout": key},
+        )
         qs = get_value(info["values"], batch.tokens[..., 1:], tokenizer_config)
         value_logits = get_value(info["value_logits"], batch.tokens[..., 1:], tokenizer_config)
         del info
@@ -237,7 +254,7 @@ def step_fn(
         _, q_pi_next = decode_fn(
             rollout_batch,
             target_key_order=None,
-            params=target_params,
+            params=train_state.target_params,
         )  # out_tokens: (batch_size, 7), value: (batch_size,)
 
         td_target = batch.rewards + batch.td_mask * q_pi_next * 0.98
@@ -259,7 +276,7 @@ def step_fn(
         policy_tokens, _ = decode_fn(
             rollout_batch,
             target_key_order=None,
-            params=target_params, # need to use taret_params otherwie somehow there where be OOM error
+            params=train_state.target_params, # need to use taret_params otherwie somehow there where be OOM error
         )
         policy_tokens = jax.lax.stop_gradient(policy_tokens) # just in case
         policy_tokens = replace_action_tokens(batch.tokens, policy_tokens, tokenizer_config.begin_of_action_token)
@@ -371,10 +388,7 @@ def step_fn(
         #     "critic/next_q_pred": next_qs.mean(),
         # }
 
-
-        actor_metrics.update(critic_metrics)
-
-        return actor_loss + critic_loss, actor_metrics
+        return critic_loss, critic_metrics
 
     grad_fn = jax.grad(loss_fn, has_aux=True)
 
@@ -385,16 +399,22 @@ def step_fn(
     )
     params = optax.apply_updates(train_state.params, updates)
 
+    key, dropout_key = jax.random.split(key)
+    
+    critic_grads, critic_info = jax.grad(critic_loss_fn, has_aux=True)(params, batch, dropout_key)
+    critic_updates, critic_opt_state = train_state.critic_tx.update(
+        critic_grads, train_state.critic_opt_state, params=params
+    )
+    params = optax.apply_updates(params, critic_updates)
+
     new_target_params = optax.incremental_update(
            params,
-           target_params,
+           train_state.target_params,
            step_size=0.005,
         )
 
-    # new_target_params = train_state.soft_update_target(params, params, 0.005)
-
     train_state = train_state.replace(
-        params=params, opt_state=opt_state, step=train_state.step + 1, 
+        params=params, opt_state=opt_state, step=train_state.step + 1, critic_opt_state=critic_opt_state, target_params=new_target_params
     )
 
     info = info | train_state.opt_state.hyperparams
@@ -407,10 +427,13 @@ def step_fn(
 
     info = (
         info
+        | critic_info
         | _norm_info(grads, "norm/grad")
         | _norm_info(updates, "norm/update")
+        | _norm_info(critic_grads, "norm/critic_grad")
+        | _norm_info(critic_updates, "norm/critic_update")
         | _norm_info(train_state.params, "norm/param")
         | _norm_info(new_target_params, "norm/target_param")
     )
 
-    return train_state, info, key, new_target_params
+    return train_state, info, key
