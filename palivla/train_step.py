@@ -323,7 +323,7 @@ def step_fn(
         cqlql_bound_rate_next = jnp.sum(q_pi_next < batch.mc_returns) / jnp.size(q_pi_next)
         q_pi_next = jnp.maximum(q_pi_next, batch.mc_returns)
 
-        cql_cat_q = jnp.stack([q_rand, q_pi, q_pi_next, qs], axis=-1)
+        cql_cat_q = jnp.stack([q_rand, q_pi, q_pi_next], axis=-1)
 
 
         # cql_cat_q = jnp.stack([q_rand, q_pi, q_pi_next, qs], axis=-1)
