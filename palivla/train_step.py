@@ -295,38 +295,38 @@ def step_fn(
         del info
 
         # # compute q_rand
-        rng, key = jax.random.split(rng)
-        random_actions = jax.random.uniform(
-                key,
-                shape=batch.actions.shape,
-                minval=-1.0,
-                maxval=1.0,
-        )
-        random_tokens = tokenize_fn(random_actions, obs=batch.sensors)
-        random_tokens = replace_action_tokens(batch.tokens, random_tokens, tokenizer_config.begin_of_action_token)
-        rng, key = jax.random.split(rng)
-        _, info = train_state.apply_fn(
-            {"params": params},
-            batch.sensors | {"text": random_tokens[..., :-1]},
-            data_masks=batch.sensors_next_mask | {
-                "text": jnp.ones_like(random_tokens[..., :-1], dtype=jnp.bool_)
-            },
-            text_ar_mask=batch.tokens_ar[..., :-1],
-            train=True,
-            rngs={"dropout": key},
-        )
-        q_rand = get_value(info["values"], random_tokens[..., 1:], tokenizer_config)
-        del info
+        # rng, key = jax.random.split(rng)
+        # random_actions = jax.random.uniform(
+        #         key,
+        #         shape=batch.actions.shape,
+        #         minval=-1.0,
+        #         maxval=1.0,
+        # )
+        # random_tokens = tokenize_fn(random_actions, obs=batch.sensors)
+        # random_tokens = replace_action_tokens(batch.tokens, random_tokens, tokenizer_config.begin_of_action_token)
+        # rng, key = jax.random.split(rng)
+        # _, info = train_state.apply_fn(
+        #     {"params": params},
+        #     batch.sensors | {"text": random_tokens[..., :-1]},
+        #     data_masks=batch.sensors_next_mask | {
+        #         "text": jnp.ones_like(random_tokens[..., :-1], dtype=jnp.bool_)
+        #     },
+        #     text_ar_mask=batch.tokens_ar[..., :-1],
+        #     train=True,
+        #     rngs={"dropout": key},
+        # )
+        # q_rand = get_value(info["values"], random_tokens[..., 1:], tokenizer_config)
+        # del info
 
-        calql_bound_rate = jnp.sum(q_pi < batch.mc_returns) / jnp.size(q_pi)
-        q_pi = jnp.maximum(q_pi, batch.mc_returns)
-        cqlql_bound_rate_next = jnp.sum(q_pi_next < batch.mc_returns) / jnp.size(q_pi_next)
-        q_pi_next = jnp.maximum(q_pi_next, batch.mc_returns)
-
-        cql_cat_q = jnp.stack([q_rand, q_pi, q_pi_next, qs], axis=-1)
-
+        # calql_bound_rate = jnp.sum(q_pi < batch.mc_returns) / jnp.size(q_pi)
+        # q_pi = jnp.maximum(q_pi, batch.mc_returns)
+        # cqlql_bound_rate_next = jnp.sum(q_pi_next < batch.mc_returns) / jnp.size(q_pi_next)
+        # q_pi_next = jnp.maximum(q_pi_next, batch.mc_returns)
 
         # cql_cat_q = jnp.stack([q_rand, q_pi, q_pi_next, qs], axis=-1)
+
+
+        cql_cat_q = jnp.stack([q_pi, q_pi_next, qs], axis=-1)
 
         # cql_cat_q = jnp.stack([q_pi, qs], axis=-1)
         lse_q = jax.scipy.special.logsumexp(cql_cat_q, axis=1)
@@ -344,10 +344,10 @@ def step_fn(
             "critic/td_target": td_target.mean(),
             "critic/q_pi_next": q_pi_next.mean(),
             "critic/q_pi": q_pi.mean(),
-            "critic/q_rand": q_rand.mean(),
+            # "critic/q_rand": q_rand.mean(),
             "critic/lse_q": lse_q.mean(),
-            "critic/calql_bound_rate": calql_bound_rate,
-            "critic/cqlql_bound_rate_next": cqlql_bound_rate_next,
+            # "critic/calql_bound_rate": calql_bound_rate,
+            # "critic/cqlql_bound_rate_next": cqlql_bound_rate_next,
         }
 
 
