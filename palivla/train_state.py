@@ -156,15 +156,16 @@ class TrainState(FlaxTrainState):
         args = {
             f"{self.name}_model_spec": ocp.args.JsonSave(self.model_spec.to_dict()),
             f"{self.name}_model_params": ocp.args.StandardSave({"params": self.params}),
+            f"{self.name}_model_target_params": ocp.args.StandardSave({"params": self.target_params}),
         }
 
-        if self.optimizer_spec is not None:
-            args[f"{self.name}_optimizer_spec"] = ocp.args.JsonSave(
-                self.optimizer_spec.to_dict()
-            )
-            args[f"{self.name}_opt_state"] = ocp.args.StandardSave(
-                {"opt_state": self.opt_state}
-            )
+        # if self.optimizer_spec is not None:
+        #     args[f"{self.name}_optimizer_spec"] = ocp.args.JsonSave(
+        #         self.optimizer_spec.to_dict()
+        #     )
+        #     args[f"{self.name}_opt_state"] = ocp.args.StandardSave(
+        #         {"opt_state": self.opt_state}
+        #     )
 
         return ocp.args.Composite(**args)
 

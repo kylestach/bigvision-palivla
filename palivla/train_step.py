@@ -150,6 +150,7 @@ def compute_stats(
     mask_loss,
     tokenizer_config: Tokenizer.TokenizerConfig,
     log_segment_prefix: str = "",
+    advantage=None,
 ):
     output_pred_mask = mask_loss[..., 1:]
     labels = tokens[..., 1:]
@@ -166,11 +167,18 @@ def compute_stats(
         tokenizer_config=tokenizer_config,
         log_segment_prefix=log_segment_prefix,
     )
+
+    if advantage:
+        weight = jnp.where(advantage > 0, 1.0, 0.0)
+        weight = jnp.expand_dims(weight, axis=-1)
+    else:
+        weight = jnp.ones_like(output_pred_mask)
     loss = jnp.mean(
         output_pred_mask
-        * optax.softmax_cross_entropy_with_integer_labels(pred_logits, labels)
+        * optax.softmax_cross_entropy_with_integer_labels(pred_logits, labels) * weight
     ) / jnp.mean(output_pred_mask)
     metrics["loss"] = loss
+    metrics["awr_filter_ratio"] = jnp.mean(weight)
 
     return loss, metrics
 
@@ -186,7 +194,7 @@ def step_fn(
     train: bool,
 ):
 
-    def loss_fn(params, batch, key: chex.PRNGKey):
+    def loss_fn(params, batch, key: chex.PRNGKey, advantage):
         all_inputs = batch.sensors | {"text": batch.tokens[..., :-1]}
         all_masks = batch.sensors_mask | {
             "text": jnp.ones_like(batch.tokens[..., :-1], dtype=jnp.bool_)
@@ -210,6 +218,7 @@ def step_fn(
             mask_loss=batch.tokens_loss,
             tokenizer_config=tokenizer_config,
             log_segment_prefix="train/tf_",
+
         )
 
         return actor_loss, actor_metrics
@@ -334,7 +343,8 @@ def step_fn(
 
         cql_alpha = 5.0
         critic_loss = td_loss + cql_alpha * cql_loss
-
+        
+        advantage = jax.lax.stop_gradient(qs - q_pi)
         critic_metrics = {
             "critic/critic_loss": critic_loss,
             "critic/td_loss": td_loss,
@@ -346,6 +356,7 @@ def step_fn(
             "critic/q_pi": q_pi.mean(),
             # "critic/q_rand": q_rand.mean(),
             "critic/lse_q": lse_q.mean(),
+            "advantage": advantage.mean(),
             # "critic/calql_bound_rate": calql_bound_rate,
             # "critic/cqlql_bound_rate_next": cqlql_bound_rate_next,
         }
@@ -396,26 +407,26 @@ def step_fn(
         #     "critic/td_target": td_target.mean(),
         #     "critic/next_q_pred": next_qs.mean(),
         # }
+        return critic_loss, (critic_metrics, advantage)
 
-        return critic_loss, critic_metrics
+    key, dropout_key = jax.random.split(key)
+    critic_grads, critic_info = jax.grad(critic_loss_fn, has_aux=True)(train_state.params, batch, dropout_key)
+
+    critic_info, advantage = critic_info
+    critic_updates, critic_opt_state = train_state.critic_tx.update(
+        critic_grads, train_state.critic_opt_state, params=train_state.params
+    )
+    params = optax.apply_updates(train_state.params, critic_updates)
+
 
     grad_fn = jax.grad(loss_fn, has_aux=True)
-
     key, dropout_key = jax.random.split(key)
-    grads, info = grad_fn(train_state.params, batch, dropout_key)
+    grads, info = grad_fn(params, batch, dropout_key, advantage)
     updates, opt_state = train_state.tx.update(
-        grads, train_state.opt_state, params=train_state.params
+        grads, train_state.opt_state, params=params
     )
-    params = optax.apply_updates(train_state.params, updates)
-
-    key, dropout_key = jax.random.split(key)
+    params = optax.apply_updates(params, updates)
     
-    critic_grads, critic_info = jax.grad(critic_loss_fn, has_aux=True)(params, batch, dropout_key)
-    critic_updates, critic_opt_state = train_state.critic_tx.update(
-        critic_grads, train_state.critic_opt_state, params=params
-    )
-    params = optax.apply_updates(params, critic_updates)
-
     new_target_params = optax.incremental_update(
            params,
            train_state.target_params,
