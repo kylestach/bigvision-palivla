@@ -168,11 +168,8 @@ def compute_stats(
         log_segment_prefix=log_segment_prefix,
     )
 
-    if advantage:
-        weight = jnp.where(advantage > 0, 1.0, 0.0)
-        weight = jnp.expand_dims(weight, axis=-1)
-    else:
-        weight = jnp.ones_like(output_pred_mask)
+    weight = jnp.where(advantage > 0, 1.0, 0.0)
+    weight = jnp.expand_dims(weight, axis=-1)
     loss = jnp.mean(
         output_pred_mask
         * optax.softmax_cross_entropy_with_integer_labels(pred_logits, labels) * weight
@@ -218,6 +215,7 @@ def step_fn(
             mask_loss=batch.tokens_loss,
             tokenizer_config=tokenizer_config,
             log_segment_prefix="train/tf_",
+            advantage=advantage,
 
         )
 
