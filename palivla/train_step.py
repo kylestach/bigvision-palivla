@@ -343,7 +343,8 @@ def step_fn(
         # critic_loss = td_loss + cql_alpha * cql_loss
         critic_loss = td_loss
         
-        advantage = jax.lax.stop_gradient(qs - q_pi)
+        # advantage = jax.lax.stop_gradient(qs - q_pi)
+        advantage = 0
         critic_metrics = {
             "critic/critic_loss": critic_loss,
             "critic/td_loss": td_loss,
@@ -355,7 +356,7 @@ def step_fn(
             "critic/q_pi": q_pi.mean(),
             # "critic/q_rand": q_rand.mean(),
             "critic/lse_q": lse_q.mean(),
-            "advantage": advantage.mean(),
+            # "advantage": advantage.mean(),
             # "critic/calql_bound_rate": calql_bound_rate,
             # "critic/cqlql_bound_rate_next": cqlql_bound_rate_next,
         }
@@ -429,7 +430,7 @@ def step_fn(
     new_target_params = optax.incremental_update(
            params,
            train_state.target_params,
-           step_size=0.005,
+           step_size=0.01,
         )
 
     train_state = train_state.replace(
