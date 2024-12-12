@@ -168,14 +168,14 @@ def compute_stats(
         log_segment_prefix=log_segment_prefix,
     )
 
-    weight = jnp.where(advantage > 0, 1.0, 0.0)
-    weight = jnp.expand_dims(weight, axis=-1)
+    # weight = jnp.where(advantage > 0, 1.0, 0.0)
+    # weight = jnp.expand_dims(weight, axis=-1)
     loss = jnp.mean(
         output_pred_mask
-        * optax.softmax_cross_entropy_with_integer_labels(pred_logits, labels) * weight
+        * optax.softmax_cross_entropy_with_integer_labels(pred_logits, labels) # * weight
     ) / jnp.mean(output_pred_mask)
     metrics["loss"] = loss
-    metrics["awr_filter_ratio"] = jnp.mean(weight)
+    # metrics["awr_filter_ratio"] = jnp.mean(weight)
 
     return loss, metrics
 
@@ -272,34 +272,34 @@ def step_fn(
             scalar_target_to_dist_fn,
         ).mean()
         
-        # # sample policy actions and compute  q_pi
-        rollout_batch = RolloutBatch(
-            sensor_data=batch.sensors,
-            sensor_masks=batch.sensors_mask,
-            prompt=batch.gen_tokens,
-            prompt_mask=batch.gen_mask_input,
-            prompt_ar=jnp.zeros_like(batch.tokens_ar),
-        )
-        policy_tokens, _ = decode_fn(
-            rollout_batch,
-            target_key_order=None,
-            params=train_state.target_params, # need to use taret_params otherwie somehow there where be OOM error
-        )
-        policy_tokens = jax.lax.stop_gradient(policy_tokens) # just in case
-        policy_tokens = replace_action_tokens(batch.tokens, policy_tokens, tokenizer_config.begin_of_action_token)
-        rng, key = jax.random.split(rng)
-        _, info = train_state.apply_fn(
-            {"params": params},
-            batch.sensors | {"text": policy_tokens[..., :-1]},
-            data_masks=batch.sensors_mask | {
-                "text": jnp.ones_like(policy_tokens[..., :-1], dtype=jnp.bool_)
-            },
-            text_ar_mask=batch.tokens_ar[..., :-1],
-            train=True,
-            rngs={"dropout": key},
-        )
-        q_pi = get_value(info["values"], policy_tokens[..., 1:], tokenizer_config)
-        del info
+        # # # sample policy actions and compute  q_pi
+        # rollout_batch = RolloutBatch(
+        #     sensor_data=batch.sensors,
+        #     sensor_masks=batch.sensors_mask,
+        #     prompt=batch.gen_tokens,
+        #     prompt_mask=batch.gen_mask_input,
+        #     prompt_ar=jnp.zeros_like(batch.tokens_ar),
+        # )
+        # policy_tokens, _ = decode_fn(
+        #     rollout_batch,
+        #     target_key_order=None,
+        #     params=train_state.target_params, # need to use taret_params otherwie somehow there where be OOM error
+        # )
+        # policy_tokens = jax.lax.stop_gradient(policy_tokens) # just in case
+        # policy_tokens = replace_action_tokens(batch.tokens, policy_tokens, tokenizer_config.begin_of_action_token)
+        # rng, key = jax.random.split(rng)
+        # _, info = train_state.apply_fn(
+        #     {"params": params},
+        #     batch.sensors | {"text": policy_tokens[..., :-1]},
+        #     data_masks=batch.sensors_mask | {
+        #         "text": jnp.ones_like(policy_tokens[..., :-1], dtype=jnp.bool_)
+        #     },
+        #     text_ar_mask=batch.tokens_ar[..., :-1],
+        #     train=True,
+        #     rngs={"dropout": key},
+        # )
+        # q_pi = get_value(info["values"], policy_tokens[..., 1:], tokenizer_config)
+        # del info
 
         # # compute q_rand
         # rng, key = jax.random.split(rng)
@@ -333,14 +333,15 @@ def step_fn(
         # cql_cat_q = jnp.stack([q_rand, q_pi, q_pi_next, qs], axis=-1)
 
 
-        cql_cat_q = jnp.stack([q_pi, q_pi_next, qs], axis=-1)
+        # cql_cat_q = jnp.stack([q_pi, q_pi_next, qs], axis=-1)
 
         # cql_cat_q = jnp.stack([q_pi, qs], axis=-1)
-        lse_q = jax.scipy.special.logsumexp(cql_cat_q, axis=1)
-        cql_loss = jnp.mean(lse_q - qs)
+        # lse_q = jax.scipy.special.logsumexp(cql_cat_q, axis=1)
+        # cql_loss = jnp.mean(lse_q - qs)
 
-        cql_alpha = 5.0
-        critic_loss = td_loss + cql_alpha * cql_loss
+        # cql_alpha = 5.0
+        # critic_loss = td_loss + cql_alpha * cql_loss
+        critic_loss = td_loss
         
         advantage = jax.lax.stop_gradient(qs - q_pi)
         critic_metrics = {

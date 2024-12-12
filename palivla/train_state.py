@@ -156,7 +156,7 @@ class TrainState(FlaxTrainState):
         args = {
             f"{self.name}_model_spec": ocp.args.JsonSave(self.model_spec.to_dict()),
             f"{self.name}_model_params": ocp.args.StandardSave({"params": self.params}),
-            f"{self.name}_model_target_params": ocp.args.StandardSave({"params": self.target_params}),
+            # f"{self.name}_model_target_params": ocp.args.StandardSave({"params": self.target_params}),
         }
 
         # if self.optimizer_spec is not None:
@@ -524,7 +524,7 @@ class PaliVLATrainState:
             detokenize_fn=self.detokenize_action,
             train=True,
             tokenize_fn=self.tokenize_action,
-            decode_fn=self.decode,
+            decode_fn=self.decode_sample,
         )
         if self.mesh is None:
             _step_fn = partial(jax.jit, step_fn)
@@ -586,6 +586,25 @@ class PaliVLATrainState:
             eos_token=self.tokenizer_config.eos_token,
             best_of_n=1,
             sampler="greedy",
+            replicate_out=False,
+            eos_look_behind=0,
+        )
+
+    def decode_sample(
+        self, batch: RolloutBatch, target_key_order: Sequence[str] | None = None, params: FrozenDict | None = None
+    ):
+        return _decode(
+            params if params is not None else self.model_state.params,
+            batch.sensor_data | {"text": batch.prompt},
+            batch.sensor_masks | {"text": batch.prompt_mask},
+            batch.prompt_ar,
+            target_key_order=target_key_order or self.config.get("target_key_order"),
+            model=self.model_state.model,
+            devices=self.mesh.mesh.devices,
+            max_decode_len=self.action_tokenizer_state.model.num_tokens,
+            eos_token=self.tokenizer_config.eos_token,
+            best_of_n=1,
+            sampler="temperature(t=1.0)",
             replicate_out=False,
             eos_look_behind=0,
         )

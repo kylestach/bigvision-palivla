@@ -40,7 +40,7 @@ TPU_PODS = {
         "setup_script": "source /nfs/nfs3/users/mitsuhiko/miniconda3/etc/profile.d/conda.sh && conda activate big_vision",
         "src_dir": "/nfs/nfs3/users/mitsuhiko/codes/bigvision-palivla",
         "train_args": {
-            "batch_size": 128,
+            "batch_size": 512,
             "save_path": "gs://mitsuhiko-checkpoints-eu4/test",
             "dataset_kwargs.oxe_kwargs.data_dir": "gs://rail-datasets-europe-west4/oxe/resize_256_256",
         },
