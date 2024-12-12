@@ -500,11 +500,31 @@ See the LICENSE file for the full license text.
 # Notes
 
 ```
+conda create -n big_vision python=3.10
+conda activate big_vision
+pip3 install -r big_vision/requirements.txt
+
 pip install --upgrade "jax[tpu]==0.4.35" -f https://storage.googleapis.com/jax-releases/libtpu_releases.html
 pip install wandb scalax huggingface_hub
 
+## install other packages
+cd ..
+
+git clone https://github.com/nakamotoo/octo.git
+cd octo && pip install -e .
+
+cd ..
+
+git clone https://github.com/nakamotoo/dlimp.git
+cd dlimp && pip install -e .
+
+## get pretrained checkpoints
+
+mkdir models
+cd models
 sudo gsutil cp gs://big_vision/paligemma_tokenizer.model .
 
+pip install kagglehub
 
 import kagglehub
 kagglehub.login()
@@ -515,6 +535,7 @@ cp /home/mitsuhiko/.cache/kagglehub/models/google/paligemma/jax/paligemma-3b-pt-
 
 - skipped proprio nomalization in octo loader
 
+set up jupyter notebook
 
 ```
 pip install typing-extensions==4.6.0
