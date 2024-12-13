@@ -33,7 +33,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from palivla.model import PaliVLAModel
-from palivla.types import Data, Params, Variables
+from palivla.palivla_types import Data, Params, Variables
 
 
 P = jax.sharding.PartitionSpec

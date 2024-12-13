@@ -17,7 +17,7 @@ def get_config():
             "model_load_fn": "big_vision.models.proj.paligemma.paligemma.load",
             "tokenizer_path": "models/paligemma_tokenizer.model",
             "model_path": "models/paligemma",
-            "save_path": placeholder(str),
+            "save_path": 'gs://multi-robot-bucket2/runs/vla/',
             "batch_size": 192,
             "eval_batch_size": 128,
             "num_steps": num_train_steps,
@@ -32,13 +32,14 @@ def get_config():
             "dataset_kwargs": {
                 "oxe_kwargs": {
                     "data_mix": "bridge",
-                    "data_dir": "/data/rlds/",
+                    "data_dir": "gs://rail-orca-central2/resize_256_256/",
                     "load_camera_views": ["primary"],
                     "load_depth": False,
                     "load_proprio": True,
                     "load_language": True,
                     "force_recompute_dataset_statistics": False,
                     "action_proprio_normalization_type": NormalizationType.NORMAL,
+                    "cot_data_path":"/nfs/nfs2/users/riadoshi/bigvision_palivla/data",
                 },
                 "traj_transform_kwargs": {
                     "window_size": 1,
@@ -57,6 +58,7 @@ def get_config():
                 "multimodal_rephrasings": False,
                 "chunk_relative_actions": False,
                 "multimodal_rephrasing_kwargs": {},
+                "proprio_dropout_prob":0
             },
             "optimizer_kwargs": {
                 "optimizer": "adamw",
@@ -67,6 +69,8 @@ def get_config():
                     "warmup_steps": 500,
                     "weight_decay": 5e-6,
                     "grad_norm_clip": 10.0,
+                    "b1": 0.9,
+                    "b2": 0.99,
                 },
                 "embed_optimizer_kwargs": {
                     "init_learning_rate": 0,
@@ -74,6 +78,8 @@ def get_config():
                     "warmup_steps": 100,
                     "weight_decay": 0.0,
                     "grad_norm_clip": 10.0,
+                    "b1": 0.9,
+                    "b2": 0.99,
                 },
                 "img_optimizer_kwargs": {
                     "init_learning_rate": 0,
@@ -81,7 +87,12 @@ def get_config():
                     "warmup_steps": 500,
                     "weight_decay": 5e-6,
                     "grad_norm_clip": 10.0,
+                    "b1": 0.9, #ria change; refers to adam's beta1 & beta2 params
+                    "b2":0.99,
                 },
-            }
+            },
+            "eval_datasets": [
+                'bridge_dataset'
+            ]
         }
     )

@@ -11,6 +11,22 @@ DEFAULT_TRAIN_ARGS = {
 }
 
 TPU_PODS = {
+    "new-v4-vm-.*": {
+        "tpc_args": {
+            "project": "rail-tpus",
+            "zone": "us-central2-b",
+            "accelerator_type": "v4-8",
+            "runtime_version": "tpu-vm-v4-base",
+            "reserved": False,
+        },
+        "setup_script": "source /nfs/nfs2/users/riadoshi/miniconda3/etc/profile.d/conda.sh && conda activate big-vision",
+        "src_dir": "/nfs/nfs2/users/riadoshi/bigvision-palivla",
+        "train_args": {
+            "batch_size": 128,
+            "save_path": "gs://multi-robot-bucket2/paligemma-checkpoints",
+            "dataset_kwargs.oxe_kwargs.data_dir": "gs://rail-orca-central2/resize_256_256",
+        },
+    },
     "kyle-pod-64": {
         "tpc_args": {
             "project": "rail-tpus",

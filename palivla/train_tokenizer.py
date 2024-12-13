@@ -24,7 +24,7 @@ from palivla.load_model import make_optimizer
 from palivla.spec import ModuleSpec, OptimizerSpec
 from palivla.train_state import PaliVLATrainState, ShardingMetadata, TrainState
 from palivla.train_step import TrainingBatch
-from palivla.types import Data, Info
+from palivla.palivla_types import Data, Info
 from palivla.utils import host_broadcast_str, key_string
 
 jax.config.update("jax_compilation_cache_dir", "/tmp/jax_cache")

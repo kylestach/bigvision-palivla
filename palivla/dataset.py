@@ -4,7 +4,7 @@ import tensorflow as tf
 from ml_collections import ConfigDict
 import numpy as np
 
-from orca.octo.data.utils.data_utils import NormalizationType
+from octo.data.utils.data_utils import NormalizationType
 from palivla.tokenizer import Tokenizer
 from octo.data.dataset import make_interleaved_dataset, make_single_dataset
 from octo.data.oxe import make_oxe_dataset_kwargs_and_weights, make_oxe_dataset_kwargs
@@ -149,7 +149,7 @@ def make_base_dataset(
     return dataset
 
 
-def make_base_single_dataset(
+def  _dataset(
     *,
     name: str,
     data_dir: str,
@@ -208,7 +208,7 @@ def make_frame_transform(
                 relative_mask = 1
             else:
                 relative_mask = tf.constant([True] * 6 + [False] + [True] * 6 + [False])
-            initial_offset = data["observation"]["proprio"][-1] * tf.cast(
+            initial_offset = data["observation"]["proprio_single_arm"][-1] * tf.cast(
                 relative_mask, tf.float32
             )
             data["action"] = data["action"] - initial_offset
@@ -216,12 +216,12 @@ def make_frame_transform(
 
         if proprio_dropout_prob > 0:
             mask = tf.random.uniform((1,)) > proprio_dropout_prob
-            data["observation"]["proprio"] = tf.where(
+            data["observation"]["proprio_single_arm"] = tf.where(
                 mask,
-                data["observation"]["proprio"],
-                tf.zeros_like(data["observation"]["proprio"]),
+                data["observation"]["proprio_single_arm"],
+                tf.zeros_like(data["observation"]["proprio_single_arm"]),
             )
-            data["observation"]["pad_mask_dict"]["proprio"] &= mask
+            data["observation"]["pad_mask_dict"]["proprio_single_arm"] &= mask
 
         if tokenizer is not None:
             language_token_instructions = tokenizer.tokenize_language_instruction(data)
@@ -235,7 +235,8 @@ def make_frame_transform(
                     data, language_token_instructions
                 )
 
-        data["proprio"] = tf.squeeze(data["observation"]["proprio"], axis=0)
+                
+        data["proprio_single_arm"] = tf.squeeze(data["observation"]["proprio_single_arm"], axis=0)
         data["action"] = tf.squeeze(data["action"], axis=0)
 
         return data

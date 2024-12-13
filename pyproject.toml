@@ -8,11 +8,14 @@ dependencies = [
     "big-vision",
     "chex>=0.1.86",
     "distrax>=0.1.5",
-    "dlimp",
-    "einops>=0.8.0",
+   # "dlimp",
+    #"protobuf<=3.20.3",
+    "einops>=0.7.0",
     "flax>=0.9.0",
     "ipykernel",
-    "jax[cuda12]>=0.4.33",
+    "jax[tpu]",
+    # "libtpu-nightly@https://storage.googleapis.com/cloud-tpu-tpuvm-artifacts/wheels/libtpu-nightly/libtpu_nightly-0.1.dev20210615-py3-none-any.whl",
+    #"libtpu-nightly@https://storage.googleapis.com/jax-releases/libtpu_releases.html",
     "matplotlib>=3.9.2",
     "ml-collections>=0.1.1",
     "numpy<2.0.0",
@@ -29,10 +32,19 @@ dependencies = [
     "tensorflow-datasets>=4.9.6",
     "tensorflow-text-nightly>=2.19.0.dev20241014",
     "tf-nightly>=2.19.0.dev20241014",
-    "wandb>=0.18.3",
+    #"tensorflow==2.15.0",
+    "transformers",
+    "tokenizers",
+    "wandb",
+]
+
+[tool.uv]
+find-links = ["https://storage.googleapis.com/jax-releases/libtpu_releases.html"]
+dev-dependencies = [
+    "tpu-pod-commander>=0.1.6",
 ]
 
 [tool.uv.sources]
 dlimp = { path = "dlimp", editable = true }
-octo = { path = "orca", editable = true }
+octo = { path = "/nfs/nfs2/users/riadoshi/orca", editable = true }
 big-vision = { workspace = true }

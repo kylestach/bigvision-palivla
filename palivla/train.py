@@ -14,13 +14,20 @@ from scalax.sharding import (
 
 import wandb
 import numpy as np
+import os
 
-from palivla.dataset import make_base_dataset, make_base_single_dataset, transform_dataset
+# Add UV-specific environment configuration
+os.environ["PYTHONPATH"] = os.environ.get("PYTHONPATH", "") + ":."
+os.environ["UV_ENABLE_WHEELS"] = "1"
+
+from palivla.dataset import make_base_dataset, transform_dataset #, make_base_single_dataset
 from palivla.load_model import make_optimizer
 from palivla.spec import OptimizerSpec
 from palivla.train_state import PaliVLATrainState
 from palivla.train_step import TrainingBatch
 from palivla.utils import host_broadcast_str
+
+import sys
 
 jax.config.update("jax_compilation_cache_dir", "/tmp/jax_cache")
 jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
@@ -29,7 +36,9 @@ tf.config.set_visible_devices([], "GPU")
 
 
 def main(_):
-    jax.distributed.initialize()
+
+    print(sys.version)
+    jax.distributed.initialize(coordinator_address="127.0.0.1:1234", num_processes=1, process_id=0)
 
     # Turn off debug logs
     tf.get_logger().setLevel("WARNING")
@@ -47,17 +56,21 @@ def main(_):
 
     # Make the basic dataset
     # We have to do this first, since we need to know how the dataset is set up before we can construct the model
-    train_ds = make_base_dataset(config, train=True)
-    eval_datasets = {
-        dataset_name: make_base_single_dataset(config, train=False)
-        for dataset_name in config.eval_datasets
-    }
+    dataset_kwargs = config.dataset_kwargs
+    train_ds = make_base_dataset(**dataset_kwargs, train=True) #ria change
+
+    # eval_datasets = {
+    #     dataset_name: make_base_single_dataset(**eval_dataset_kwargs, train=False)
+    #     for dataset_name in config.eval_datasets
+    # }
+
+    # eval_ds = make_base_single_dataset(**config.dataset_kwargs, train=False) #ria change
 
     batch_shape = {
         "text": jax.ShapeDtypeStruct(shape=(1, 10), dtype=jnp.int32),
         "image_primary": jax.ShapeDtypeStruct(shape=(1, 224, 224, 3), dtype=jnp.uint8),
         "image_wrist": jax.ShapeDtypeStruct(shape=(1, 224, 224, 3), dtype=jnp.uint8),
-        "proprio": jax.ShapeDtypeStruct(shape=(1, 6), dtype=jnp.float32),
+        "proprio_single_arm": jax.ShapeDtypeStruct(shape=(1, 6), dtype=jnp.float32),
     }
 
     if config.resume_from_checkpoint_dir is None:
@@ -122,7 +135,9 @@ def main(_):
                 tokens=batch["tokens"],
                 tokens_ar=batch["mask_ar"],
                 tokens_loss=batch.get("mask_loss", None),
-                tokens_mask=batch["mask_input"]
+                tokens_mask=batch["mask_input"],
+                gen_start=batch.get("gen_start", None),
+                
             )
         )
 
@@ -132,7 +147,7 @@ def main(_):
             train_ds,
             model.tokenizer,
             generation=False,
-            **config.extra_dataset_transform_kwargs,
+            **config.extra_dataset_transform_kwargs
         )
         .batch(per_host_train_batch_size)
         .iterator(),
@@ -154,7 +169,7 @@ def main(_):
             train_ds,
             model.tokenizer,
             generation=True,
-            **config.extra_dataset_transform_kwargs,
+            **config.extra_dataset_transform_kwargs
         )
         .batch(per_host_train_batch_size)
         .iterator(),
@@ -162,7 +177,7 @@ def main(_):
 
     # W&B setup
     if jax.process_index() == 0:
-        wandb_kwargs = {"project": config.wandb_project, "tags": [config.data_mix]}
+        wandb_kwargs = {"project": config.wandb_project, "entity": "rdoshi21", "tags": [dataset_kwargs['oxe_kwargs']['data_mix']]}
 
         wandb.init(**wandb_kwargs)
         wandb.config.update(config.to_dict())
@@ -192,7 +207,7 @@ def main(_):
             info = jax.device_get(info)
             wandb_logs.append(info)
             pbar.set_postfix(
-                loss=f"{info['loss']:.4f}",
+                loss=f"{info['loss']:.4f}"
             )
 
             if (i + 1) % config.log_interval == 0:
@@ -219,7 +234,7 @@ def main(_):
                     wandb.log(
                         eval_info | train_info,
                         commit=False,
-                        step=i,
+                        step=i
                     )
 
             if (i + 1) % config.save_interval == 0:

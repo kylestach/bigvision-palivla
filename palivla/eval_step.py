@@ -3,9 +3,11 @@ from typing import Sequence
 import jax
 import jax.numpy as jnp
 
+from functools import partial
+
 from palivla.tokenizer import Tokenizer
 from palivla.train_step import compute_action_metrics, compute_stats
-from palivla.types import TrainingBatch, RolloutBatch
+from palivla.palivla_types import TrainingBatch, RolloutBatch
 
 from jax.sharding import PartitionSpec
 from scalax.sharding import MeshShardingHelper
@@ -97,20 +99,46 @@ def compute_gen_stats(
         target_key_order=target_key_order,
     )
 
-    return mesh.sjit(
+    gt_action_tokens = tokenize_fn(batch.actions)
+
+    __compute_action_metrics_shim = partial(
         _compute_action_metrics_shim,
-        static_argnums=(0, 1, 2, 3),
-        out_shardings=PartitionSpec(),
-    )(
         detokenize_fn,
         prefix,
         batch.actions.shape[-1],
         tokenizer_config,
+    )
+
+    return mesh.sjit(
+        __compute_action_metrics_shim,
+        # _compute_action_metrics_shim,
+        # static_argnums=(0, 1, 2, 3),
+        out_shardings=PartitionSpec(),
+    )(
+        # detokenize_fn,
+        # prefix,
+        # batch.actions.shape[-1],
+        # tokenizer_config,
         out_tokens,
         None,
-        split_tokens["gen"][:, :tokenizer_config.num_action_tokens],
+        gt_action_tokens,
         batch.actions,
     )
+
+    # return mesh.sjit(
+    #     _compute_action_metrics_shim,
+    #     static_argnums=(0, 1, 2, 3),
+    #     out_shardings=PartitionSpec(),
+    # )(
+    #     detokenize_fn,
+    #     prefix,
+    #     batch.actions.shape[-1],
+    #     tokenizer_config,
+    #     out_tokens,
+    #     None,
+    #     split_tokens["gen"][:, :tokenizer_config.num_action_tokens],
+    #     batch.actions,
+    # )
 
 
 def compute_eval_stats(
@@ -130,7 +158,7 @@ def compute_eval_stats(
         all_inputs,
         all_masks,
         text_ar_mask=batch.tokens_ar[..., :-1],
-        proprio=batch.get("proprio", None),
+        proprio=batch.get("proprio_single_arm", None),
         train=False,
         target_key_order=target_key_order,
     )

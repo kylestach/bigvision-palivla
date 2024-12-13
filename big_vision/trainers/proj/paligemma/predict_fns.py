@@ -89,7 +89,7 @@ def _decode_with_logp(
           "text": batch["text"],
           "mask_input": batch["mask_input"],
           "mask_ar": batch["mask_ar"],
-          "proprio": batch.get("proprio", None),
+          "proprio": batch.get("proprio_single_arm", None),
       },
       model=model,
       max_decode_len=max_decode_len,
@@ -231,7 +231,7 @@ def _prefill_cache(params, batch, *, model, max_decode_len):
   variables = {"params": params}
   (x, input_mask, mask_ar), _ = model.apply(
       variables, batch["image"], batch["text"],
-      proprio=batch.get("proprio", None),
+      proprio=batch.get("proprio_single_arm", None),
       input_mask=batch["mask_input"],
       mask_ar=batch["mask_ar"],
       method=model.embed_image_and_text)
