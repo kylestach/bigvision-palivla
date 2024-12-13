@@ -203,6 +203,8 @@ class ValueHead(nn.Module):
     self.layers = [
         nn.Dense(256, kernel_init=nn.initializers.xavier_uniform()),
         nn.gelu,
+        nn.Dense(256, kernel_init=nn.initializers.xavier_uniform()),
+        nn.gelu,
         # nn.Dense(256, kernel_init=nn.initializers.xavier_uniform()),
         # nn.gelu,
         # nn.Dense(256, kernel_init=nn.initializers.xavier_uniform()),
@@ -227,6 +229,8 @@ class CrossEntropyValueHead(nn.Module):
     
     def setup(self):
         self.layers = [
+            nn.Dense(256, kernel_init=nn.initializers.xavier_uniform()),
+            nn.gelu,
             nn.Dense(256, kernel_init=nn.initializers.xavier_uniform()),
             nn.gelu,
             nn.Dense(self.num_bins, kernel_init=nn.initializers.xavier_uniform()),
@@ -466,7 +470,8 @@ class Model(nn.Module):
           q_low = q_low,
           q_high = q_high,
           num_bins = 256,
-          name="value_head"
+          name="value_head",
+          stop_grad=True,
       )
     elif self.value_head_type == "linear":
       value_head = ValueHead(embed_dim=self.width, name="value_head")
