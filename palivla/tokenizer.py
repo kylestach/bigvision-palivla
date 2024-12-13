@@ -179,17 +179,11 @@ class Tokenizer:
             [tokens_by_name["prefix"], tokens_by_name["causal"], tokens_by_name["pad"]],
             axis=0,
         )[: self.config.max_pad_length]
-
         include_prefix_mask = (
             tf.ones_like(tokens_by_name["prefix"], dtype=tf.bool)
             if self.config.prompt_autoregressive
             else tf.zeros_like(tokens_by_name["prefix"], dtype=tf.bool)
         )
-        
-        include_prefix_always_mask = (
-            tf.ones_like(tokens_by_name["prefix"], dtype=tf.bool)
-        )
-
         mask_ar = tf.concat(
             [
                 include_prefix_mask,
@@ -198,16 +192,6 @@ class Tokenizer:
             ],
             axis=0,
         )[: self.config.max_pad_length]
-
-        mask_ar_generation = tf.concat(
-            [
-                include_prefix_always_mask,
-                tf.ones_like(tokens_by_name["causal"], dtype=tf.bool),
-                tf.ones_like(tokens_by_name["pad"], dtype=tf.bool),
-            ],
-            axis=0,
-        )[: self.config.max_pad_length]
-
         mask_loss = tf.concat(
             [
                 include_prefix_mask,
@@ -217,16 +201,28 @@ class Tokenizer:
             axis=0,
         )[: self.config.max_pad_length]
 
-        mask_loss_generation_only = tf.concat(
+        always_include_prefix_mask = (
+            tf.ones_like(tokens_by_name["prefix"], dtype=tf.bool)
+        )
+        mask_ar_fuse = tf.concat(
             [
-                include_prefix_always_mask,
+                always_include_prefix_mask,
+                tf.ones_like(tokens_by_name["causal"], dtype=tf.bool),
+                tf.ones_like(tokens_by_name["pad"], dtype=tf.bool),
+            ],
+            axis=0,
+        )[: self.config.max_pad_length]
+        mask_loss_fuse = tf.concat(
+            [
+                always_include_prefix_mask,
                 tf.zeros_like(tokens_by_name["causal"], dtype=tf.bool),
                 tf.zeros_like(tokens_by_name["pad"], dtype=tf.bool),
             ],
             axis=0,
         )[: self.config.max_pad_length]
 
-        return tokens, mask_ar, mask_loss, mask_ar_generation, mask_loss_generation_only
+
+        return tokens, mask_ar, mask_loss, mask_ar_fuse, mask_loss_fuse
 
     def tokenize_language_instruction(self, data):
         instruction = data["task"]["language_instruction"]
@@ -269,24 +265,28 @@ class Tokenizer:
             + self.config.action_vocab_offset,
         }
 
-        tokens, mask_ar, mask_loss, mask_ar_generation, mask_loss_generation_only = self.compose_token_structure(tokens)
+        tokens, mask_ar, mask_loss, mask_ar_fuse, mask_loss_fuse = self.compose_token_structure(tokens)
 
         return {
             "tokens": tokens,
             "mask_ar": mask_ar,
             "mask_loss": mask_loss,
-            "mask_ar_generation": mask_ar_generation,
-            "mask_loss_generation_only": mask_loss_generation_only,
+            "mask_ar_fuse": mask_ar_fuse,
+            "mask_loss_fuse": mask_loss_fuse,
             "mask_input": tokens != self.config.pad_token,
         }
 
     def prepare_tokens_for_generation(self, data, language_token_instructions):
         tokens = {
             "prompt": language_token_instructions[: self.config.max_pad_length - 10],
+             "action": self._tf_action_tokenize_fn(
+                self.action_tokenizer_params, data["action"][-1], None
+            )
+            + self.config.action_vocab_offset,
         }
 
-        tokens, mask_ar, mask_loss, mask_ar_generation, mask_loss_generation_only = self.compose_token_structure(
-            tokens, include_keys={"prefix", "pad"}
+        tokens, mask_ar, mask_loss, mask_ar_fuse, mask_loss_fuse = self.compose_token_structure(
+            tokens
         )
 
         return {

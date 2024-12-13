@@ -15,7 +15,8 @@ from scalax.sharding import (
 import wandb
 import numpy as np
 
-from palivla.dataset import make_base_dataset_fuse, make_base_dataset, make_base_single_dataset, transform_dataset
+from palivla.dataset import make_base_dataset_digit, make_base_dataset, make_base_single_dataset, transform_dataset
+from octo.data.dataset import make_single_dataset
 from palivla.load_model import make_optimizer
 from palivla.spec import OptimizerSpec
 from palivla.train_state import PaliVLATrainState
@@ -47,9 +48,8 @@ def main(_):
 
     # Make the basic dataset
     # We have to do this first, since we need to know how the dataset is set up before we can construct the model
-    train_ds = make_base_dataset_fuse(**config.dataset_kwargs, train=True)
-    # eval_ds = make_base_dataset_fuse(**config.dataset_kwargs, train=True)
-
+    train_ds = make_base_dataset_digit(**config.dataset_kwargs, train=True)
+    eval_ds = make_base_dataset_digit(**config.dataset_kwargs, train=False)
     batch_shape = {
         "text": jax.ShapeDtypeStruct(shape=(1, 10), dtype=jnp.int32),
         "image_primary": jax.ShapeDtypeStruct(shape=(1, 224, 224, 3), dtype=jnp.uint8),
@@ -58,6 +58,7 @@ def main(_):
         "image_digit_right": jax.ShapeDtypeStruct(shape=(1, 224, 224, 3), dtype=jnp.float32),
         "mel_spectro": jax.ShapeDtypeStruct(shape=(1, 224, 224, 3), dtype=jnp.float32),
         "proprio": jax.ShapeDtypeStruct(shape=(1, 6), dtype=jnp.float32),
+        "modality_idx": jax.ShapeDtypeStruct(shape=(1, 1), dtype=jnp.int32),
     }
 
     if config.resume_from_checkpoint_dir is None:
@@ -107,19 +108,49 @@ def main(_):
             k: batch["observation"][k]
             for k in batch["observation"]
             if k in model.model_state.model.modality_mappings and k != "text"
+        } | {
+            "modality_idx": batch["modality_idx"][:, None],
         }
         sensors_mask = {
             k: np.squeeze(batch["observation"]["pad_mask_dict"][k], axis=-1)
             for k in model.model_state.model.modality_mappings
-            if k != "text"
-        }
+            if k != "text" and k != "modality_idx"
+        } # modality_idx mask added later depending on whether in a fuse step or not
         
-        modality_combo_mask = {
-            k: np.squeeze(batch["modality_combo_mask"][k], axis=-1)
-            for k in model.model_state.model.modality_mappings
-            if k != "text"
+        return mesh.local_data_to_global_array(
+            TrainingBatch(
+                sensors=sensors,
+                sensors_mask=sensors_mask,
+                actions=batch["action"],
+                actions_mask=batch["action_pad_mask"],
+                tokens=batch["tokens"],
+                tokens_ar=batch["mask_ar"],
+                tokens_loss=batch.get("mask_loss", None),
+                tokens_ar_fuse=batch["mask_ar_fuse"],
+                tokens_loss_fuse=batch.get("mask_loss_fuse", None),
+                tokens_mask=batch["mask_input"],
+                modality_idx=batch["modality_idx"],
+                mic_mask=batch["mic_mask"],
+            )
+        )
+
+    def make_gen_batch(batch):
+        sensors = {
+            k: batch["observation"][k]
+            for k in batch["observation"]
+            if k in model.model_state.model.modality_mappings and k != "text"
+        } | {
+            "modality_idx": batch["modality_idx"][:, None],
         }
-        train_batch = TrainingBatch(
+        sensors_mask = {
+            k: np.squeeze(batch["observation"]["pad_mask_dict"][k], axis=-1)
+            for k in model.model_state.model.modality_mappings
+            if k != "text" and k != "modality_idx"
+        } | {
+            "modality_idx": jnp.zeros_like(batch["modality_idx"], dtype=jnp.bool_),
+        }
+        return mesh.local_data_to_global_array(
+            TrainingBatch(
                 sensors=sensors,
                 sensors_mask=sensors_mask,
                 actions=batch["action"],
@@ -128,29 +159,9 @@ def main(_):
                 tokens_ar=batch["mask_ar"],
                 tokens_loss=batch.get("mask_loss", None),
                 tokens_mask=batch["mask_input"],
-                modality_combo_mask=modality_combo_mask,
-                modality_combo_loss_mask=batch.get("modality_combo_loss_mask", None),
-                tokens_loss_generation_only=batch.get("mask_loss_generation_only", None),
-                tokens_ar_generation=batch.get("mask_ar_generation", None),
             )
-        # jax.debug.print("TRAINING BATCH " + " ".join(train_batch.sensors.keys()))
-        return mesh.local_data_to_global_array(
-            # TrainingBatch(
-            #     sensors=sensors,
-            #     sensors_mask=sensors_mask,
-            #     actions=batch["action"],
-            #     actions_mask=batch["action_pad_mask"],
-            #     tokens=batch["tokens"],
-            #     tokens_ar=batch["mask_ar"],
-            #     tokens_loss=batch.get("mask_loss", None),
-            #     tokens_mask=batch["mask_input"],
-            #     modality_combo_mask=modality_combo_mask,
-            #     modality_combo_loss_mask=batch.get("modality_combo_loss_mask", None),
-            #     tokens_loss_generation_only=batch.get("mask_loss_generation_only", None),
-            #     tokens_ar_generation=batch.get("mask_ar_generation", None),
-            # )
-            train_batch
         )
+
 
     train_it = map(
         make_training_batch,
@@ -164,20 +175,8 @@ def main(_):
         .iterator(),
     )
 
-    batch = next(train_it)
-    # eval_it = map(
-    #     make_training_batch,
-    #     transform_dataset(
-    #         eval_ds,
-    #         model.tokenizer,
-    #         generation=False,
-    #         **config.extra_dataset_transform_kwargs,
-    #     )
-    #     .batch(per_host_eval_batch_size)
-    #     .iterator(),
-    # )
     gen_train_it = map(
-        make_training_batch,
+        make_gen_batch,
         transform_dataset(
             train_ds,
             model.tokenizer,
@@ -188,9 +187,24 @@ def main(_):
         .iterator(),
     )
 
+    gen_eval_it = map(
+        make_gen_batch,
+        transform_dataset(
+            eval_ds,
+            model.tokenizer,
+            generation=True,
+            **config.extra_dataset_transform_kwargs,
+        )
+        .batch(per_host_eval_batch_size)
+        .iterator(),
+    )
+
     # W&B setup
     if jax.process_index() == 0:
         wandb_kwargs = {"project": config.wandb_project, "tags": [config.data_mix]}
+
+        if 'wandb_run_name' in config.to_dict() and config.wandb_run_name is not None:
+            wandb_kwargs["name"] = config.wandb_run_name    
 
         wandb.init(**wandb_kwargs)
         wandb.config.update(config.to_dict())
@@ -233,22 +247,23 @@ def main(_):
 
             if (i + 1) % config.eval_interval == 0:
                 eval_info = {}
-                # eval_batch = next(gen_eval_it)
-                # eval_info = model.eval_step(
-                #     eval_batch, "eval/gen_", include_regular_stats=False
-                # )
+                eval_batch = next(gen_eval_it)
+                eval_info = model.eval_step(
+                    eval_batch, "eval/gen_", include_regular_stats=False
+                )
 
-                # train_batch_for_eval = next(gen_train_it)
-                # train_info = model.eval_step(
-                #     train_batch_for_eval, "train/gen_", include_regular_stats=False
-                # )
+                train_batch_for_eval = next(gen_train_it)
+                train_info = model.eval_step(
+                    train_batch_for_eval, "train/gen_", include_regular_stats=False
+                )
 
-                # if jax.process_index() == 0:
-                #     wandb.log(
-                #         eval_info | train_info,
-                #         commit=False,
-                #         step=i,
-                #     )
+                if jax.process_index() == 0:
+
+                    wandb.log(
+                        eval_info | train_info,
+                        commit=False,
+                        step=i,
+                    )
 
             if (i + 1) % config.save_interval == 0:
                 if config.save_path is not None:
@@ -259,6 +274,6 @@ def main(_):
 
 if __name__ == "__main__":
     config_flags.DEFINE_config_file(
-        "config", "bridge_config.py", "Path to the config file."
+        "config", "fuse_config.py", "Path to the config file.", lock_config=False
     )
     app.run(main)

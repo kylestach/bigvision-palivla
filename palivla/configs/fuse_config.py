@@ -2,6 +2,9 @@ from ml_collections.config_dict import placeholder, ConfigDict, FieldReference
 
 from palivla.model import get_default_config
 from palivla.spec import ModuleSpec
+from palivla.utils import freeze_structure
+from flax.core import FrozenDict
+import jax.numpy as jnp
 
 placeholder(int)._value
 
@@ -9,8 +12,6 @@ placeholder(int)._value
 def get_config():
     data_mix = FieldReference("oxe_magic_soup", str)
     num_train_steps = FieldReference(400000, int)
-
-    # config_str_list = config_str.split("_")
 
     from big_vision.models.ppp.gemma import get_config
     variant = "gemma_2b"
@@ -26,33 +27,35 @@ def get_config():
         "image_digit_right": "digit_right",
         "mel_spectro": "spectro",
         "text": "llm",
+        "modality_idx": "modality_embedder"
     }
     
     model_config["target_key_order"] = (
-        "image_primary", "image_wrist", "image_digit_left", "image_digit_right", "mel_spectro",
+        "image_primary", "image_wrist", "image_digit_left", "image_digit_right", "mel_spectro", "modality_idx"
     )
     
     model_config['encoder_specs']['digit_left'] = {
-        "__ctor": "palivla.tactile_encoder.tvlViT",
+        "__ctor": "palivla.tactile_encoder_pooled.tvlViT",
         "config": {
             "num_classes": llm_embdim,
-            
+            "pool_type": "cross_attn",
             "load_fn": "palivla.utils.load_tvl_weights",
-            "load_kwargs": {
-                "pretrained_path": "gs://619c8f721786ba/ported_weights/tvl/tvl_vitbgs_params_jax.npz",
-            },
+            "load_kwargs": FrozenDict({
+                "pretrained_path": "gs://oier-europe-bucket/ported_weights/tvl/tvl_vitbgs_params_jax.npz", 
+            }),
         },
+       
     }
     
     model_config['encoder_specs']['digit_right'] = {
-        "__ctor": "palivla.tactile_encoder.tvlViT",
+        "__ctor": "palivla.tactile_encoder_pooled.tvlViT",
         "config": {
             "num_classes": llm_embdim,
-            
+            "pool_type": "cross_attn",
             "load_fn": "palivla.utils.load_tvl_weights",
-            "load_kwargs": {
-                "pretrained_path": "gs://619c8f721786ba/ported_weights/tvl/tvl_vitbgs_params_jax.npz",
-            },
+            "load_kwargs": FrozenDict({
+                "pretrained_path": "gs://oier-europe-bucket/ported_weights/tvl/tvl_vitbgs_params_jax.npz",
+            }),
         },
     }
     
@@ -66,6 +69,15 @@ def get_config():
         }
     }
     
+    model_config['encoder_specs']['modality_embedder'] = {
+        "__ctor": "flax.linen.Embed",
+        "config": {
+            "num_embeddings": 9,
+            "features": llm_embdim,
+            "dtype": jnp.float32
+        }
+    }
+
     img_obs_keys = {
         'primary': 'image_0', 
         'wrist': 'image_1',
@@ -120,13 +132,18 @@ def get_config():
                     "wrist": wrist_augment_kwargs,
                 },
                 "resize_size": {
+                    k: [224, 224] for k in img_obs_keys
                 },
-                "image_dropout_prob": 0.5,
+            
+                "background_subtraction_map": {
+                    'image_digit_left': 'image_digit_left_background', 
+                    'image_digit_right': 'image_digit_right_background',
+                }
             }
     dataset_kwargs = {
         "dataset_kwargs_list": [{
             "name": f"digit_dataset:{DS_NUM}",  
-            "data_dir": "gs://619c8f721786ba",
+            "data_dir": "gs://oier-europe-bucket",
             "image_obs_keys": img_obs_keys,
             "proprio_obs_key": "proprio",
             "sensor_obs_keys": sensor_obs_keys,
@@ -147,17 +164,13 @@ def get_config():
             # "num_parallel_reads": 8,  # for reading from disk / GCS
             # "num_parallel_calls": 16,  # for initial dataset construction
         }],
-         "traj_transform_kwargs": traj_transform_kwargs,
+        "traj_transform_kwargs": traj_transform_kwargs,
         "frame_transform_kwargs": frame_transform_kwargs,
         "balance_weights": True,
         "shuffle_buffer_size": 50000,
         "traj_transform_threads": 48,
         "traj_read_threads": 48,
     }
-    for k in img_obs_keys:
-        frame_transform_kwargs['resize_size'][k] = [224, 224]
-
-    
 
     return ConfigDict(
         {
@@ -170,8 +183,8 @@ def get_config():
             "tokenizer_path": "models/paligemma_tokenizer.model",
             "model_path": "models/paligemma",
             "save_path": "models/paligemma_saved_model",
-            "batch_size": 16,
-            "eval_batch_size": 16,
+            "batch_size": 192,
+            "eval_batch_size": 64,
             "num_steps": num_train_steps,
             "eval_interval": 100,
             "save_interval": 1000,

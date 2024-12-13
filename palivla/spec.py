@@ -36,8 +36,10 @@ class CtorSpec(Generic[T]):
             is_leaf=CtorSpec.is_ctor_spec_dict,
         )
         config = freeze_structure(config)
+        if load_kwargs is None:
+            load_kwargs = {}
         load_kwargs = freeze_structure(load_kwargs)
-        return cls(ctor=ctor, config=freeze(config), load_fn=load_fn, load_kwargs=load_kwargs)
+        return cls(ctor=ctor, config=freeze(config), load_fn=load_fn, load_kwargs=freeze(load_kwargs))
 
     @classmethod
     def from_name(cls, ctor_full_name: str, config: Dict[str, Any]):

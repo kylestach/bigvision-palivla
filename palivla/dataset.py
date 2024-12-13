@@ -10,44 +10,38 @@ from octo.data.dataset import make_interleaved_dataset, make_single_dataset
 from octo.data.oxe import make_oxe_dataset_kwargs_and_weights, make_oxe_dataset_kwargs
 import dlimp
 import jax
+import jax.numpy as jnp
 
-# modality_to_keys = {
-#     'visual': ['image_primary', 'image_wrist'],
-#     'tactile': ['image_digit_left', 'image_digit_right'],
-#     'audio': ['mel_spectro']
-# }
-
-# idx_to_modalities = [('simple'), (), ('visual',), ('tactile',), ('audio',), ('visual', 'tactile'), ('visual', 'audio'), ('tactile', 'audio'), ('visual', 'tactile', 'audio')]
-
-
-def get_combo_mask(data, obs_mask):
-    idx = data['modality_idx']
-    obs_mask['image_primary'] &= (
-        (idx == 0) | (idx == 2) | (idx == 5) | (idx == 6) | (idx == 8)
+# Filter unmasked modalities to match modality_idx
+# the modalities, in order, are:
+# [('simple'), (), ('visual',), ('tactile',), ('audio',), ('visual', 'tactile'), ('visual', 'audio'), ('tactile', 'audio'), ('visual', 'tactile', 'audio')]
+def create_fuse_modal_mask(modality_idx: jax.Array, sensor_masks: dict[str, jax.Array]):
+    sensor_masks["image_primary"] = sensor_masks["image_primary"] & (
+        (modality_idx == 0) | (modality_idx == 2) | (modality_idx == 5) | (modality_idx == 6) | (modality_idx == 8)
     )
-    obs_mask['image_wrist'] &= (
-        (idx == 0) | (idx == 2) | (idx == 5) | (idx == 6) | (idx == 8)
+    sensor_masks["image_wrist"] = sensor_masks["image_wrist"] & (
+        (modality_idx == 0) | (modality_idx == 2) | (modality_idx == 5) | (modality_idx == 6) | (modality_idx == 8)
     )
-    obs_mask['image_digit_left'] &= (
-        (idx == 0) | (idx == 3) | (idx == 5) | (idx == 7) | (idx == 8)
+    sensor_masks["image_digit_left"] = sensor_masks["image_digit_left"] & (
+        (modality_idx == 0) | (modality_idx == 3) | (modality_idx == 5) | (modality_idx == 7) | (modality_idx == 8)
     )
-    obs_mask['image_digit_right'] &= (
-        (idx == 0) | (idx == 3) | (idx == 5) | (idx == 7) | (idx == 8)
+    sensor_masks["image_digit_right"] = sensor_masks["image_digit_right"] & (
+        (modality_idx == 0) | (modality_idx == 3) | (modality_idx == 5) | (modality_idx == 7) | (modality_idx == 8)
     )
-    obs_mask['mel_spectro'] &= (
-        (idx == 0) | (idx == 4) | (idx == 6) | (idx == 7) | (idx == 8)
+    sensor_masks["mel_spectro"] = sensor_masks["mel_spectro"] & (
+        (modality_idx == 0) | (modality_idx == 4) | (modality_idx == 6) | (modality_idx == 7) | (modality_idx == 8)
     )
-    return obs_mask
+    return sensor_masks
 
-def get_combo_loss_mask(data):
-    idx = data['modality_idx']
 
-    loss_mask = tf.ones(shape=(), dtype=tf.bool)
-    # mic_mask = 1 if trajectory has valid audio data (and doesn't have valid tactile annotations)
-    # and = 0 if trajectory doesn't (but does have valid tactile annotations)
-    mic_mask = tf.cast(data['observation']['mic_mask'], tf.bool)
-    loss_mask &= ((tf.math.logical_not(mic_mask) & ((idx == 0) | (idx == 2) | (idx == 3) | (idx == 5) | (idx == 8))) | (mic_mask & ((idx == 2) | (idx == 4) | (idx == 6) | (idx == 8 ))))
-    return loss_mask
+# if mic_mask = True, then this is an audio task, and no tactile instruction is valid 
+# if mic_mask = False, then the audio data is masked, and any audio instruction is not valid
+def enforce_valid_language_instruction(mask_loss_fuse: jax.Array, modality_idx: jax.Array, mic_mask: jax.Array):
+    mask_loss_fuse = mask_loss_fuse & jnp.expand_dims((
+        (mic_mask & ((modality_idx != 3) & (modality_idx != 5) & (modality_idx != 7))) |
+        (~mic_mask & ((modality_idx != 4)))
+    ), axis=-1)
+    return mask_loss_fuse
 
 
 def process_rephrase_tf(
@@ -56,7 +50,6 @@ def process_rephrase_tf(
     probabilities = tf.constant(
         [1 / (num_modalities - 1) if i != 1 else 0 for i in range(num_modalities)]
     )
-
     # Add these arrays to the data dictionary
     should_rephrase = tf.random.uniform(()) < rephrase_prob
     rephrases = tf.stack(
@@ -86,13 +79,14 @@ def process_rephrase_tf(
         tf.math.log(probabilities)[None], num_samples=1
     )
     modality_idx = tf.squeeze(tf.squeeze(modality_idx, axis=-1), axis=-1)
-    data['modality_idx'] = modality_idx
     rephrase_idx = tf.random.uniform([], maxval=num_gpt_gen, dtype=tf.int64)
 
     data["task"]["language_instruction"] = tf.where(
         should_rephrase, rephrases[modality_idx, rephrase_idx], targets[modality_idx]
     )
-
+    
+    data["modality_idx"] = modality_idx
+    data["observation"]["modality_idx"] = modality_idx
     return data
 
 
@@ -116,6 +110,7 @@ def mel_spectro_to_image(data):
     resized_mel_spectro = tf.image.resize(grayscale_mel_spectro, [224, 224])
 
     data["observation"]["mel_spectro"] = resized_mel_spectro
+    data["observation"]["pad_mask_dict"]["mel_spectro"] &= data["mic_mask"]
     return data
 
 
@@ -127,6 +122,7 @@ def tactile_to_image(data):
 
     tactile_mean = tf.constant([0.209282, -0.23046867, 0.07245745])
     tactile_std = tf.constant([6.41063034, 3.83920391, 4.75675555])
+
     data["observation"]["image_digit_left"] = normalize_and_clip(
         data["observation"]["image_digit_left"], tactile_mean, tactile_std
     )
@@ -136,25 +132,8 @@ def tactile_to_image(data):
     return data
 
 
-def make_stacked_images(data):
-    primary_image = tf.image.resize(
-        tf.cast(data["observation"]["image_primary"][-1], tf.float32) / 127.5 - 1,
-        [224, 224],
-    )
-    wrist_image = tf.image.resize(
-        tf.cast(data["observation"]["image_wrist"][-1], tf.float32) / 127.5 - 1,
-        [224, 224],
-    )
-
-    data["observation"]["images"] = tf.stack(
-        [
-            primary_image,
-            wrist_image,
-            data["observation"]["image_digit_left"],
-            data["observation"]["image_digit_right"],
-            data["observation"]["mel_spectro"],
-        ]
-    )
+def process_mic_mask(data):
+    data["mic_mask"] = tf.squeeze(tf.cast(data["observation"]["mic_mask"], tf.bool), axis=-1)
     return data
 
 
@@ -170,7 +149,6 @@ def make_base_dataset(
     traj_transform_threads: int,
     traj_read_threads: int,
 ) -> dlimp.DLataset:
-    
     dataset_kwargs_list, sample_weights = (
         make_oxe_dataset_kwargs_and_weights(**oxe_kwargs)
     )
@@ -189,7 +167,8 @@ def make_base_dataset(
 
     return dataset
 
-def make_base_dataset_fuse(
+# quick hack to make digit dataset in the same way
+def make_base_dataset_digit(
     *,
     dataset_kwargs_list: list[dict],
     train: bool,
@@ -255,9 +234,9 @@ def make_base_single_dataset(
     dataset_statistics = dataset.dataset_statistics
     if batch_size is not None:
         dataset = dataset.batch(batch_size)
+
     dataset.dataset_statistics = dataset_statistics
     return dataset
-
 
 def make_frame_transform(
     multimodal_rephrasings: bool,
@@ -271,13 +250,9 @@ def make_frame_transform(
     def frame_transform(data):
         if multimodal_rephrasings:
             data = process_rephrase_tf(data, **multimodal_rephrasing_kwargs)
+            data = process_mic_mask(data)
             data = mel_spectro_to_image(data)
             data = tactile_to_image(data)
-            fuse_mask = {}
-            for k, v in data['observation']['pad_mask_dict'].items():
-                fuse_mask[k] = tf.identity(tf.convert_to_tensor(v))
-            data['modality_combo_mask'] = get_combo_mask(data, fuse_mask)
-            data['modality_combo_loss_mask'] = get_combo_loss_mask(data)
             
         if chunk_relative_actions:
             # Gripper is absolute, rest is relative
@@ -314,11 +289,6 @@ def make_frame_transform(
 
         data["proprio"] = tf.squeeze(data["observation"]["proprio"], axis=0)
         data["action"] = tf.squeeze(data["action"], axis=0)
-
-        all_key_str = " ".join(data.keys())
-        key_str = " ".join(data["observation"].keys())
-        # jax.debug.print("All keys: {all_key_str}" , all_key_str = all_key_str)
-        # jax.debug.print("Keys: {key_str}" , key_str = key_str)
 
         return data
 

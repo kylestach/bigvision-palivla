@@ -24,7 +24,7 @@ from palivla.model import load_from_pretrained
 from palivla.spec import ModuleSpec, OptimizerSpec, restore_gluon_module
 from palivla.tokenizer import Tokenizer
 from palivla.preprocess.sentencepiece_model_pb2 import ModelProto as SentencepieceModelProto
-from palivla.train_step import TrainingBatch, step_fn, step_fn_fuse
+from palivla.train_step import TrainingBatch, step_fn
 from palivla.types import RolloutBatch
 from palivla.predict_fns import _decode
 
@@ -497,10 +497,10 @@ class PaliVLATrainState:
 
     @cached_property
     def step_fn(self):
-        __step_fn = partial(step_fn, self.detokenize_action, True, self.tokenizer.config)
+        # for some reason, static argnums not working, can't be bothered to figure it out
+        __step_fn = partial(step_fn, self.detokenize_action, True, self.tokenizer.config, False)
         if self.mesh is None:
-            _step_fn = partial(jax.jit, step_fn)
-            raise ValueError
+            _step_fn = partial(jax.jit, __step_fn)
         else:
             _step_fn = partial(
                 self.mesh.sjit,
@@ -513,7 +513,6 @@ class PaliVLATrainState:
             )
 
         return _step_fn(
-            # static argnums was not working - not sure why
             in_shardings=(
                 self.model_state.sharding_metadata.model_sharding_rule,
                 self.data_sharding,
@@ -528,9 +527,9 @@ class PaliVLATrainState:
     
     @cached_property
     def fuse_step_fn(self):
-        __step_fn = partial(step_fn_fuse, self.detokenize_action, True, self.tokenizer.config)
+        __step_fn = partial(step_fn, self.detokenize_action, True, self.tokenizer.config, True)
         if self.mesh is None:
-            _step_fn = partial(jax.jit, step_fn)
+            _step_fn = partial(jax.jit, __step_fn)
         else:
             _step_fn = partial(
                 self.mesh.sjit,
@@ -543,7 +542,6 @@ class PaliVLATrainState:
             )
 
         return _step_fn(
-            # static argnums was not working - not sure why
             in_shardings=(
                 self.model_state.sharding_metadata.model_sharding_rule,
                 self.data_sharding,
@@ -557,34 +555,30 @@ class PaliVLATrainState:
         )
 
     def prepare_sensors(self, sensors: Dict[str, jax.Array]):
-        return {k: (v / 127.5 - 1.0) if "image" in k else v for k, v in sensors.items()}
+        return {k: (v / 127.5 - 1.0) if "image" in k and "digit" not in k else v for k, v in sensors.items()}
 
     def prepare_batch(self, batch: TrainingBatch):
         return batch.replace(sensors=self.prepare_sensors(batch.sensors))
 
-    def append_identity_to_metrics(self, metrics: dict, identity_suffix: str):
-        processed_metrics = {}
-        for key, val in metrics.items(): 
-            processed_metrics[f'{key}_{identity_suffix}'] = val
-        return processed_metrics
-
-    def train_step(self, batch: TrainingBatch):
+    def train_step(self, batch: TrainingBatch,):
         with self.mesh.mesh, nn.logical_axis_rules([("act_batch", "fsdp")]):
-            batch = self.prepare_batch(batch)
             self.model_state, base_info, self.rng = self.step_fn(
                 self.model_state,
-                batch,
+                self.prepare_batch(batch),
                 self.rng,
             )
-            
-            # self.model_state, fuse_info, self.rng = self.fuse_step_fn(
-            #     self.model_state,
-            #     batch,
-            #     self.rng,
-            # )
-            # fuse_info = self.append_identity_to_metrics(fuse_info, "fuse")
-            # info = base_info | fuse_info
-            info = base_info
+        
+
+
+            self.model_state, fuse_info, self.rng = self.fuse_step_fn(
+                self.model_state,
+                self.prepare_batch(batch),
+                self.rng,
+            )
+
+            info = base_info | fuse_info
+
+
         return info
 
     def decode(

@@ -1,7 +1,6 @@
 import jax
 from jax.experimental import multihost_utils
 import numpy as np
-from palivla.types import Params
 import tensorflow as tf
 
 
@@ -54,4 +53,3 @@ def load_tvl_weights(pretrained_path: str) -> dict[tuple, np.ndarray]:
         ckpt_dict = np.load(f, allow_pickle=False)
     keys, values = zip(*list(ckpt_dict.items()))
     return {tuple(k.split('|')): v for k, v in zip(keys, values)}
-

@@ -9,6 +9,7 @@ from palivla.types import TrainingBatch, RolloutBatch
 
 from jax.sharding import PartitionSpec
 from scalax.sharding import MeshShardingHelper
+import functools
 
 
 def _compute_action_metrics_shim(
@@ -66,7 +67,7 @@ def compute_gen_stats(
         )
 
         gen_mask = jnp.arange(seq_len) >= gen_start
-        gen_mask = jnp.roll(mask, -gen_start, axis=0)
+        gen_mask = jnp.roll(gen_mask, -gen_start, axis=0)
         gen = jnp.where(
             gen_mask,
             jnp.roll(tokens, -gen_start, axis=0),
@@ -83,7 +84,10 @@ def compute_gen_stats(
             "gen_ar": gen_ar,
         }
 
-    split_tokens = jax.vmap(_split_tokens)(batch.tokens, batch.tokens_mask, batch.tokens_ar, batch.gen_start)
+    gen_start = (
+            jnp.argmax(batch.tokens == tokenizer_config.begin_of_action_token, axis=-1) + 1
+    )
+    split_tokens = jax.vmap(_split_tokens)(batch.tokens, batch.tokens_mask, batch.tokens_ar, gen_start)
 
     rollout_batch = RolloutBatch(
         sensor_data=batch.sensors,
@@ -98,14 +102,9 @@ def compute_gen_stats(
     )
 
     return mesh.sjit(
-        _compute_action_metrics_shim,
-        static_argnums=(0, 1, 2, 3),
+        functools.partial(_compute_action_metrics_shim, detokenize_fn, prefix, batch.actions.shape[-1], tokenizer_config),
         out_shardings=PartitionSpec(),
     )(
-        detokenize_fn,
-        prefix,
-        batch.actions.shape[-1],
-        tokenizer_config,
         out_tokens,
         None,
         split_tokens["gen"][:, :tokenizer_config.num_action_tokens],

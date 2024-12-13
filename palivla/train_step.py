@@ -8,6 +8,8 @@ from flax.training.train_state import TrainState
 from palivla.tokenizer import ActionTokenizer, Tokenizer
 from palivla.load_model import components_by_label
 from palivla.types import TrainingBatch
+from dataset import create_fuse_modal_mask, enforce_valid_language_instruction
+from einops import repeat
 
 
 def smooth_nll_loss(logits, labels, sigma, base_action_token, action_vocab_size):
@@ -121,6 +123,30 @@ def compute_action_metrics(
     )
 
 
+def compute_fuse_metrics(
+    pred_logits,
+    labels,
+    tokenizer_config,
+    log_segment_prefix
+):
+    batch_size, seq_len, num_logits = pred_logits.shape
+
+    # extract text tokens
+    end_of_text_token = repeat(jnp.argmax(labels == tokenizer_config.begin_of_action_token, axis=-1), "b-> b s", s=seq_len)
+    is_prompt_mask = repeat(jnp.arange(seq_len), "i -> b i", b=batch_size) < end_of_text_token 
+
+    pred_tokens = jnp.argmax(pred_logits, axis=-1)
+    acc = (pred_tokens == labels) * is_prompt_mask
+    total_acc = jnp.sum(acc, axis=-1) / jnp.sum(is_prompt_mask, axis=-1)
+    total_acc = jnp.mean(total_acc)
+
+    metrics = {
+        f"{log_segment_prefix}acc": total_acc,
+    } | {
+        f"_details/{log_segment_prefix}acc_{i}": jnp.sum(acc[:, i]) / (jnp.sum(is_prompt_mask[:, i]) + 1e-5) for i in range(10)
+    }
+    return metrics
+
 def compute_stats(
     *,
     detokenize_fn,
@@ -130,46 +156,65 @@ def compute_stats(
     mask_loss,
     tokenizer_config: Tokenizer.TokenizerConfig,
     log_segment_prefix: str = "",
+    fuse_step: bool = False
 ):
     output_pred_mask = mask_loss[..., 1:]
     labels = tokens[..., 1:]
 
-    action_token_info = get_action_tokens(
-        pred_logits, labels, tokenizer_config.num_action_tokens, tokenizer_config.begin_of_action_token
-    )
-    metrics = compute_action_metrics(
-        detokenize_fn,
-        **action_token_info,
-        action_dim=actions.shape[-1],
-        gt_actions=actions,
-        tokenizer_config=tokenizer_config,
-        log_segment_prefix=log_segment_prefix,
-    )
+    if not fuse_step:
+        action_token_info = get_action_tokens(
+            pred_logits, labels, tokenizer_config.num_action_tokens, tokenizer_config.begin_of_action_token
+        )
+        metrics = compute_action_metrics(
+            detokenize_fn,
+            **action_token_info,
+            action_dim=actions.shape[-1],
+            gt_actions=actions,
+            tokenizer_config=tokenizer_config,
+            log_segment_prefix=log_segment_prefix,
+        )
+    else:
+        metrics = compute_fuse_metrics(
+            pred_logits=pred_logits,
+            labels=labels,
+            tokenizer_config=tokenizer_config,
+            log_segment_prefix=log_segment_prefix
+        )
+    
 
     loss = jnp.mean(
         output_pred_mask
         * optax.softmax_cross_entropy_with_integer_labels(pred_logits, labels)
     ) / jnp.mean(output_pred_mask)
-    metrics["loss"] = loss
+    metrics[f"{'fuse_' if fuse_step else ''}loss"] = loss
 
     return loss, metrics
 
 
-def _step_fn(
+def step_fn(
     detokenize_fn,
     train: bool,
-    use_fuse_masks: bool,
     tokenizer_config: Tokenizer.TokenizerConfig,
+    fuse_step: bool,
     train_state: TrainState,
     batch: TrainingBatch,
     key: chex.PRNGKey,
 ):
-    def loss_fn(params, batch, key: chex.PRNGKey):
+    def loss_fn(params, batch: TrainingBatch, key: chex.PRNGKey):
         all_inputs = batch.sensors | {"text": batch.tokens[..., :-1]}
-        all_masks = batch.sensors_mask | {
-            "text": jnp.ones_like(batch.tokens[..., :-1], dtype=jnp.bool_)
-        }
-        fuse_masks = batch.modality_combo_mask | {
+        if fuse_step:
+            sensor_masks = create_fuse_modal_mask(batch.modality_idx, batch.sensors_mask) | {
+                "modality_idx": jnp.squeeze(jnp.ones_like(batch.sensors["modality_idx"], dtype=jnp.bool_), axis=-1),
+            }
+            mask_loss = enforce_valid_language_instruction(batch.tokens_loss_fuse, batch.modality_idx, jnp.squeeze(batch.mic_mask, axis=-1))
+            ar_mask = batch.tokens_ar_fuse
+        else:   
+            sensor_masks = batch.sensors_mask | {
+                "modality_idx": jnp.squeeze(jnp.zeros_like(batch.sensors["modality_idx"], dtype=jnp.bool_), axis=-1),
+            }
+            mask_loss = batch.tokens_loss
+            ar_mask = batch.tokens_ar
+        all_masks = sensor_masks | {
             "text": jnp.ones_like(batch.tokens[..., :-1], dtype=jnp.bool_)
         }
 
@@ -177,10 +222,8 @@ def _step_fn(
             {"params": params},
             all_inputs,
             data_masks=all_masks,
-            fuse_masks=fuse_masks,
-            text_ar_mask=batch.tokens_ar_generation[..., :-1] if use_fuse_masks else batch.tokens_ar[..., :-1],
+            text_ar_mask=ar_mask,
             train=train,
-            target_key_order=train_state.model.target_key_order,
             rngs={"dropout": key},
         )
 
@@ -189,9 +232,10 @@ def _step_fn(
             pred_logits=logits,
             tokens=batch.tokens,
             actions=batch.actions,
-            mask_loss= (batch.tokens_loss_generation_only & batch.modality_combo_loss_mask) if use_fuse_masks else batch.tokens_loss,
+            mask_loss=mask_loss,
             tokenizer_config=tokenizer_config,
-            log_segment_prefix="train/tf_",
+            log_segment_prefix="train/tf_" if not fuse_step else "train/fuse_",
+            fuse_step=fuse_step
         )
 
     grad_fn = jax.grad(loss_fn, has_aux=True)
@@ -223,25 +267,3 @@ def _step_fn(
     )
 
     return train_state, info, key
-
-
-def step_fn_fuse(
-    detokenize_fn,
-    train: bool,
-    tokenizer_config: Tokenizer.TokenizerConfig,
-    train_state: TrainState,
-    batch: TrainingBatch,
-    key: chex.PRNGKey,
-):
-    return _step_fn(detokenize_fn=detokenize_fn, train=train, use_fuse_masks=True, tokenizer_config=tokenizer_config, train_state=train_state, batch=batch, key=key)
-
-
-def step_fn(
-    detokenize_fn,
-    train: bool,
-    tokenizer_config: Tokenizer.TokenizerConfig,
-    train_state: TrainState,
-    batch: TrainingBatch,
-    key: chex.PRNGKey,
-):
-    return _step_fn(detokenize_fn=detokenize_fn, train=train, use_fuse_masks=False, tokenizer_config=tokenizer_config, train_state=train_state, batch=batch, key=key)
