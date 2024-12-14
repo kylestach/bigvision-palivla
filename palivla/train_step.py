@@ -241,8 +241,8 @@ def step_fn(
         del info
 
         scalar_target_to_dist_fn = hl_gauss_transform(
-            min_value=-1.0 / (1 - 0.98),
-            max_value=0.0 / (1 - 0.98),
+            min_value=0.0 / (1 - 0.98),
+            max_value=1.0 / (1 - 0.98),
             num_bins = 256,
         )[0]
 

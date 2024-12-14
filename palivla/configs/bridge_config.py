@@ -103,8 +103,8 @@ def get_config():
                 "num_steps": num_train_steps,
                 "llm_optimizer_kwargs": {
                     "init_learning_rate": 0,
-                    "learning_rate": 5e-4,
-                    "warmup_steps": 500,
+                    "learning_rate": 5e-5,
+                    "warmup_steps": 2000,
                     "weight_decay": 5e-6,
                     "grad_norm_clip": 10.0,
                     "b1": 0.9,
@@ -112,8 +112,8 @@ def get_config():
                 },
                 "embed_optimizer_kwargs": {
                     "init_learning_rate": 0,
-                    "learning_rate": 5e-4,
-                    "warmup_steps": 100,
+                    "learning_rate": 5e-5,
+                    "warmup_steps": 2000,
                     "weight_decay": 0.0,
                     "grad_norm_clip": 10.0,
                     "b1": 0.9,
@@ -121,8 +121,8 @@ def get_config():
                 },
                 "img_optimizer_kwargs": {
                     "init_learning_rate": 0,
-                    "learning_rate": 5e-4,
-                    "warmup_steps": 500,
+                    "learning_rate": 5e-5,
+                    "warmup_steps": 2000,
                     "weight_decay": 5e-6,
                     "grad_norm_clip": 10.0,
                     "b1": 0.9,

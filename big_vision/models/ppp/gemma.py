@@ -463,15 +463,15 @@ class Model(nn.Module):
         name="embedder")
 
     if self.value_head_type == "hlgauss":
-      q_low = -1.0 / (1 - 0.98)
-      q_high = 0.0 / (1 - 0.98)
+      q_low = 0.0 / (1 - 0.98)
+      q_high = 1.0 / (1 - 0.98)
       value_head = CrossEntropyValueHead(
           embed_dim=self.width,
           q_low = q_low,
           q_high = q_high,
           num_bins = 256,
           name="value_head",
-          stop_grad=True,
+          stop_grad=False,
       )
     elif self.value_head_type == "linear":
       value_head = ValueHead(embed_dim=self.width, name="value_head")
