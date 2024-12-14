@@ -73,6 +73,9 @@ def main(_):
             optimizer_spec=OptimizerSpec.create(
                 make_optimizer, config.optimizer_kwargs.to_dict()
             ),
+            critic_optimizer_spec=OptimizerSpec.create(
+                make_optimizer, config.critic_optimizer_kwargs.to_dict()
+            ),
             model_sharding=model_sharding,
             data_sharding=data_sharding,
             mesh=mesh,

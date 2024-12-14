@@ -117,10 +117,11 @@ class TrainState(FlaxTrainState):
         model_spec: ModuleSpec,
         optimizer_spec: OptimizerSpec,
         sharding_metadata: ShardingMetadata | None = None,
+        critic_optimizer_spec: OptimizerSpec | None = None,
     ):
         model = model_spec.instantiate()
         optimizer = optimizer_spec.instantiate()
-        critic_optimizer = optimizer_spec.instantiate()
+        critic_optimizer = optimizer_spec.instantiate() if critic_optimizer_spec is None else critic_optimizer_spec.instantiate()
 
         def init_fn(params):
             opt_state = optimizer.init(params)
@@ -327,6 +328,7 @@ class PaliVLATrainState:
         seed: int,
         param_dtype: jnp.dtype,
         batch_shape: Dict[str, jax.ShapeDtypeStruct],
+        critic_optimizer_spec: OptimizerSpec | None = None,
     ):
         model_spec, params = load_from_pretrained(
             paligemma_weights_path,
@@ -347,6 +349,7 @@ class PaliVLATrainState:
             params=params,
             model_spec=model_spec,
             optimizer_spec=optimizer_spec,
+            critic_optimizer_spec=critic_optimizer_spec,
             sharding_metadata=model_sharding_metadata,
             # target_params = copy.deepcopy(params),
         )

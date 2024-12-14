@@ -346,6 +346,7 @@ def step_fn(
         # advantage = jax.lax.stop_gradient(qs - q_pi)
         advantage = 0
         critic_metrics = {
+            "critic_loss": critic_loss,
             "critic/critic_loss": critic_loss,
             "critic/td_loss": td_loss,
             # "critic/cql_loss": cql_loss,
@@ -438,6 +439,7 @@ def step_fn(
     )
 
     info = info | train_state.opt_state.hyperparams
+    critic_info = critic_info | train_state.critic_opt_state.hyperparams
 
     def _norm_info(values, prefix):
         components = components_by_label(values)
