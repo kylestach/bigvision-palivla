@@ -11,6 +11,22 @@ DEFAULT_TRAIN_ARGS = {
 }
 
 TPU_PODS = {
+    "max-pod-128": {
+        "tpc_args": {
+            "project": "CMU-AIDM",
+            "zone": "europe-west4-b",
+            "accelerator_type": "v5litepod-128",
+            "runtime_version": "v2-tpuv5-litepod",
+            "reserved": False,
+        },
+        "setup_script": "source $HOME/.bashrc && conda activate big_vision",
+        "src_dir": "/nfs/nfs3/users/kstachowicz/big_vision",
+        "train_args": {
+            "batch_size": 1024,
+            "save_path": "gs://kyle-checkpoints-eu4/paligemma-checkpoints",
+            "dataset_kwargs.oxe_kwargs.data_dir": "gs://rail-datasets-europe-west4/oxe/resize_256_256",
+        },
+    },
     "kyle-pod-64": {
         "tpc_args": {
             "project": "rail-tpus",
@@ -109,13 +125,15 @@ TPU_PODS = {
     },
 }
 
+
 def parse_args(args_str):
     args = {}
     if args_str:
-        for arg in args_str.split(','):
-            key, value = arg.split('=')
+        for arg in args_str.split(","):
+            key, value = arg.split("=")
             args[key] = value
     return args
+
 
 pod_name = os.environ.get("POD_NAME")
 config = None
@@ -147,6 +165,7 @@ read -p "Press any key to continue..."
 
 if os.environ.get("VERBOSE", "0") == "1":
     import pprint
+
     print("*" * 100)
     print("RUNNING WITH CONFIG")
     pprint.pprint(config)
