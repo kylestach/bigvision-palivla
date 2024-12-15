@@ -72,7 +72,7 @@ def get_config():
         "__ctor": "palivla.modality_embedder.ModalityEmbedder",
         "config": {
             "num_embeddings": 9,
-            "features": llm_embdim,
+            "embedding_dim": llm_embdim,
             "dtype_str": "float32",
         }
     }
