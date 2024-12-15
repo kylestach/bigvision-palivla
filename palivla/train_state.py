@@ -23,11 +23,12 @@ from palivla.eval_step import compute_eval_stats, compute_gen_stats
 from palivla.model import load_from_pretrained
 from palivla.spec import ModuleSpec, OptimizerSpec, restore_gluon_module
 from palivla.tokenizer import Tokenizer
-from palivla.preprocess.sentencepiece_model_pb2 import ModelProto as SentencepieceModelProto
+# from palivla.preprocess.sentencepiece_model_pb2 import ModelProto as SentencepieceModelProto
+from palivla.sentencepiece_model_pb2 import ModelProto as SentencepieceModelProto
 from palivla.train_step import TrainingBatch, step_fn
-from palivla.types import RolloutBatch
+from palivla.types import Params, RolloutBatch
 from palivla.predict_fns import _decode
-
+from palivla.utils import merge_params
 
 class ShardingMetadata:
     mesh: MeshShardingHelper
@@ -306,6 +307,9 @@ class PaliVLATrainState:
         seed: int,
         param_dtype: jnp.dtype,
         batch_shape: Dict[str, jax.ShapeDtypeStruct],
+        pretrained_params: Params | None = None,
+        pretrained_action_tokenizer_state: TrainState | None = None,
+        loaded_language_tokenizer: SentencepieceTokenizer | None = None,
     ):
         model_spec, params = load_from_pretrained(
             paligemma_weights_path,
@@ -316,6 +320,9 @@ class PaliVLATrainState:
             seed=seed,
             param_dtype=param_dtype,
         )
+        if pretrained_params is not None:
+            params = merge_params(params, pretrained_params)
+
         model_sharding_metadata = ShardingMetadata(
             mesh=mesh,
             model_sharding_rule=model_sharding,
@@ -329,23 +336,27 @@ class PaliVLATrainState:
             sharding_metadata=model_sharding_metadata,
         )
 
-        if action_tokenizer_weights_path is None:
-            action_tokenizer_spec = ModuleSpec.from_name(
-                "palivla.tokenizer.BinActionTokenizer",
-                {
-                    "min_action_value": -2,
-                    "max_action_value": 2,
-                    "action_dim": action_dim,
-                    "action_horizon": action_horizon,
-                    "action_vocab_size": 256,
-                },
-            )
-            action_tokenizer_params = {}
+        if pretrained_action_tokenizer_state is not None:
+            action_tokenizer_spec = pretrained_action_tokenizer_state.model_spec
+            action_tokenizer_params = pretrained_action_tokenizer_state.params
         else:
-            action_tokenizer_spec, action_tokenizer_params = restore_gluon_module(
-                action_tokenizer_weights_path,
-                mesh=mesh,
-            )
+            if action_tokenizer_weights_path is None:
+                action_tokenizer_spec = ModuleSpec.from_name(
+                    "palivla.tokenizer.BinActionTokenizer",
+                    {
+                        "min_action_value": -2,
+                        "max_action_value": 2,
+                        "action_dim": action_dim,
+                        "action_horizon": action_horizon,
+                        "action_vocab_size": 256,
+                    },
+                )
+                action_tokenizer_params = {}
+            else:
+                action_tokenizer_spec, action_tokenizer_params = restore_gluon_module(
+                    action_tokenizer_weights_path,
+                    mesh=mesh,
+                )
 
         action_tokenizer_state = TrainState.with_params(
             name="action_tokenizer",
@@ -355,8 +366,11 @@ class PaliVLATrainState:
             sharding_metadata=ShardingMetadata(mesh, PartitionSpec()),
         )
 
-        with tf.io.gfile.GFile(language_tokenizer_path, "rb") as f:
-            language_tokenizer = SentencepieceTokenizer(f.read())
+        if loaded_language_tokenizer is None:
+            with tf.io.gfile.GFile(language_tokenizer_path, "rb") as f:
+                language_tokenizer = SentencepieceTokenizer(f.read())
+        else:
+            language_tokenizer = loaded_language_tokenizer
 
         return cls(
             model_state=model_state,
@@ -422,6 +436,51 @@ class PaliVLATrainState:
                 "language_tokenizer.proto"
             ),
         }
+
+    @classmethod
+    def load_components(
+        cls,
+        checkpoint_manager: ocp.CheckpointManager,
+        *,
+        step: int | None = None,
+        load_optimizer: bool = False,
+        mesh: MeshShardingHelper,
+        model_sharding: ShardingRule,
+        data_sharding: ShardingRule,
+    ):
+        step = step or checkpoint_manager.latest_step()
+
+        # Replicate the action tokenizer across all devices
+        action_tokenizer_sharding_metadata = ShardingMetadata(mesh, PartitionSpec())
+        model_sharding_metadata = ShardingMetadata(mesh, model_sharding)
+
+        restored_model_state = TrainState.restore(
+            name="model",
+            checkpoint_manager=checkpoint_manager,
+            load_optimizer=load_optimizer,
+            step=step,
+            sharding_metadata=model_sharding_metadata,
+        )
+        restored_action_tokenizer_state = TrainState.restore(
+            name="action_tokenizer",
+            checkpoint_manager=checkpoint_manager,
+            load_optimizer=False,
+            step=step,
+            sharding_metadata=action_tokenizer_sharding_metadata,
+        )
+        restored = checkpoint_manager.restore(
+            step,
+            args=ocp.args.Composite(
+                config=ocp.args.JsonRestore(),
+                dataset_statistics=ocp.args.JsonRestore(),
+                language_tokenizer=ocp.args.ProtoRestore(SentencepieceModelProto),
+            ),
+        )
+
+        language_tokenizer = SentencepieceTokenizer(
+            model=restored["language_tokenizer"].SerializeToString()
+        )
+        return restored_model_state, restored_action_tokenizer_state, language_tokenizer
 
     @classmethod
     def restore(

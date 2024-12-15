@@ -15,23 +15,29 @@ import jax.numpy as jnp
 # Filter unmasked modalities to match modality_idx
 # the modalities, in order, are:
 # [('simple'), (), ('visual',), ('tactile',), ('audio',), ('visual', 'tactile'), ('visual', 'audio'), ('tactile', 'audio'), ('visual', 'tactile', 'audio')]
-def create_fuse_modal_mask(modality_idx: jax.Array, sensor_masks: dict[str, jax.Array]):
-    sensor_masks["image_primary"] = sensor_masks["image_primary"] & (
+def create_fuse_modal_mask(data):
+    sensor_masks = data["observation"]["pad_mask_dict"]
+    modality_idx = data["modality_idx"]
+
+    modal_masks = jax.tree.map(lambda leaf: leaf, sensor_masks)
+
+    modal_masks["image_primary"] = sensor_masks["image_primary"] & (
         (modality_idx == 0) | (modality_idx == 2) | (modality_idx == 5) | (modality_idx == 6) | (modality_idx == 8)
     )
-    sensor_masks["image_wrist"] = sensor_masks["image_wrist"] & (
+    modal_masks["image_wrist"] = sensor_masks["image_wrist"] & (
         (modality_idx == 0) | (modality_idx == 2) | (modality_idx == 5) | (modality_idx == 6) | (modality_idx == 8)
     )
-    sensor_masks["image_digit_left"] = sensor_masks["image_digit_left"] & (
+    modal_masks["image_digit_left"] = sensor_masks["image_digit_left"] & (
         (modality_idx == 0) | (modality_idx == 3) | (modality_idx == 5) | (modality_idx == 7) | (modality_idx == 8)
     )
-    sensor_masks["image_digit_right"] = sensor_masks["image_digit_right"] & (
+    modal_masks["image_digit_right"] = sensor_masks["image_digit_right"] & (
         (modality_idx == 0) | (modality_idx == 3) | (modality_idx == 5) | (modality_idx == 7) | (modality_idx == 8)
     )
-    sensor_masks["mel_spectro"] = sensor_masks["mel_spectro"] & (
+    modal_masks["mel_spectro"] = sensor_masks["mel_spectro"] & (
         (modality_idx == 0) | (modality_idx == 4) | (modality_idx == 6) | (modality_idx == 7) | (modality_idx == 8)
     )
-    return sensor_masks
+    data["observation"]["modal_pad_mask_dict"] = modal_masks
+    return data
 
 
 # if mic_mask = True, then this is an audio task, and no tactile instruction is valid 
@@ -253,6 +259,8 @@ def make_frame_transform(
             data = process_mic_mask(data)
             data = mel_spectro_to_image(data)
             data = tactile_to_image(data)
+            data = create_fuse_modal_mask(data)
+            
             
         if chunk_relative_actions:
             # Gripper is absolute, rest is relative

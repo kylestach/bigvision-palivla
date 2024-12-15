@@ -1,8 +1,10 @@
+import re
 import jax
 from jax.experimental import multihost_utils
 import numpy as np
 import tensorflow as tf
-
+import flax
+from palivla.types import Params
 
 def freeze_structure(structure):
     return jax.tree_util.tree_map(
@@ -53,3 +55,14 @@ def load_tvl_weights(pretrained_path: str) -> dict[tuple, np.ndarray]:
         ckpt_dict = np.load(f, allow_pickle=False)
     keys, values = zip(*list(ckpt_dict.items()))
     return {tuple(k.split('|')): v for k, v in zip(keys, values)}
+
+
+def merge_params(init_params: Params, pretrained_params: Params) -> Params:
+    def _merge(possible_param1, possible_param2):
+        if possible_param2 is not None:
+            return possible_param2
+        return possible_param1
+    flat_init_params = flax.traverse_util.flatten_dict(init_params)
+    flat_pretrained_params = flax.traverse_util.flatten_dict(pretrained_params)
+    params = {k: _merge(v_init, flat_pretrained_params.get(k, None)) for k, v_init in flat_init_params.items()}
+    return flax.traverse_util.unflatten_dict(params)

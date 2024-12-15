@@ -1,6 +1,7 @@
 import jax
 import jax.numpy as jnp
 import orbax.checkpoint as ocp
+import flax
 
 import tensorflow as tf
 import tqdm
@@ -60,36 +61,12 @@ def main(_):
         "proprio": jax.ShapeDtypeStruct(shape=(1, 6), dtype=jnp.float32),
         "modality_idx": jax.ShapeDtypeStruct(shape=(1, 1), dtype=jnp.int32),
     }
-
-    if config.resume_from_checkpoint_dir is None:
-        action_shape = (train_ds.element_spec["action"]).shape
-        action_dim = action_shape[-1]
-        action_horizon = action_shape[-2]
-        model = PaliVLATrainState.from_components(
-            paligemma_weights_path=config.paligemma_weights_path,
-            action_tokenizer_weights_path=config.action_tokenizer_path,
-            language_tokenizer_path=config.language_tokenizer_path,
-            config=config.model_config.to_dict(),
-            dataset_statistics=train_ds.dataset_statistics,
-            language_tokenizer=None,
-            optimizer_spec=OptimizerSpec.create(
-                make_optimizer, config.optimizer_kwargs.to_dict()
-            ),
-            model_sharding=model_sharding,
-            data_sharding=data_sharding,
-            mesh=mesh,
-            seed=config.get("seed", 0),
-            param_dtype=jnp.float32,
-            batch_shape=batch_shape,
-            action_dim=action_dim,
-            action_horizon=action_horizon,
-        )
-    else:
+    if config.resume_from_checkpoint_dir is not None: # load in pretrained model and merge in weights that exist already
         restore_checkpoint_manager = ocp.CheckpointManager(
             config.resume_from_checkpoint_dir,
             item_handlers=PaliVLATrainState.get_checkpoint_handlers(),
         )
-        model = PaliVLATrainState.restore(
+        loaded_model, pretrained_action_tokenizer_state, loaded_language_tokenizer = PaliVLATrainState.load_components(
             checkpoint_manager=restore_checkpoint_manager,
             step=config.resume_from_checkpoint_step,
             load_optimizer=True,
@@ -97,6 +74,37 @@ def main(_):
             model_sharding=model_sharding,
             data_sharding=data_sharding,
         )
+        pretrained_params = loaded_model.params
+    else:
+        pretrained_params = None
+        pretrained_action_tokenizer_state = None
+        loaded_language_tokenizer = None
+    action_shape = (train_ds.element_spec["action"]).shape
+    action_dim = action_shape[-1]
+    action_horizon = action_shape[-2]
+    model = PaliVLATrainState.from_components(
+        paligemma_weights_path=config.paligemma_weights_path,
+        action_tokenizer_weights_path=config.action_tokenizer_path,
+        language_tokenizer_path=config.language_tokenizer_path,
+        config=config.model_config.to_dict(),
+        dataset_statistics=train_ds.dataset_statistics,
+        language_tokenizer=None,
+        optimizer_spec=OptimizerSpec.create(
+            make_optimizer, config.optimizer_kwargs.to_dict()
+        ),
+        model_sharding=model_sharding,
+        data_sharding=data_sharding,
+        mesh=mesh,
+        seed=config.get("seed", 0),
+        param_dtype=jnp.float32,
+        batch_shape=batch_shape,
+        action_dim=action_dim,
+        action_horizon=action_horizon,
+        pretrained_params=pretrained_params,
+        pretrained_action_tokenizer_state=pretrained_action_tokenizer_state,
+        loaded_language_tokenizer=loaded_language_tokenizer
+    )
+    
 
     # Construct the final dataset
     # We need to do this after the model is constructed, since we need to have a tokenizer
@@ -116,11 +124,18 @@ def main(_):
             for k in model.model_state.model.modality_mappings
             if k != "text" and k != "modality_idx"
         } # modality_idx mask added later depending on whether in a fuse step or not
+
+        modal_mask = {
+            k: np.squeeze(batch["observation"]["modal_pad_mask_dict"][k], axis=-1)
+            for k in model.model_state.model.modality_mappings
+            if k != "text" and k != "modality_idx"
+        }
         
         return mesh.local_data_to_global_array(
             TrainingBatch(
                 sensors=sensors,
                 sensors_mask=sensors_mask,
+                modal_mask=modal_mask,
                 actions=batch["action"],
                 actions_mask=batch["action_pad_mask"],
                 tokens=batch["tokens"],

@@ -29,6 +29,7 @@ class TrainingBatch:
     gen_start: jax.Array | None = None
     modality_idx: jax.Array | None = None
     mic_mask: jax.Array | None = None
+    modal_mask: jax.Array | None = None
 
 
 @dataclass

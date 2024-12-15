@@ -203,7 +203,7 @@ def step_fn(
     def loss_fn(params, batch: TrainingBatch, key: chex.PRNGKey):
         all_inputs = batch.sensors | {"text": batch.tokens[..., :-1]}
         if fuse_step:
-            sensor_masks = create_fuse_modal_mask(batch.modality_idx, batch.sensors_mask) | {
+            sensor_masks = batch.modal_mask | {
                 "modality_idx": jnp.squeeze(jnp.ones_like(batch.sensors["modality_idx"], dtype=jnp.bool_), axis=-1),
             }
             mask_loss = enforce_valid_language_instruction(batch.tokens_loss_fuse, batch.modality_idx, jnp.squeeze(batch.mic_mask, axis=-1))
