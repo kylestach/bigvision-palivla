@@ -10,7 +10,6 @@ placeholder(int)._value
 
 
 def get_config():
-    data_mix = FieldReference("oxe_magic_soup", str)
     num_train_steps = FieldReference(400000, int)
 
     from big_vision.models.ppp.gemma import get_config
@@ -70,11 +69,11 @@ def get_config():
     }
     
     model_config['encoder_specs']['modality_embedder'] = {
-        "__ctor": "flax.linen.Embed",
+        "__ctor": "palivla.modality_embedder.ModalityEmbedder",
         "config": {
             "num_embeddings": 9,
             "features": llm_embdim,
-            "dtype": jnp.float32
+            "dtype_str": "float32",
         }
     }
 
@@ -174,8 +173,7 @@ def get_config():
 
     return ConfigDict(
         {
-            "data_mix": data_mix,
-            "wandb_project": "palivla",
+            "wandb_project": "palivla_fuse",
             "paligemma_weights_path": "models/paligemma-3b-mix-224.f16.npz",
             "language_tokenizer_path": "models/paligemma_tokenizer.model",
             "action_tokenizer_path": placeholder(str),
@@ -184,10 +182,10 @@ def get_config():
             "model_path": "models/paligemma",
             "save_path": "models/paligemma_saved_model",
             "batch_size": 192,
-            "eval_batch_size": 64,
+            "eval_batch_size": 192,
             "num_steps": num_train_steps,
             "eval_interval": 100,
-            "save_interval": 1000,
+            "save_interval": 50_000,
             "log_interval": 1,
             "data_axis_size": 1,
             "fsdp_axis_size": -1,
