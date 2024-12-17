@@ -11,20 +11,20 @@ DEFAULT_TRAIN_ARGS = {
 }
 
 TPU_PODS = {
-    "max-pod-128": {
+    "v5e-tpu-128-0": {
         "tpc_args": {
-            "project": "CMU-AIDM",
+            "project": "firm-vertex-408518",
             "zone": "europe-west4-b",
             "accelerator_type": "v5litepod-128",
             "runtime_version": "v2-tpuv5-litepod",
-            "reserved": False,
+            "reserved": True,
         },
-        "setup_script": "source $HOME/.bashrc && conda activate big_vision",
-        "src_dir": "/nfs/nfs3/users/kstachowicz/big_vision",
+        "setup_script": "source $HOME/.bashrc && source /nfs/aidm_nfs/max/miniconda3/etc/profile.d/conda.sh && conda activate /nfs/aidm_nfs/max/big_vision_env",
+        "src_dir": "/nfs/aidm_nfs/max/big_vision",
         "train_args": {
             "batch_size": 1024,
-            "save_path": "gs://kyle-checkpoints-eu4/paligemma-checkpoints",
-            "dataset_kwargs.oxe_kwargs.data_dir": "gs://rail-datasets-europe-west4/oxe/resize_256_256",
+            "save_path": "gs://max-europe/paligemma-checkpoints",
+            "dataset_kwargs.oxe_kwargs.data_dir": "gs://datasets-europe-west4/oxe/resize_256_256",
         },
     },
     "kyle-pod-64": {
@@ -124,6 +124,8 @@ TPU_PODS = {
         },
     },
 }
+
+TPU_PODS["v5e-tpu-128-1"] = TPU_PODS["v5e-tpu-128-0"]
 
 
 def parse_args(args_str):
