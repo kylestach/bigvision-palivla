@@ -193,6 +193,7 @@ def make_frame_transform(
     gripper_relative_actions: bool,
     proprio_dropout_prob: float,
     tokenizer: Tokenizer | None,
+    use_cot: bool,
     generation: bool,
 ):
     def frame_transform(data):
@@ -226,13 +227,17 @@ def make_frame_transform(
         if tokenizer is not None:
             language_token_instructions = tokenizer.tokenize_language_instruction(data)
 
+            cot_tokens = None
+            if use_cot:
+                cot_tokens = tokenizer.tokenize_cot(data)
+
             if generation:
                 data = data | tokenizer.prepare_tokens_for_generation(
-                    data, language_token_instructions
+                    data, language_token_instructions, cot_tokens
                 )
             else:
                 data = data | tokenizer.prepare_tokens_for_training(
-                    data, language_token_instructions
+                    data, language_token_instructions, cot_tokens
                 )
 
                 

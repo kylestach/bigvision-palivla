@@ -104,6 +104,7 @@ def main(_):
             "task": {"language_instruction": instructions},
         }
         batch = tokenizer.tokenize_language_instruction(batch)
+        batch = tokenizer.tokenize_cot(batch)
         batch = prepare_image(batch)
         batch = tokenizer.prepare_tokens_for_generation(batch)
         batch = {

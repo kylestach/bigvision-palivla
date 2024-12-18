@@ -8,6 +8,9 @@ placeholder(int)._value
 def get_config():
     num_train_steps = FieldReference(100000, int)
 
+    model_config = get_default_config()
+    model_config['use_cot'] = True
+
     return ConfigDict(
         {
             "wandb_project": "palivla",
@@ -28,7 +31,7 @@ def get_config():
             "fsdp_axis_size": -1,
             "resume_from_checkpoint_dir": placeholder(str),
             "resume_from_checkpoint_step": placeholder(int),
-            "model_config": get_default_config(),
+            "model_config": model_config,
             "dataset_kwargs": {
                 "oxe_kwargs": {
                     "data_mix": "bridge",
@@ -39,7 +42,7 @@ def get_config():
                     "load_language": True,
                     "force_recompute_dataset_statistics": False,
                     "action_proprio_normalization_type": NormalizationType.NORMAL,
-                    "cot_data_path":"/nfs/nfs2/users/riadoshi/bigvision_palivla/data",
+                    "cot_data_path":"gs://multi-robot-bucket2/data/generated_data",
                 },
                 "traj_transform_kwargs": {
                     "window_size": 1,
@@ -87,7 +90,7 @@ def get_config():
                     "warmup_steps": 500,
                     "weight_decay": 5e-6,
                     "grad_norm_clip": 10.0,
-                    "b1": 0.9, #ria change; refers to adam's beta1 & beta2 params
+                    "b1": 0.9, 
                     "b2":0.99,
                 },
             },

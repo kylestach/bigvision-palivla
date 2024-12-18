@@ -371,6 +371,7 @@ class PaliVLATrainState:
                 action_tokenizer=action_tokenizer_state.model,
                 language_tokenizer=language_tokenizer,
                 prompt_autoregressive=config["prompt_autoregressive"],
+                use_cot=config["use_cot"] # refers to model_config
             ),
         )
 
