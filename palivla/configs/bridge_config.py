@@ -8,8 +8,10 @@ placeholder(int)._value
 def get_config():
     num_train_steps = FieldReference(100000, int)
 
+    use_cot = True
+
     model_config = get_default_config()
-    model_config['use_cot'] = True
+    model_config['use_cot'] = use_cot
 
     return ConfigDict(
         {
@@ -34,14 +36,15 @@ def get_config():
             "model_config": model_config,
             "dataset_kwargs": {
                 "oxe_kwargs": {
-                    "data_mix": "bridge",
+                    "data_mix": "bridge_fractal",
                     "data_dir": "gs://rail-orca-central2/resize_256_256/",
                     "load_camera_views": ["primary"],
                     "load_depth": False,
-                    "load_proprio": True,
+                    "load_proprio": False,
                     "load_language": True,
                     "force_recompute_dataset_statistics": False,
                     "action_proprio_normalization_type": NormalizationType.NORMAL,
+                    "use_cot": use_cot,
                     "cot_data_path":"gs://multi-robot-bucket2/data/generated_data",
                 },
                 "traj_transform_kwargs": {

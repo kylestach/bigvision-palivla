@@ -72,6 +72,7 @@ class Tokenizer:
         bos_token: int = struct.field(pytree_node=True)
         eos_token: int = struct.field(pytree_node=True)
         pad_token: int = struct.field(pytree_node=True)
+        begin_of_cot_token: int = struct.field(pytree_node=True)
         begin_of_action_token: int = struct.field(pytree_node=True)
         max_pad_length: int = struct.field(pytree_node=False)
         min_action_value: float = struct.field(pytree_node=True)
@@ -136,8 +137,22 @@ class Tokenizer:
                 toks = toks[0]
             return tf.squeeze(toks, axis=0)
 
-        token_structure = cls.get_token_structure(use_cot=use_cot, config=config)
-        token_structure['pad'] = [[pad_token] * config.max_pad_length]
+        token_structure = {
+            "prefix": [
+                [config.bos_token],
+                "prompt",
+            ],
+            "causal": [
+                [config.begin_of_action_token],
+                "action",
+            ],
+            "pad": [
+                [pad_token] * config.max_pad_length,
+            ],
+        }
+
+        if use_cot:
+            token_structure['causal'] = [[config.begin_of_cot_token], "reasoning"] + token_structure['causal']
 
         return cls(
             config=cls.TokenizerConfig.create(action_tokenizer, language_tokenizer, prompt_autoregressive, use_cot),
@@ -195,58 +210,6 @@ class Tokenizer:
         )[: self.config.max_pad_length]
 
         return tokens, mask_ar, mask_loss
-    
-    def compose_cot_token_structure(self, tokens, include_keys=["prefix1", "causal1", "prefix2", "causal2", "pad"]):
-        def _extract_tokens(ids_or_str):
-            if isinstance(ids_or_str, str):
-                return tokens[ids_or_str]
-            else:
-                return tf.constant(ids_or_str, dtype=tf.int32)
-
-        tokens_by_name = {
-            k: (
-                tf.concat([_extract_tokens(token) for token in v], axis=0)
-                if k in include_keys
-                else tf.zeros((0,), dtype=tf.int32)
-            )
-            for k, v in self.token_structure.items()
-        }
-
-        tokens = tf.concat(
-            [tokens_by_name["prefix1"], tokens_by_name["causal1"], tokens_by_name["prefix2"], tokens_by_name["casual2"], tokens_by_name["pad"]],
-            axis=0,
-        )[: self.config.max_pad_length]
-
-        if self.config.prompt_autoregressive:
-            include_prefix1_mask = tf.ones_like(tokens_by_name["prefix1"], dtype=tf.bool)
-            include_prefix2_mask = tf.ones_like(tokens_by_name["prefix2"], dtype=tf.bool)
-        else:
-            include_prefix1_mask = tf.zeros_like(tokens_by_name["prefix1"], dtype=tf.bool)
-            include_prefix2_mask = tf.zeros_like(tokens_by_name["prefix2"], dtype=tf.bool)
-
-        mask_ar = tf.concat(
-            [
-                include_prefix1_mask,
-                tf.ones_like(tokens_by_name["causal1"], dtype=tf.bool),
-                include_prefix2_mask,
-                tf.ones_like(tokens_by_name["causal2"], dtype=tf.bool),
-                tf.ones_like(tokens_by_name["pad"], dtype=tf.bool),
-            ],
-            axis=0,
-        )[: self.config.max_pad_length]
-        
-        mask_loss = tf.concat(
-            [
-                include_prefix1_mask,
-                tf.ones_like(tokens_by_name["causal1"], dtype=tf.bool),
-                include_prefix2_mask,
-                tf.ones_like(tokens_by_name["causal2"], dtype=tf.bool),
-                tf.zeros_like(tokens_by_name["pad"], dtype=tf.bool),
-            ],
-            axis=0,
-        )[: self.config.max_pad_length]
-
-        return tokens, mask_ar, mask_loss
 
     def tokenize_language_instruction(self, data):
         instruction = data["task"]["language_instruction"]
@@ -259,12 +222,14 @@ class Tokenizer:
         return self.language_tokenizer.tokenize(instruction)
 
     def tokenize_cot(self, data):
+    
         cot = data["reasonings"] # data['reasonings'] is (batch, 1)
 
         cot = tf.strings.lower(cot)
         cot = tf.strings.regex_replace(cot, "[.?!]", "")
         cot = tf.strings.regex_replace(cot, "\n", " ")
         cot = tf.strings.strip(cot)
+
 
         return self.language_tokenizer.tokenize(cot)
 
@@ -300,11 +265,10 @@ class Tokenizer:
             + self.config.action_vocab_offset,
         }
 
-        if cot_tokens:
-            tokens["cot"] = cot_tokens #[: self.config.max_pad_length-10]     # ria todo: check what this does
-            tokens, mask_ar, mask_loss = self.compose_cot_token_structure(tokens)
-        else:
-            tokens, mask_ar, mask_loss = self.compose_token_structure(tokens)
+        if cot_tokens is not None:
+            tokens["reasonings"] = cot_tokens #[: self.config.max_pad_length-10]     # ria todo: check what this does
+
+        tokens, mask_ar, mask_loss = self.compose_token_structure(tokens)
 
         prepared_tokens = {
             "tokens": tokens,
@@ -320,13 +284,14 @@ class Tokenizer:
             "prompt": language_token_instructions[: self.config.max_pad_length - 10],
         }
 
-        include_keys = {"prefix1", "prefix2", "pad"} if cot_tokens else {"prefix", "pad"}
+        include_keys = {"prefix_prompt", "prefix_start_action", "pad"} if cot_tokens is not None else {"prefix", "pad"}
 
         tokens, mask_ar, mask_loss = self.compose_token_structure(
                 tokens, include_keys=include_keys
         )
 
-        gen_start = tf.argmax(tokens == self.config.begin_of_action_token, axis=-1) + 1
+        start_token = self.config.begin_of_cot_token if cot_tokens is not None else self.config.begin_of_action_token
+        gen_start = tf.argmax(tokens == start_token, axis=-1) + 1
 
         prepared_tokens = {
             "tokens": tokens,
@@ -334,9 +299,6 @@ class Tokenizer:
             "mask_input": tokens != self.config.pad_token,
             "gen_start": gen_start,
         }
-
-        if cot_tokens:
-            prepared_tokens['gen_start_cot'] = tf.argmax(tokens == self.config.begin_of_cot_token, axis=-1) + 1
 
         return prepared_tokens
 
@@ -350,34 +312,4 @@ class Tokenizer:
         ]
         action_data = self.bin_detokenize(action_data)
         return action_data
-
-    def get_structure(use_cot:bool = False, config: TokenizerConfig = None | None):
-        if use_cot:
-            {
-                "prefix1": [
-                    [config.bos_token],
-                    "prompt",
-                    [config.begin_of_cot_token], 
-                ],
-                "causal1": [
-                    "cot",
-                ],
-                "prefix2": [
-                    [config.begin_of_action_token],
-                ],
-                "causal2": [
-                    "action",
-                ],
-            }
-
-        else:
-            return {
-                "prefix": [
-                    [config.bos_token],
-                    "prompt",
-                    [config.begin_of_action_token],
-                ],
-                "causal": [
-                    "action",
-                ],
-            }
+    

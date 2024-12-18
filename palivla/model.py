@@ -192,6 +192,7 @@ class PaliVLAModel(nn.Module):
 
     prompt_autoregressive: bool
     target_key_order: Sequence[str]
+    use_cot: bool
 
     def setup(self):
         self.llm: GemmaModel = self.llm_spec.instantiate(name="llm")

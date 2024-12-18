@@ -35,6 +35,7 @@ def _compute_action_metrics_shim(
     )
 
 
+# ria todo: for cot, just change this method to incorporate the cot token structure
 def compute_gen_stats(
     decode_fn,
     tokenize_fn,
@@ -44,6 +45,7 @@ def compute_gen_stats(
     prefix: str,
     tokenizer_config: Tokenizer.TokenizerConfig,
     target_key_order: Sequence[str] | None = None,
+    use_cot: bool = False,
 ):
     """
     Compute generative (rollout) statistics on a batch of data.
@@ -97,7 +99,16 @@ def compute_gen_stats(
     out_tokens = decode_fn(
         rollout_batch,
         target_key_order=target_key_order,
-    )
+    ) 
+
+    # if we're using CoT, all the out tokens don't necessarily correspond to the action 
+    # to deconflict, take all tokens after generated begin of action token as the generated action
+    action_start_idx = jnp.argmax(out_tokens == tokenizer_config.begin_of_action_token) # find first index of begin action token
+
+    if jnp.any(out_tokens == tokenizer_config.begin_of_action_token):
+        out_action_tokens = out_tokens[action_start_idx + 1:]  # get all tokens after action token
+    else:
+        out_action_tokens = jnp.array([])  # if no "begin of action" token generated, then treat it as if no action was produced
 
     gt_action_tokens = tokenize_fn(batch.actions)
 
@@ -111,34 +122,13 @@ def compute_gen_stats(
 
     return mesh.sjit(
         __compute_action_metrics_shim,
-        # _compute_action_metrics_shim,
-        # static_argnums=(0, 1, 2, 3),
         out_shardings=PartitionSpec(),
     )(
-        # detokenize_fn,
-        # prefix,
-        # batch.actions.shape[-1],
-        # tokenizer_config,
-        out_tokens,
+        out_action_tokens,
         None,
         gt_action_tokens,
         batch.actions,
     )
-
-    # return mesh.sjit(
-    #     _compute_action_metrics_shim,
-    #     static_argnums=(0, 1, 2, 3),
-    #     out_shardings=PartitionSpec(),
-    # )(
-    #     detokenize_fn,
-    #     prefix,
-    #     batch.actions.shape[-1],
-    #     tokenizer_config,
-    #     out_tokens,
-    #     None,
-    #     split_tokens["gen"][:, :tokenizer_config.num_action_tokens],
-    #     batch.actions,
-    # )
 
 
 def compute_eval_stats(

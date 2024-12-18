@@ -54,17 +54,8 @@ def main(_):
     model_sharding = FSDPShardingRule("fsdp", fsdp_axis_size=mesh.mesh.shape["fsdp"])
     data_sharding = PartitionSpec("fsdp")
 
-    # Make the basic dataset
-    # We have to do this first, since we need to know how the dataset is set up before we can construct the model
     dataset_kwargs = config.dataset_kwargs
-    train_ds = make_base_dataset(**dataset_kwargs, train=True) #ria change
-
-    # eval_datasets = {
-    #     dataset_name: make_base_single_dataset(**eval_dataset_kwargs, train=False)
-    #     for dataset_name in config.eval_datasets
-    # }
-
-    # eval_ds = make_base_single_dataset(**config.dataset_kwargs, train=False) #ria change
+    train_ds = make_base_dataset(**dataset_kwargs, train=True)
 
     batch_shape = {
         "text": jax.ShapeDtypeStruct(shape=(1, 10), dtype=jnp.int32),
@@ -137,7 +128,6 @@ def main(_):
                 tokens_loss=batch.get("mask_loss", None),
                 tokens_mask=batch["mask_input"],
                 gen_start=batch.get("gen_start", None),
-                
             )
         )
 
@@ -147,11 +137,13 @@ def main(_):
             train_ds,
             model.tokenizer,
             generation=False,
+            use_cot=model.config['use_cot'],
             **config.extra_dataset_transform_kwargs
         )
         .batch(per_host_train_batch_size)
         .iterator(),
     )
+
     # gen_eval_it = map(
     #     make_training_batch,
     #     transform_dataset(
@@ -168,6 +160,7 @@ def main(_):
         transform_dataset(
             train_ds,
             model.tokenizer,
+            use_cot = model.config['use_cot'],
             generation=True,
             **config.extra_dataset_transform_kwargs
         )

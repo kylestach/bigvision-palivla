@@ -193,8 +193,8 @@ def make_frame_transform(
     gripper_relative_actions: bool,
     proprio_dropout_prob: float,
     tokenizer: Tokenizer | None,
-    use_cot: bool,
     generation: bool,
+    use_cot: bool,
 ):
     def frame_transform(data):
         if multimodal_rephrasings:
@@ -223,6 +223,7 @@ def make_frame_transform(
                 tf.zeros_like(data["observation"]["proprio_single_arm"]),
             )
             data["observation"]["pad_mask_dict"]["proprio_single_arm"] &= mask
+            data["proprio_single_arm"] = tf.squeeze(data["observation"]["proprio_single_arm"], axis=0)
 
         if tokenizer is not None:
             language_token_instructions = tokenizer.tokenize_language_instruction(data)
@@ -240,8 +241,6 @@ def make_frame_transform(
                     data, language_token_instructions, cot_tokens
                 )
 
-                
-        data["proprio_single_arm"] = tf.squeeze(data["observation"]["proprio_single_arm"], axis=0)
         data["action"] = tf.squeeze(data["action"], axis=0)
 
         return data
@@ -252,7 +251,7 @@ def make_frame_transform(
 def transform_dataset(
     dataset: dlimp.DLataset,
     tokenizer: Tokenizer | None,
-    generation: bool,
+    generation: bool = False,
     *,
     multimodal_rephrasings: bool = False,
     chunk_relative_actions: bool = False,
@@ -260,6 +259,7 @@ def transform_dataset(
     gripper_relative_actions: bool = True,
     require_language: bool = True,
     proprio_dropout_prob: float = 0.0,
+    use_cot: bool = False,
 ):
     dataset_statistics = dataset.dataset_statistics
 
@@ -274,6 +274,7 @@ def transform_dataset(
             proprio_dropout_prob,
             tokenizer,
             generation,
+            use_cot,
         ),
         num_parallel_calls=None,
     )

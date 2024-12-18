@@ -599,6 +599,7 @@ class PaliVLATrainState:
             prefix=prefix,
             tokenizer_config=self.tokenizer.config,
             target_key_order=target_key_order,
+            use_cot=self.config['use_cot']
         )
 
         if include_regular_stats:

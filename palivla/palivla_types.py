@@ -18,14 +18,12 @@ Info = Dict[str, Any]
 class TrainingBatch:
     sensors: Dict[str, jax.Array]
     sensors_mask: jax.Array
-    #actions_mask: jax.Array
     actions: jax.Array
     tokens: jax.Array
     tokens_ar: jax.Array
     tokens_loss: jax.Array
     tokens_mask: jax.Array
     gen_start: jax.Array | None = None
-    gen_start_cot: jax.Array | None = None
 
 
 @dataclass
