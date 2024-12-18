@@ -371,7 +371,7 @@ class PaliVLATrainState:
                 action_tokenizer=action_tokenizer_state.model,
                 language_tokenizer=language_tokenizer,
                 prompt_autoregressive=config["prompt_autoregressive"],
-                use_cot=config["use_cot"] # refers to model_config
+                use_cot=config["use_cot"] # refers to model_config (ria todo: fix, make this cleaner)
             ),
         )
 
@@ -391,6 +391,7 @@ class PaliVLATrainState:
             action_tokenizer=self.action_tokenizer_state.model,
             action_tokenizer_params=action_tokenizer_params,
             config=self.tokenizer_config,
+            use_cot=self.use_cot,
         )
 
     def save_args(self):
@@ -561,7 +562,7 @@ class PaliVLATrainState:
             target_key_order=target_key_order or self.config.get("target_key_order"),
             model=self.model_state.model,
             devices=self.mesh.mesh.devices,
-            max_decode_len=self.action_tokenizer_state.model.num_tokens,
+            max_decode_len=410, #ria todo: make this cleaner. self.action_tokenizer_state.model.num_tokens,
             eos_token=self.tokenizer_config.eos_token,
             best_of_n=1,
             sampler="greedy",
@@ -599,7 +600,6 @@ class PaliVLATrainState:
             prefix=prefix,
             tokenizer_config=self.tokenizer.config,
             target_key_order=target_key_order,
-            use_cot=self.config['use_cot']
         )
 
         if include_regular_stats:

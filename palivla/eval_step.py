@@ -45,7 +45,6 @@ def compute_gen_stats(
     prefix: str,
     tokenizer_config: Tokenizer.TokenizerConfig,
     target_key_order: Sequence[str] | None = None,
-    use_cot: bool = False,
 ):
     """
     Compute generative (rollout) statistics on a batch of data.
@@ -96,6 +95,8 @@ def compute_gen_stats(
         prompt_mask=split_tokens["prompt_mask"],
         prompt_ar=split_tokens["prompt_ar"],
     )
+
+    import pdb; pdb.set_trace()
     out_tokens = decode_fn(
         rollout_batch,
         target_key_order=target_key_order,
@@ -103,14 +104,24 @@ def compute_gen_stats(
 
     # if we're using CoT, all the out tokens don't necessarily correspond to the action 
     # to deconflict, take all tokens after generated begin of action token as the generated action
-    action_start_idx = jnp.argmax(out_tokens == tokenizer_config.begin_of_action_token) # find first index of begin action token
-
-    if jnp.any(out_tokens == tokenizer_config.begin_of_action_token):
-        out_action_tokens = out_tokens[action_start_idx + 1:]  # get all tokens after action token
-    else:
-        out_action_tokens = jnp.array([])  # if no "begin of action" token generated, then treat it as if no action was produced
-
+    
     gt_action_tokens = tokenize_fn(batch.actions)
+
+    token_exists = jnp.any(out_tokens == tokenizer_config.begin_of_action_token, axis=1) # check if begin_of_action_token appears in generated sequences
+    action_start_indices = jnp.argmax(out_tokens == tokenizer_config.begin_of_action_token, axis=1) # use argmax to find the first occurrence for every timestep
+    action_start_indices = jnp.where(token_exists, action_start_indices, -1) # for steps where it's not found, replace with "-1"
+
+    # get the next seven tokens after the begin of action token; otherwise, use zeros
+    extract_tokens_vmap = jax.vmap(
+        lambda seq, idx: jnp.where(
+            (idx == -1) | (idx + 7 > seq.shape[0]),
+            jnp.zeros(7, dtype=seq.dtype),
+            seq[idx:idx + 7]
+        ),
+        in_axes=(0, 0)  # maps across every step of trajectory, and every token generated for that step
+    )
+
+    out_action_tokens = extract_tokens_vmap(out_tokens, action_start_indices)
 
     __compute_action_metrics_shim = partial(
         _compute_action_metrics_shim,

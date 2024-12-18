@@ -91,7 +91,7 @@ class Tokenizer:
                 eos_token=language_tokenizer.string_to_id("<eos>").numpy().item(),
                 pad_token=language_tokenizer.string_to_id("<pad>").numpy().item(),
                 begin_of_action_token=language_tokenizer.string_to_id("\n").numpy().item(),
-                begin_of_cot_token=language_tokenizer.string_to_id("COT:").numpy().item(), # add cot token
+                begin_of_cot_token=language_tokenizer.string_to_id("%").numpy().item(), # ria todo: fix to make this more interpretable
                 max_pad_length=60,
                 min_action_value=getattr(action_tokenizer, "min_action_value", None),
                 max_action_value=getattr(action_tokenizer, "max_action_value", None),
@@ -118,11 +118,10 @@ class Tokenizer:
         action_tokenizer_params: dict = None,
         *,
         prompt_autoregressive: bool = False,
-        use_cot: bool = False,
         config: TokenizerConfig | None = None,
     ):
         if config is None:
-            config = cls.TokenizerConfig.create(action_tokenizer, language_tokenizer, prompt_autoregressive, use_cot)
+            config = cls.TokenizerConfig.create(action_tokenizer, language_tokenizer, prompt_autoregressive)
 
         pad_token = language_tokenizer.string_to_id("<pad>").numpy().item()
 
@@ -151,11 +150,11 @@ class Tokenizer:
             ],
         }
 
-        if use_cot:
-            token_structure['causal'] = [[config.begin_of_cot_token], "reasoning"] + token_structure['causal']
+        if config.use_cot:
+            token_structure['causal'] = [[config.begin_of_cot_token], "reasonings"] + token_structure['causal']
 
         return cls(
-            config=cls.TokenizerConfig.create(action_tokenizer, language_tokenizer, prompt_autoregressive, use_cot),
+            config=cls.TokenizerConfig.create(action_tokenizer, language_tokenizer, prompt_autoregressive, config.use_cot),
             language_tokenizer=language_tokenizer,
             token_structure=FrozenDict(
                 freeze_structure(token_structure)
@@ -284,14 +283,15 @@ class Tokenizer:
             "prompt": language_token_instructions[: self.config.max_pad_length - 10],
         }
 
-        include_keys = {"prefix_prompt", "prefix_start_action", "pad"} if cot_tokens is not None else {"prefix", "pad"}
+        include_keys = {"prefix", "pad"}
 
         tokens, mask_ar, mask_loss = self.compose_token_structure(
                 tokens, include_keys=include_keys
         )
 
+
         start_token = self.config.begin_of_cot_token if cot_tokens is not None else self.config.begin_of_action_token
-        gen_start = tf.argmax(tokens == start_token, axis=-1) + 1
+        gen_start = tf.argmax(tokens == start_token, axis=-1) # ria todo: check this...
 
         prepared_tokens = {
             "tokens": tokens,
