@@ -31,7 +31,7 @@ from absl import logging
 import big_vision.evaluators.common as eval_common
 import big_vision.evaluators.proj.distill.distance as dd
 import big_vision.input_pipeline as input_pipeline
-import big_vision.optax as bv_optax
+import big_vision.bv_optax as bv_optax
 import big_vision.trainers.proj.flexi.common as flexi
 import big_vision.utils as u
 from clu import parameter_overview

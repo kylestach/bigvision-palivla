@@ -25,7 +25,7 @@ from absl import flags
 from absl import logging
 from big_vision import input_pipeline
 import big_vision.evaluators.common as eval_common
-import big_vision.optax as bv_optax
+import big_vision.bv_optax as bv_optax
 import big_vision.sharding as bv_sharding
 import big_vision.trainers.proj.givt.utils as trainer_utils
 from big_vision.trainers.proj.uvim import panoptic_task

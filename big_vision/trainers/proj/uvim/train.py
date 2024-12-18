@@ -26,7 +26,7 @@ from big_vision import input_pipeline
 import big_vision.datasets.core as ds_core
 import big_vision.evaluators.common as eval_common
 import big_vision.models.proj.uvim.decode as decode
-import big_vision.optax as bv_optax
+import big_vision.bv_optax as bv_optax
 import big_vision.pp.builder as pp_builder
 import big_vision.utils as u
 from clu import parameter_overview
