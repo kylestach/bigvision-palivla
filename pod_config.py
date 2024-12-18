@@ -1,6 +1,48 @@
 import os
 import re
 
+def get_tpu_config(zone, tpu_type, num_tpus):
+    GCP_PROJECT_NAME = "rail-tpus"
+    USERNAME = "kstachowicz"
+    NFS_DIRS = {
+        "europe-west4-b": f"/nfs/nfs3/users/{USERNAME}",
+        "us-central2-b": f"/nfs/nfs2/users/{USERNAME}",
+    }
+    CHECKPOINT_DIRS = {
+        "europe-west4-b": "gs://kyle-checkpoints-eu4",
+        "us-central2-b": "gs://kyle-checkpoints-c2",
+    }
+    DATASET_DIRS = {
+        "europe-west4-b": "gs://rail-datasets-europe-west4/oxe/resize_256_256",
+        "us-central2-b": "gs://rail-orca-central2/resize_256_256",
+    }
+
+    SOURCE_DIR_NAME = "big_vision_rl"
+
+    nfs = NFS_DIRS[zone]
+    checkpoints_dir = CHECKPOINT_DIRS[zone]
+    dataset_dir = DATASET_DIRS[zone]
+
+    runtime_versions = {"v4": "tpu-ubuntu2204-base", "v5": "v2-alpha-tpuv5-lite"}
+    accelerator_types = {"v4": f"v4-{num_tpus}", "v5": f"v5litepod-{num_tpus}"}
+
+    return {
+        "tpc_args": {
+            "project": "rail-tpus",
+            "zone": zone,
+            "accelerator_type": accelerator_types[tpu_type],
+            "runtime_version": runtime_versions[tpu_type],
+            "reserved": True,
+        },
+        "setup_script": "source $HOME/.bashrc",
+        "src_dir": f"{nfs}/{SOURCE_DIR_NAME}",
+        "train_args": {
+            "batch_size": num_tpus * 8,
+            "save_path": f"{checkpoints_dir}/paligemma-checkpoints",
+            "dataset_kwargs.oxe_kwargs.data_dir": dataset_dir,
+        },
+    }
+
 DEFAULT_TRAIN_ARGS = {
     "eval_interval": 100,
     "save_interval": 1000,
@@ -10,103 +52,25 @@ DEFAULT_TRAIN_ARGS = {
     "language_tokenizer_path": "models/paligemma_tokenizer.model",
 }
 
-TPU_PODS = {
-    "kyle-pod-64": {
-        "tpc_args": {
-            "project": "rail-tpus",
-            "zone": "europe-west4-b",
-            "accelerator_type": "v5litepod-64",
-            "runtime_version": "v2-alpha-tpuv5-lite",
-            "reserved": True,
-        },
-        "setup_script": "source $HOME/.bashrc && conda activate big_vision",
-        "src_dir": "/nfs/nfs3/users/kstachowicz/big_vision",
-        "train_args": {
-            "batch_size": 1024,
-            "save_path": "gs://kyle-checkpoints-eu4/paligemma-checkpoints",
-            "dataset_kwargs.oxe_kwargs.data_dir": "gs://rail-datasets-europe-west4/oxe/resize_256_256",
-        },
-    },
-    "kyle-pod-256": {
-        "tpc_args": {
-            "project": "rail-tpus",
-            "zone": "europe-west4-b",
-            "accelerator_type": "v5litepod-256",
-            "runtime_version": "v2-alpha-tpuv5-lite",
-            "reserved": True,
-        },
-        "setup_script": "source $HOME/.bashrc && conda activate big_vision",
-        "src_dir": "/nfs/nfs3/users/kstachowicz/big_vision",
-        "train_args": {
-            "batch_size": 1024,
-            "save_path": "gs://kyle-checkpoints-eu4/paligemma-checkpoints",
-            "dataset_kwargs.oxe_kwargs.data_dir": "gs://rail-datasets-europe-west4/oxe/resize_256_256",
-        },
-    },
-    "oier-pod": {
-        "tpc_args": {
-            "project": "rail-tpus",
-            "zone": "europe-west4-b",
-            "accelerator_type": "v5litepod-128",
-            "runtime_version": "v2-alpha-tpuv5-lite",
-            "reserved": True,
-        },
-        "setup_script": "source $HOME/.bashrc && conda activate big_vision",
-        "src_dir": "/nfs/nfs3/users/kstachowicz/big_vision",
-        "train_args": {
-            "batch_size": 1024,
-            "save_path": "gs://kyle-checkpoints-eu4/paligemma-checkpoints",
-            "dataset_kwargs.oxe_kwargs.data_dir": "gs://rail-datasets-europe-west4/oxe/resize_256_256",
-        },
-    },
-    "v4-pod-16": {
-        "tpc_args": {
-            "project": "rail-tpus",
-            "zone": "us-central2-b",
-            "accelerator_type": "v4-16",
-            "runtime_version": "tpu-ubuntu2204-base",
-            "reserved": False,
-        },
-        "setup_script": "source /nfs/nfs2/users/kstachowicz/miniconda3/etc/profile.d/conda.sh && conda activate big_vision",
-        "src_dir": "/nfs/nfs2/users/kstachowicz/big_vision",
-        "train_args": {
-            "batch_size": 256,
-            "save_path": "gs://kyle-checkpoints-c2/paligemma-checkpoints",
-            "dataset_kwargs.oxe_kwargs.data_dir": "gs://rail-orca-central2/resize_256_256",
-        },
-    },
-    "v4-pod-32": {
-        "tpc_args": {
-            "project": "rail-tpus",
-            "zone": "us-central2-b",
-            "accelerator_type": "v4-32",
-            "runtime_version": "tpu-ubuntu2204-base",
-            "reserved": False,
-        },
-        "setup_script": "source /nfs/nfs2/users/kstachowicz/miniconda3/etc/profile.d/conda.sh && conda activate big_vision",
-        "src_dir": "/nfs/nfs2/users/kstachowicz/big_vision",
-        "train_args": {
-            "batch_size": 512,
-            "save_path": "gs://kyle-checkpoints-c2/paligemma-checkpoints",
-            "dataset_kwargs.oxe_kwargs.data_dir": "gs://rail-orca-central2/resize_256_256",
-        },
-    },
-    "v4-vm-.*": {
-        "tpc_args": {
-            "project": "rail-tpus",
-            "zone": "us-central2-b",
-            "accelerator_type": "v4-8",
-            "runtime_version": "tpu-vm-v4-base",
-            "reserved": False,
-        },
-        "setup_script": "source /nfs/nfs2/users/kstachowicz/miniconda3/etc/profile.d/conda.sh && conda activate big_vision",
-        "src_dir": "/nfs/nfs2/users/kstachowicz/big_vision",
-        "train_args": {
-            "batch_size": 128,
-            "save_path": "gs://kyle-checkpoints-c2/paligemma-checkpoints",
-            "dataset_kwargs.oxe_kwargs.data_dir": "gs://rail-orca-central2/resize_256_256",
-        },
-    },
+
+TPU_POD_CONFIGS = {
+    "eu-v5-64": get_tpu_config("europe-west4-b", "v5", 64),
+    "eu-v5-128": get_tpu_config("europe-west4-b", "v5", 128),
+    "eu-v5-256": get_tpu_config("europe-west4-b", "v5", 256),
+    "us-v4-8": get_tpu_config("us-central2-b", "v4", 8),
+    "us-v4-16": get_tpu_config("us-central2-b", "v4", 16),
+    "us-v4-32": get_tpu_config("us-central2-b", "v4", 32),
+    "us-v4-64": get_tpu_config("us-central2-b", "v4", 64),
+    "us-v4-128": get_tpu_config("us-central2-b", "v4", 128),
+}
+
+TPU_POD_TYPES = {
+    "kyle-pod-64": "eu-v5-64",
+    "kyle-pod-128": "eu-v5-128",
+    "kyle-pod-256": "eu-v5-256",
+    "homer-pod-64": "eu-v5-64",
+    "homer-pod-128": "eu-v5-128",
+    "v4-vm-*": "us-v4-8",
 }
 
 def parse_args(args_str):
@@ -118,14 +82,12 @@ def parse_args(args_str):
     return args
 
 pod_name = os.environ.get("POD_NAME")
-config = None
-for key, maybe_config in TPU_PODS.items():
-    if re.fullmatch(key, pod_name) is not None:
-        config = maybe_config
+for config_re, maybe_pod_type in TPU_POD_TYPES.items():
+    if re.match(config_re, pod_name):
+        pod_type = maybe_pod_type
         break
 
-if config is None:
-    raise ValueError(f"No matching configuration found for pod name: {pod_name}")
+config = TPU_POD_CONFIGS[pod_type]
 
 train_args = os.environ.get("TRAIN_ARGS")
 config_file = os.environ.get("CONFIG_FILE", "bridge_config.py")
@@ -139,7 +101,7 @@ launch_script = f"""
 {config["setup_script"]}
 cd {config["src_dir"]}
 
-PYTHONPATH=. python {train_script} --config {config_file} \
+uv run --prerelease=allow python {train_script} --config {config_file} \
     {train_args_str}
 
 read -p "Press any key to continue..."

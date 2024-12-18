@@ -23,7 +23,7 @@ from palivla.eval_step import compute_eval_stats, compute_gen_stats
 from palivla.model import load_from_pretrained
 from palivla.spec import ModuleSpec, OptimizerSpec, restore_gluon_module
 from palivla.tokenizer import Tokenizer
-from palivla.preprocess.sentencepiece_model_pb2 import ModelProto as SentencepieceModelProto
+from palivla.sentencepiece_model_pb2 import ModelProto as SentencepieceModelProto
 from palivla.train_step import TrainingBatch, step_fn
 from palivla.types import RolloutBatch
 from palivla.predict_fns import _decode

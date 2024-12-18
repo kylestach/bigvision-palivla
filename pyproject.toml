@@ -12,7 +12,7 @@ dependencies = [
     "einops>=0.8.0",
     "flax>=0.9.0",
     "ipykernel",
-    "jax[cuda12]>=0.4.33",
+    "jax[tpu]>=0.4.33",
     "matplotlib>=3.9.2",
     "ml-collections>=0.1.1",
     "numpy<2.0.0",
@@ -26,13 +26,23 @@ dependencies = [
     "scikit-learn>=1.5.2",
     "scipy>=1.14.1",
     "sentencepiece>=0.2.0",
-    "tensorflow-datasets>=4.9.6",
-    "tensorflow-text-nightly>=2.19.0.dev20241014",
-    "tf-nightly>=2.19.0.dev20241014",
+    "tfds-nightly",
+    "tensorflow-text-nightly",
+    "tf-nightly",
     "wandb>=0.18.3",
+    "protobuf>=3.20",
+]
+
+[tool.setuptools]
+packages = ["big_vision", "palivla"]
+
+[tool.uv]
+package = true
+dev-dependencies = [
+    "protoc-wheel-0==3.19.4",
 ]
 
 [tool.uv.sources]
-dlimp = { path = "dlimp", editable = true }
+dlimp = { path = "./dlimp", editable = true }
 octo = { path = "orca", editable = true }
 big-vision = { workspace = true }

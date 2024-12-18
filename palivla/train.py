@@ -1,3 +1,6 @@
+import os
+os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
+
 import jax
 import jax.numpy as jnp
 import orbax.checkpoint as ocp
@@ -29,7 +32,8 @@ tf.config.set_visible_devices([], "GPU")
 
 
 def main(_):
-    jax.distributed.initialize()
+    if flags.FLAGS.platform == "tpu":
+        jax.distributed.initialize()
 
     # Turn off debug logs
     tf.get_logger().setLevel("WARNING")
@@ -47,11 +51,11 @@ def main(_):
 
     # Make the basic dataset
     # We have to do this first, since we need to know how the dataset is set up before we can construct the model
-    train_ds = make_base_dataset(config, train=True)
-    eval_datasets = {
-        dataset_name: make_base_single_dataset(config, train=False)
-        for dataset_name in config.eval_datasets
-    }
+    train_ds = make_base_dataset(**config.dataset_kwargs.to_dict(), train=True)
+    # eval_datasets = {
+    #     dataset_name: make_base_single_dataset(**config.dataset_kwargs.to_dict(), train=False)
+    #     for dataset_name in config.eval_datasets
+    # }
 
     batch_shape = {
         "text": jax.ShapeDtypeStruct(shape=(1, 10), dtype=jnp.int32),
@@ -233,4 +237,5 @@ if __name__ == "__main__":
     config_flags.DEFINE_config_file(
         "config", "bridge_config.py", "Path to the config file."
     )
+    flags.DEFINE_string("platform", "tpu", "Platform to run on.")
     app.run(main)
