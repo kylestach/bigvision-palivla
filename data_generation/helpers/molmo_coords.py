@@ -2,12 +2,6 @@
 
 from transformers import AutoModelForCausalLM, AutoProcessor, GenerationConfig
 from PIL import Image
-import requests
-import matplotlib.pyplot as plt
-import mediapy
-import os
-import numpy as np
-import xml.etree.ElementTree as ET
 import torch
 import re
 

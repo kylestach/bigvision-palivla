@@ -2,7 +2,6 @@
 ## run molmo VLM on a bunch of saved trajectories
 
 from PIL import Image
-import matplotlib.pyplot as plt
 import os
 import numpy as np
 from sam2.build_sam import build_sam2_video_predictor

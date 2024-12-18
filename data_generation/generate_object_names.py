@@ -1,6 +1,5 @@
 import tensorflow as tf
 import argparse
-import pickle
 import json
 import torch
 import os
