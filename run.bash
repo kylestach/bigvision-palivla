@@ -54,11 +54,10 @@ echo "DEST_DIR: $DEST_DIR"
 echo "Number of workers: $NUM_WORKERS"
 
 # Copy the source directory to the TPU VM
-# rsync -avzL --exclude .git --exclude-from=.gitignore . $DEST_DIR
+rsync -avzL --exclude .git --exclude-from=.gitignore . $DEST_DIR
 
 # Launch the pod configuration
 POD_NAME=$TPU_VM_NAME tpc launch pod_config.py
 
 # Connect to the pod
 bash ssh_pod.sh $TPU_VM_NAME
-

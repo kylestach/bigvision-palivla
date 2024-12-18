@@ -130,22 +130,22 @@ def make_optimizer(**config):
             img_learning_rate,
             config['img_optimizer_kwargs']['weight_decay'],
             config['img_optimizer_kwargs']['grad_norm_clip'],
-            config['img_optimizer_kwargs']['b1'],
-            config['img_optimizer_kwargs']['b2'],
+            config['img_optimizer_kwargs'].get('b1', 0.9),
+            config['img_optimizer_kwargs'].get('b2', 0.999),
         )
         embed_optimizer = _make_opt(
             embed_learning_rate,
             config['embed_optimizer_kwargs']['weight_decay'],
             config['embed_optimizer_kwargs']['grad_norm_clip'],
-            config['embed_optimizer_kwargs']['b1'],
-            config['embed_optimizer_kwargs']['b2'],
+            config['embed_optimizer_kwargs'].get('b1', 0.9),
+            config['embed_optimizer_kwargs'].get('b2', 0.999),
         )
         llm_optimizer = _make_opt(
             llm_learning_rate,
             config['llm_optimizer_kwargs']['weight_decay'],
             config['llm_optimizer_kwargs']['grad_norm_clip'],
-            config['llm_optimizer_kwargs']['b1'],
-            config['llm_optimizer_kwargs']['b2'],
+            config['llm_optimizer_kwargs'].get('b1', 0.9),
+            config['llm_optimizer_kwargs'].get('b2', 0.999),
         )
 
         return optax.multi_transform(

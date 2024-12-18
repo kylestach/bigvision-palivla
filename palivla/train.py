@@ -118,15 +118,18 @@ def main(_):
             if k != "text"
         }
 
+        gen_start = np.argmax(batch["tokens"] == model.tokenizer.config.begin_of_action_token, axis=-1)
         return mesh.local_data_to_global_array(
             TrainingBatch(
                 sensors=sensors,
                 sensors_mask=sensors_mask,
                 actions=batch["action"],
+                actions_mask=np.ones_like(batch["action"]),
                 tokens=batch["tokens"],
                 tokens_ar=batch["mask_ar"],
                 tokens_loss=batch.get("mask_loss", None),
-                tokens_mask=batch["mask_input"]
+                tokens_mask=batch["mask_input"],
+                gen_start=gen_start,
             )
         )
 
@@ -166,7 +169,7 @@ def main(_):
 
     # W&B setup
     if jax.process_index() == 0:
-        wandb_kwargs = {"project": config.wandb_project, "tags": [config.data_mix]}
+        wandb_kwargs = {"project": config.wandb_project, "tags": []}
 
         wandb.init(**wandb_kwargs)
         wandb.config.update(config.to_dict())
