@@ -14,9 +14,10 @@ def get_config():
 
     return ConfigDict(
         {
+            "run_name": "test",
             "wandb_project": "palivla",
-            "paligemma_weights_path": placeholder(str),
-            "language_tokenizer_path": placeholder(str),
+            "paligemma_weights_path": "models/paligemma-3b-pt-224.f16.npz",
+            "language_tokenizer_path": "models/paligemma_tokenizer.model",
             "action_tokenizer_path": placeholder(str),
             "model_load_fn": "big_vision.models.proj.paligemma.paligemma.load",
             "tokenizer_path": "models/paligemma_tokenizer.model",
@@ -57,7 +58,7 @@ def get_config():
                 "balance_weights": True,
                 "shuffle_buffer_size": 50000,
                 "traj_transform_threads": 16,
-                "traj_read_threads": 1, # VERY IMPORTANT !
+                "traj_read_threads": 2, # need to fix to make this = # datasets in mix. VERY IMPORTANT !
             },
             "extra_dataset_transform_kwargs": {
                 "multimodal_rephrasings": False,
@@ -97,7 +98,8 @@ def get_config():
                 },
             },
             "eval_datasets": [
-                'bridge_dataset'
+                'bridge_dataset',
+                'fractal20220817_data'
             ]
         }
     )

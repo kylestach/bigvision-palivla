@@ -144,6 +144,7 @@ def main(_):
         .iterator(),
     )
 
+
     # gen_eval_it = map(
     #     make_training_batch,
     #     transform_dataset(
@@ -176,6 +177,8 @@ def main(_):
 
         wandb.init(**wandb_kwargs)
         wandb.config.update(config.to_dict())
+
+        wandb.run.name = config.run_name if config.run_name else wandb.run.name
 
         run_name = wandb.run.name
     else:

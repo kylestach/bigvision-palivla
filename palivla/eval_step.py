@@ -84,9 +84,6 @@ def extract_cot_strs(step_tokens, masked_prompt_tokens, beg_cot_token, beg_actio
     detokenized_cot = detokenize_lang_fn(tf.convert_to_tensor(cot_tokens, dtype=tf.int32))
     cot_str = tf.strings.reduce_join(detokenized_cot, separator="").numpy().decode("utf-8")
 
-    if cot_str:
-        import pdb; pdb.set_trace()
-
     return prompt_str, cot_str 
 
 def get_cot_table_metrics(lang_and_cot_strs):
