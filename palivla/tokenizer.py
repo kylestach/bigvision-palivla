@@ -81,7 +81,11 @@ class Tokenizer:
         use_cot: bool = struct.field(pytree_node=False)
 
         @classmethod
-        def create(cls, action_tokenizer: ActionTokenizer, language_tokenizer: SentencepieceTokenizer, prompt_autoregressive: bool = False, use_cot:bool=False):
+        def create(cls, 
+                   action_tokenizer: ActionTokenizer, 
+                   language_tokenizer: SentencepieceTokenizer, 
+                   prompt_autoregressive: bool = False, 
+                   use_cot:bool=False,):
             return cls(
                 action_vocab_size=action_tokenizer.vocab_size,
                 action_vocab_offset=256000,
@@ -92,7 +96,7 @@ class Tokenizer:
                 pad_token=language_tokenizer.string_to_id("<pad>").numpy().item(),
                 begin_of_action_token=language_tokenizer.string_to_id("\n").numpy().item(),
                 begin_of_cot_token=language_tokenizer.string_to_id("%").numpy().item(), # ria todo: fix to make this more interpretable
-                max_pad_length=60,
+                max_pad_length=300,
                 min_action_value=getattr(action_tokenizer, "min_action_value", None),
                 max_action_value=getattr(action_tokenizer, "max_action_value", None),
                 prompt_autoregressive=prompt_autoregressive,
@@ -265,7 +269,7 @@ class Tokenizer:
         }
 
         if cot_tokens is not None:
-            tokens["reasonings"] = cot_tokens #[: self.config.max_pad_length-10]     # ria todo: check what this does
+            tokens["reasonings"] = cot_tokens[: self.config.max_pad_length-10] # make sure there's enough space for actions
 
         tokens, mask_ar, mask_loss = self.compose_token_structure(tokens)
 
@@ -289,9 +293,8 @@ class Tokenizer:
                 tokens, include_keys=include_keys
         )
 
-
         start_token = self.config.begin_of_cot_token if cot_tokens is not None else self.config.begin_of_action_token
-        gen_start = tf.argmax(tokens == start_token, axis=-1) # ria todo: check this...
+        gen_start = tf.argmax(tokens == start_token, axis=-1) + 1
 
         prepared_tokens = {
             "tokens": tokens,
