@@ -177,6 +177,10 @@ def get_default_config():
         "target_key_order": ("image_primary",),
     }
 
+def get_cot_config(): 
+    dct = get_default_config()
+    dct['use_cot'] = True
+    return dct
 
 class PaliVLAModel(nn.Module):
     # Specifications for the basic modules
