@@ -1,7 +1,7 @@
 from octo.data.utils.data_utils import NormalizationType
 from ml_collections.config_dict import placeholder, ConfigDict, FieldReference
 
-from palivla.model import get_default_config
+from palivla.model import get_cot_config
 
 placeholder(int)._value
 
@@ -10,8 +10,7 @@ def get_config():
 
     use_cot = True
 
-    model_config = get_default_config()
-    model_config['use_cot'] = use_cot
+    model_config = get_cot_config()
 
     return ConfigDict(
         {
@@ -22,9 +21,9 @@ def get_config():
             "model_load_fn": "big_vision.models.proj.paligemma.paligemma.load",
             "tokenizer_path": "models/paligemma_tokenizer.model",
             "model_path": "models/paligemma",
-            "save_path": 'gs://multi-robot-bucket2/runs/vla/',
-            "batch_size": 192,
-            "eval_batch_size": 128,
+            "save_path": 'gs://multi-robot-bucket2/runs/vla',
+            "batch_size": 16,
+            "eval_batch_size": 10,
             "num_steps": num_train_steps,
             "eval_interval": 100,
             "save_interval": 1000,
@@ -36,7 +35,7 @@ def get_config():
             "model_config": model_config,
             "dataset_kwargs": {
                 "oxe_kwargs": {
-                    "data_mix": "bridge",
+                    "data_mix": "bridge_fractal",
                     "data_dir": "gs://rail-orca-central2/resize_256_256/",
                     "load_camera_views": ["primary"],
                     "load_depth": False,
@@ -58,7 +57,7 @@ def get_config():
                 "balance_weights": True,
                 "shuffle_buffer_size": 50000,
                 "traj_transform_threads": 16,
-                "traj_read_threads": 16,
+                "traj_read_threads": 1, # VERY IMPORTANT !
             },
             "extra_dataset_transform_kwargs": {
                 "multimodal_rephrasings": False,
