@@ -155,6 +155,8 @@ def main(_):
     #     .batch(per_host_eval_batch_size)
     #     .iterator(),
     # )
+
+    
     gen_train_it = map(
         make_training_batch,
         transform_dataset(
@@ -220,7 +222,10 @@ def main(_):
 
                 train_batch_for_eval = next(gen_train_it)
                 train_info = model.eval_step(
-                    train_batch_for_eval, "train/gen_", include_regular_stats=False
+                    train_batch_for_eval, 
+                    "train/gen_", 
+                    include_regular_stats=False,
+                    use_cot=model.config['use_cot'],
                 )
 
                 if jax.process_index() == 0:

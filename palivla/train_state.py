@@ -23,10 +23,11 @@ from palivla.eval_step import compute_eval_stats, compute_gen_stats
 from palivla.model import load_from_pretrained
 from palivla.spec import ModuleSpec, OptimizerSpec, restore_gluon_module
 from palivla.tokenizer import Tokenizer
-# from palivla.preprocess.sentencepiece_model_pb2 import ModelProto as SentencepieceModelProto
 from palivla.train_step import TrainingBatch, step_fn
 from palivla.palivla_types import RolloutBatch
 from palivla.predict_fns import _decode
+
+from big_vision.pp.ops_text import SPModelProto as SentencepieceModelProto
 
 
 class ShardingMetadata:
@@ -371,7 +372,7 @@ class PaliVLATrainState:
                 action_tokenizer=action_tokenizer_state.model,
                 language_tokenizer=language_tokenizer,
                 prompt_autoregressive=config["prompt_autoregressive"],
-                use_cot=config["use_cot"] # refers to model_config (ria todo: fix, make this cleaner)
+                use_cot=config["use_cot"], # refers to model_config (ria todo: fix, make this cleaner),
             ),
         )
 
@@ -588,6 +589,7 @@ class PaliVLATrainState:
         prefix: str,
         target_key_order: Sequence[str] | None = None,
         include_regular_stats: bool = True,
+        use_cot: bool = False
     ):
         batch = self.prepare_batch(batch)
 
@@ -595,11 +597,13 @@ class PaliVLATrainState:
             decode_fn=self.decode,
             tokenize_fn=partial(self.tokenize_action, obs=batch.sensors),
             detokenize_fn=partial(self.detokenize_action, obs=batch.sensors),
+            detokenize_lang_fn=self.language_tokenizer.detokenize,
             mesh=self.mesh,
             batch=batch,
             prefix=prefix,
             tokenizer_config=self.tokenizer.config,
             target_key_order=target_key_order,
+            use_cot=use_cot
         )
 
         if include_regular_stats:
@@ -615,4 +619,4 @@ class PaliVLATrainState:
                 target_key_order=target_key_order,
             )
 
-        return jax.device_get(results)
+        return results

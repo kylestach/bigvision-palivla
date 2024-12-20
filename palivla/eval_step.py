@@ -2,6 +2,7 @@ from typing import Sequence
 
 import jax
 import jax.numpy as jnp
+from jax import lax
 
 from functools import partial
 
@@ -12,6 +13,9 @@ from palivla.palivla_types import TrainingBatch, RolloutBatch
 from jax.sharding import PartitionSpec
 from scalax.sharding import MeshShardingHelper
 
+import tensorflow as tf
+import wandb
+import numpy as np
 
 def _compute_action_metrics_shim(
     detokenize_fn,
@@ -23,7 +27,7 @@ def _compute_action_metrics_shim(
     gt_action_tokens,
     gt_actions,
 ):
-    return compute_action_metrics(
+    metrics = compute_action_metrics(
         detokenize_fn=detokenize_fn,
         pred_action_tokens=pred_action_tokens,
         pred_action_logits=pred_action_logits,
@@ -34,17 +38,76 @@ def _compute_action_metrics_shim(
         log_segment_prefix=log_segment_prefix,
     )
 
+    return metrics 
 
-# ria todo: for cot, just change this method to incorporate the cot token structure
+# get the next seven tokens after the begin of action token; otherwise, use zeros
+def extract_action_tokens(step_tokens, begin_of_action_token):
+    token_exists = jnp.any(step_tokens == begin_of_action_token)
+    action_start_idx = jnp.argmax(step_tokens == begin_of_action_token)
+    
+    action_start_idx = jnp.where(token_exists, action_start_idx, -1)
+    
+    action_tokens = lax.cond(
+        (action_start_idx == -1) | (action_start_idx + 7 > step_tokens.shape[0]),
+        lambda _: jnp.zeros(7, dtype=step_tokens.dtype),
+        lambda _: lax.dynamic_slice(step_tokens, (action_start_idx,), (7,)),
+        operand=None
+    )
+
+    return action_tokens
+
+# get the cot tokens (tokens btwn begin CoT token and begin action token)
+def extract_cot_strs(step_tokens, masked_prompt_tokens, beg_cot_token, beg_action_token, detokenize_lang_fn):
+
+    # get prompt
+    masked_prompt_tokens = np.array(masked_prompt_tokens)
+    first_zero_idx = np.where(masked_prompt_tokens == 0)[0][0] if 0 in masked_prompt_tokens else len(masked_prompt_tokens)
+    prompt_tokens = masked_prompt_tokens[:first_zero_idx]
+
+    detokenize_prompt = detokenize_lang_fn(tf.convert_to_tensor(prompt_tokens, dtype=tf.int32))
+    prompt_str = tf.strings.reduce_join(detokenize_prompt, separator="").numpy().decode("utf-8")
+
+    # get cot
+    step_tokens_np = np.array(step_tokens)
+
+    try:
+        cot_start_idx = np.where(step_tokens_np == beg_cot_token)[0][0]
+        action_start_idx = np.where(step_tokens_np == beg_action_token)[0][0]
+    except IndexError:
+        return prompt_str, "" 
+    
+    if cot_start_idx >= action_start_idx:
+        return prompt_str, ""
+
+    cot_tokens = step_tokens_np[cot_start_idx + 1: action_start_idx]
+
+    detokenized_cot = detokenize_lang_fn(tf.convert_to_tensor(cot_tokens, dtype=tf.int32))
+    cot_str = tf.strings.reduce_join(detokenized_cot, separator="").numpy().decode("utf-8")
+
+    if cot_str:
+        import pdb; pdb.set_trace()
+
+    return prompt_str, cot_str 
+
+def get_cot_table_metrics(lang_and_cot_strs):
+    table = wandb.Table(columns=["GT Language Label", "Predicted CoT"])
+    for lang_str, cot_str in lang_and_cot_strs:
+        table.add_data(lang_str, cot_str)
+    dct = {"CoT Outputs": table}
+    return dct
+
+
 def compute_gen_stats(
     decode_fn,
     tokenize_fn,
     detokenize_fn,
+    detokenize_lang_fn,
     mesh: MeshShardingHelper,
     batch: TrainingBatch,
     prefix: str,
     tokenizer_config: Tokenizer.TokenizerConfig,
     target_key_order: Sequence[str] | None = None,
+    use_cot: bool = False,
 ):
     """
     Compute generative (rollout) statistics on a batch of data.
@@ -96,32 +159,24 @@ def compute_gen_stats(
         prompt_ar=split_tokens["prompt_ar"],
     )
 
-    import pdb; pdb.set_trace()
     out_tokens = decode_fn(
         rollout_batch,
         target_key_order=target_key_order,
     ) 
-
-    # if we're using CoT, all the out tokens don't necessarily correspond to the action 
-    # to deconflict, take all tokens after generated begin of action token as the generated action
     
     gt_action_tokens = tokenize_fn(batch.actions)
+    
+    extract_action_tokens_vmap = jax.vmap(extract_action_tokens, in_axes=(0, None)) # only map over batch argument
+    out_action_tokens = extract_action_tokens_vmap(out_tokens, tokenizer_config.begin_of_action_token)
 
-    token_exists = jnp.any(out_tokens == tokenizer_config.begin_of_action_token, axis=1) # check if begin_of_action_token appears in generated sequences
-    action_start_indices = jnp.argmax(out_tokens == tokenizer_config.begin_of_action_token, axis=1) # use argmax to find the first occurrence for every timestep
-    action_start_indices = jnp.where(token_exists, action_start_indices, -1) # for steps where it's not found, replace with "-1"
-
-    # get the next seven tokens after the begin of action token; otherwise, use zeros
-    extract_tokens_vmap = jax.vmap(
-        lambda seq, idx: jnp.where(
-            (idx == -1) | (idx + 7 > seq.shape[0]),
-            jnp.zeros(7, dtype=seq.dtype),
-            seq[idx:idx + 7]
-        ),
-        in_axes=(0, 0)  # maps across every step of trajectory, and every token generated for that step
-    )
-
-    out_action_tokens = extract_tokens_vmap(out_tokens, action_start_indices)
+    if use_cot:
+        # batch.tokens refers to the masked prompt tokens, so we'd have to add batch.cot_tokens to get the ground truth
+        # skipping for now
+        lang_and_cot_strs = [
+            extract_cot_strs(tokens, prompt_tokens, tokenizer_config.begin_of_cot_token, tokenizer_config.begin_of_action_token, detokenize_lang_fn)
+            for prompt_tokens, tokens in zip(batch.tokens, out_tokens)
+        ]
+        cot_metrics = get_cot_table_metrics(lang_and_cot_strs)
 
     __compute_action_metrics_shim = partial(
         _compute_action_metrics_shim,
@@ -131,7 +186,7 @@ def compute_gen_stats(
         tokenizer_config,
     )
 
-    return mesh.sjit(
+    action_metrics = mesh.sjit(
         __compute_action_metrics_shim,
         out_shardings=PartitionSpec(),
     )(
@@ -140,6 +195,13 @@ def compute_gen_stats(
         gt_action_tokens,
         batch.actions,
     )
+
+    action_metrics = jax.device_get(action_metrics)
+
+    if use_cot:
+        return {**action_metrics, **cot_metrics}
+    
+    return action_metrics
 
 
 def compute_eval_stats(
@@ -164,7 +226,7 @@ def compute_eval_stats(
         target_key_order=target_key_order,
     )
 
-    return compute_stats(
+    results = compute_stats(
         detokenize_fn=detokenize_fn,
         pred_logits=logits,
         tokens=batch.tokens,
@@ -173,3 +235,5 @@ def compute_eval_stats(
         tokenizer_config=tokenizer_config,
         log_segment_prefix=prefix,
     )[1]
+
+    return jax.device.get(results)
