@@ -8,11 +8,11 @@ dependencies = [
     "big-vision",
     "chex>=0.1.86",
     "distrax>=0.1.5",
-    "dlimp",
+    "dlimp@git+https://github.com/kvablack/dlimp.git",
     "einops>=0.8.0",
     "flax>=0.9.0",
     "ipykernel",
-    "jax[tpu]>=0.4.33",
+    "jax[cuda12]>=0.4.33",
     "matplotlib>=3.9.2",
     "ml-collections>=0.1.1",
     "numpy<2.0.0",
@@ -26,23 +26,40 @@ dependencies = [
     "scikit-learn>=1.5.2",
     "scipy>=1.14.1",
     "sentencepiece>=0.2.0",
-    "tfds-nightly",
-    "tensorflow-text-nightly",
-    "tf-nightly",
+    "tfds-nightly>=4.9.0",
+    "tensorflow-text-nightly>=2.15.0",
+    "tf-nightly>=2.15.0",
     "wandb>=0.18.3",
     "protobuf>=3.20",
+]
+
+[project.optional-dependencies]
+tpu = [
+    "jax[tpu]>=0.4.33",
+    "libtpu-nightly",
+]
+gpu = [
+    "jax[cuda12]>=0.4.33", 
+]
+
+[tool.uv]
+find-links = ["https://storage.googleapis.com/jax-releases/libtpu_releases.html"]
+prerelease = "allow"
+conflicts = [
+    [
+        { extra = "tpu" },
+        { extra = "gpu" },
+    ],
+]
+override-dependencies = [
+    # Always use tf-nightly and tfds-nightly instead of tensorflow and tensorflow_datasets
+    "tensorflow ; sys_platform == 'never'",
+    "tensorflow_datasets ; sys_platform == 'never'",
 ]
 
 [tool.setuptools]
 packages = ["big_vision", "palivla"]
 
-[tool.uv]
-package = true
-dev-dependencies = [
-    "protoc-wheel-0==3.19.4",
-]
-
 [tool.uv.sources]
-dlimp = { path = "./dlimp", editable = true }
 octo = { path = "orca", editable = true }
 big-vision = { workspace = true }
