@@ -1,13 +1,10 @@
-from functools import partial
-from typing import Dict
+from typing import Any
 import jax
 import jax.numpy as jnp
 import chex
 import optax
 from flax.training.train_state import TrainState
-from palivla.tokenizer import ActionTokenizer, Tokenizer
-from palivla.load_model import components_by_label
-from palivla.type_utils import TrainingBatch
+from palivla.optimizer import components_by_label
 
 
 def smooth_nll_loss(logits, labels, sigma, base_action_token, action_vocab_size):
@@ -55,137 +52,44 @@ def get_action_tokens(
     }
 
 
-def compute_action_metrics(
-    detokenize_fn,
-    *,
-    pred_action_tokens,
-    pred_action_logits,
-    gt_action_tokens,
-    gt_actions,
-    action_dim: int,
-    tokenizer_config: Tokenizer.TokenizerConfig,
-    log_segment_prefix=None,
-):
-    decoded_actions = detokenize_fn(pred_action_tokens)
-    decoded_actions_gt = detokenize_fn(gt_action_tokens)
-
-    batch_size = gt_actions.shape[0]
-    chex.assert_shape((pred_action_tokens, gt_action_tokens), (batch_size, tokenizer_config.num_action_tokens))
-    if pred_action_logits is not None:
-        chex.assert_shape((pred_action_logits), (batch_size, tokenizer_config.num_action_tokens, None))
-    chex.assert_shape((gt_actions, decoded_actions_gt, decoded_actions), (batch_size, None, action_dim))
-
-    def stats_for_metric(value, name, shape):
-        chex.assert_shape(value, (None, shape))
-        return {
-            f"{log_segment_prefix}{name}": jnp.mean(value),
-        } | {
-            f"_details/{log_segment_prefix}{name}_{i}": jnp.mean(value[:, i])
-            for i in range(shape)
-        }
-
-    error = decoded_actions - decoded_actions_gt
-    tokenization_error = gt_actions - decoded_actions_gt
-
-    if tokenizer_config.min_action_value is not None:
-        tokenization_error = jnp.clip(
-            gt_actions,
-            tokenizer_config.min_action_value,
-            tokenizer_config.max_action_value
-        ) - decoded_actions_gt
-
-    return {
-        **stats_for_metric(jnp.mean(jnp.abs(error), axis=1), "l1", action_dim),
-        **stats_for_metric(jnp.mean(jnp.square(error), axis=1), "l2", action_dim),
-        **stats_for_metric(
-            jnp.mean(jnp.abs(tokenization_error), axis=1), "tok_l1", action_dim
-        ),
-        **stats_for_metric(
-            jnp.mean(jnp.square(tokenization_error), axis=1), "tok_l2", action_dim
-        ),
-        **stats_for_metric(
-            pred_action_tokens == gt_action_tokens, "acc", tokenizer_config.num_action_tokens
-        ),
-    } | (
-        {
-            **stats_for_metric(
-                optax.softmax_cross_entropy_with_integer_labels(
-                    pred_action_logits, gt_action_tokens
-                ),
-                "action_loss",
-                tokenizer_config.num_action_tokens
-            ),
-        }
-        if pred_action_logits is not None
-        else {}
-    )
-
-
 def compute_stats(
     *,
-    detokenize_fn,
     pred_logits,
-    tokens,
-    actions,
-    mask_loss,
-    tokenizer_config: Tokenizer.TokenizerConfig,
-    log_segment_prefix: str = "",
+    target_tokens,
+    target_mask_loss,
 ):
-    output_pred_mask = mask_loss[..., 1:]
-    labels = tokens[..., 1:]
-
-    action_token_info = get_action_tokens(
-        pred_logits, labels, tokenizer_config.num_action_tokens, tokenizer_config.begin_of_action_token
-    )
-    metrics = compute_action_metrics(
-        detokenize_fn,
-        **action_token_info,
-        action_dim=actions.shape[-1],
-        gt_actions=actions,
-        tokenizer_config=tokenizer_config,
-        log_segment_prefix=log_segment_prefix,
-    )
-
     loss = jnp.mean(
-        output_pred_mask
-        * optax.softmax_cross_entropy_with_integer_labels(pred_logits, labels)
-    ) / jnp.mean(output_pred_mask)
-    metrics["loss"] = loss
+        target_mask_loss
+        * optax.softmax_cross_entropy_with_integer_labels(pred_logits, target_tokens)
+    ) / jnp.mean(target_mask_loss)
+
+    accuracy = jnp.mean(target_mask_loss * (jnp.argmax(pred_logits, axis=-1) == target_tokens)) / jnp.mean(target_mask_loss)
+    metrics = {"loss": loss, "accuracy": accuracy}
 
     return loss, metrics
 
 
 def step_fn(
     train_state: TrainState,
-    batch: TrainingBatch,
+    batch: Any,
     key: chex.PRNGKey,
-    tokenizer_config: Tokenizer.TokenizerConfig,
-    detokenize_fn,
     train: bool,
 ):
     def loss_fn(params, batch, key: chex.PRNGKey):
-        all_inputs = batch.sensors | {"text": batch.tokens[..., :-1]}
-        all_masks = batch.sensors_mask | {
-            "text": jnp.ones_like(batch.tokens[..., :-1], dtype=jnp.bool_)
-        }
-
         logits, _ = train_state.apply_fn(
             {"params": params},
-            all_inputs,
-            data_masks=all_masks,
-            text_ar_mask=batch.tokens_ar[..., :-1],
+            batch["sensors"],
+            batch["sensors_mask"],
+            batch["prompt"],
+            batch["gen"],
             train=train,
             rngs={"dropout": key},
         )
 
         return compute_stats(
-            detokenize_fn=partial(detokenize_fn, obs=batch.sensors),
-            pred_logits=logits,
-            tokens=batch.tokens,
-            actions=batch.actions,
-            mask_loss=batch.tokens_loss,
-            tokenizer_config=tokenizer_config,
-            log_segment_prefix="train/tf_",
+            pred_logits=logits[..., :-1, :],
+            target_tokens=batch["gen"]["tokens"][..., 1:],
+            target_mask_loss=batch["gen"]["mask_loss"][..., 1:],
         )
 
     grad_fn = jax.grad(loss_fn, has_aux=True)

@@ -51,7 +51,7 @@ def get_config(variant):
         dict(
             variant=variant,
             width=256,
-            depth=2,
+            depth=4,
             mlp_dim=256,
             num_heads=4,
             num_kv_heads=4,

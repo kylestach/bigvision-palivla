@@ -1,6 +1,6 @@
 from ml_collections.config_dict import placeholder, ConfigDict, FieldReference
 
-from palivla.model import get_default_config
+from palivla.components.model import get_default_config
 from palivla.spec import ModuleSpec
 
 placeholder(int)._value

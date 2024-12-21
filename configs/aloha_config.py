@@ -6,7 +6,7 @@ from palivla.spec import ModuleSpec
 placeholder(int)._value
 
 def get_config():
-    from palivla.model import get_default_config
+    from palivla.components.model import get_default_config
     num_train_steps = FieldReference(100000, int)
 
     from big_vision.models.ppp.gemma import get_config

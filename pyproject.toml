@@ -12,7 +12,7 @@ dependencies = [
     "einops>=0.8.0",
     "flax>=0.9.0",
     "ipykernel",
-    "jax>=0.4.33",
+    "jax>=0.4.34",
     "matplotlib>=3.9.2",
     "ml-collections>=0.1.1",
     "numpy<2.0.0",
@@ -32,15 +32,17 @@ dependencies = [
     "wandb>=0.18.3",
     "protobuf>=3.20",
     "huggingface-hub>=0.27.0",
+    "transformers>=4.47.1",
+    "tensorflow-metadata==1.16.1",
 ]
 
 [project.optional-dependencies]
 tpu = [
-    "jax[tpu]>=0.4.33",
+    "jax[tpu]>=0.4.34",
     "libtpu-nightly",
 ]
 gpu = [
-    "jax[cuda12]==0.4.34", 
+    "jax[cuda12]>=0.4.34"
 ]
 
 [tool.uv]

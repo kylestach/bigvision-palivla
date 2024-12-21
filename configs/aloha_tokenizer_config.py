@@ -6,7 +6,7 @@ from palivla.spec import ModuleSpec
 placeholder(int)._value
 
 def get_config(config_str: str):
-    from palivla.model import get_default_config
+    from palivla.components.model import get_default_config
     num_train_steps = FieldReference(500000, int)
     chunk_size = FieldReference(64, int)
     data_dim = 14

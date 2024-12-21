@@ -1,29 +1,25 @@
 from octo.data.utils.data_utils import NormalizationType
 from ml_collections.config_dict import placeholder, ConfigDict, FieldReference
 
-from palivla.model import get_default_config
+from palivla.components.model import get_default_config
 
 placeholder(int)._value
 
 def get_config():
     num_train_steps = FieldReference(100000, int)
 
-    model_config = get_default_config()
-    model_config["llm_spec"]["config"]["variant"] = "smoke_test"
-
-
     return ConfigDict(
         {
-            "wandb_project": "palivla-debug",
-            "paligemma_weights_path": None,
-            "language_tokenizer_path": "models/paligemma_tokenizer.model",
+            "wandb_project": "palivla",
+            "paligemma_weights_path": placeholder(str),
+            "language_tokenizer_path": placeholder(str),
             "action_tokenizer_path": placeholder(str),
             "model_load_fn": "big_vision.models.proj.paligemma.paligemma.load",
             "tokenizer_path": "models/paligemma_tokenizer.model",
             "model_path": "models/paligemma",
             "save_path": placeholder(str),
-            "batch_size": 16,
-            "eval_batch_size": 16,
+            "batch_size": 192,
+            "eval_batch_size": 128,
             "num_steps": num_train_steps,
             "eval_interval": 100,
             "save_interval": 1000,
@@ -32,7 +28,7 @@ def get_config():
             "fsdp_axis_size": -1,
             "resume_from_checkpoint_dir": placeholder(str),
             "resume_from_checkpoint_step": placeholder(int),
-            "model_config": model_config,
+            "model_config": get_default_config(),
             "dataset_kwargs": {
                 "oxe_kwargs": {
                     "data_mix": "bridge",

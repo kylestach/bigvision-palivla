@@ -69,7 +69,7 @@ class Model(nn.Module):
   def compute_logits(self, pre_logits, train=False):
     return self.model(None, pre_logits=pre_logits, deterministic=not train)[0]
 
-  def __call__(self, embs, mask=None, train=False):
+  def __call__(self, embs, mask=None, train=False, positions=None):
     # Turns float32[B,T,d_model] embedding sequence to logits.
     # call(emb_tokens(tokens)) should be a forward pass.
     # Allow for specifying int32[B,T,T] attention masks. For convenience
@@ -82,6 +82,7 @@ class Model(nn.Module):
         tokens=jnp.zeros([batch_size, 0], dtype=jnp.int32),
         embedded_prefix=embs,
         mask=mask,
+        positions=positions,
         deterministic=not train,
     )
     return logits, out
