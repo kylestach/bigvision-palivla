@@ -14,6 +14,7 @@ We require some extra packages, namely [`dlimp`](https://github.com/kvablack/dli
 To train a model, run:
 ```bash
 python -m palivla/train.py --config_file palivla/configs/bridge_config.py
+PYTHONPATH=$PYTHONPATH:. uv run --extra tpu python palivla/train.py --config palivla/configs/bridge_config.py
 ```
 
 This repository is (for now) a fork of [`big_vision`](https://github.com/google-research/big_vision).
