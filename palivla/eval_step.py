@@ -3,6 +3,8 @@ from typing import Sequence
 import jax
 import jax.numpy as jnp
 from jax import lax
+from jax.experimental import multihost_utils
+
 
 from functools import partial
 
@@ -169,9 +171,17 @@ def compute_gen_stats(
     if use_cot:
         # batch.tokens refers to the masked prompt tokens, so we'd have to add batch.cot_tokens to get the ground truth
         # skipping for now
+        from jax.experimental import multihost_utils
+
+        gathered_batch_tokens = multihost_utils.process_allgather(batch.tokens)
+        gathered_out_tokens = multihost_utils.process_allgather(out_tokens)
+
+        batch_tokens_np = np.asarray(gathered_batch_tokens)
+        out_tokens_np = np.asarray(gathered_out_tokens)
+
         lang_and_cot_strs = [
             extract_cot_strs(tokens, prompt_tokens, tokenizer_config.begin_of_cot_token, tokenizer_config.begin_of_action_token, detokenize_lang_fn)
-            for prompt_tokens, tokens in zip(batch.tokens, out_tokens)
+            for prompt_tokens, tokens in zip(batch_tokens_np, out_tokens_np)
         ]
         cot_metrics = get_cot_table_metrics(lang_and_cot_strs)
 
