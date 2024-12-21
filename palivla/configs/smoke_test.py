@@ -15,14 +15,14 @@ def get_config():
     return ConfigDict(
         {
             "wandb_project": "palivla",
-            "paligemma_weights_path": "models/paligemma-3b-mix-224.f16.npz",
+            "paligemma_weights_path": None,
             "language_tokenizer_path": "models/paligemma_tokenizer.model",
             "action_tokenizer_path": placeholder(str),
             "model_load_fn": "big_vision.models.proj.paligemma.paligemma.load",
             "tokenizer_path": "models/paligemma_tokenizer.model",
             "model_path": "models/paligemma",
             "save_path": placeholder(str),
-            "batch_size": 192,
+            "batch_size": 2,
             "eval_batch_size": 128,
             "num_steps": num_train_steps,
             "eval_interval": 100,
@@ -36,7 +36,7 @@ def get_config():
             "dataset_kwargs": {
                 "oxe_kwargs": {
                     "data_mix": "bridge",
-                    "data_dir": "/data/rlds/",
+                    "data_dir": "/home/oier/",
                     "load_camera_views": ["primary"],
                     "load_depth": False,
                     "load_proprio": True,
