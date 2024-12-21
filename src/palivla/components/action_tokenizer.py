@@ -1,7 +1,7 @@
 from os import PathLike
 
 import cloudpickle
-from einops import rearrange, repeat
+from einops import rearrange
 import numpy as np
 import tensorflow as tf
 
@@ -62,7 +62,7 @@ class BinActionTokenizer(ActionTokenizer):
         values = np.where(
             (tokens < 0) | (tokens >= self.vocab_size),
             np.nan,
-            tokens / (self.vocab_size - 1)
+            tokens / (self.vocab_size - 1),
         )
         data = (
             values * (self.max_action_value - self.min_action_value)

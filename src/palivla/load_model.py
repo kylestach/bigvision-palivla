@@ -1,20 +1,15 @@
-import fnmatch
 from functools import partial
-from typing import Dict, List, Optional
 import jax
 import jax.numpy as jnp
-import ml_collections
 from ml_collections import ConfigDict, FrozenConfigDict
 import optax
 
 from big_vision.models.proj.paligemma import paligemma
 from big_vision.trainers.proj.paligemma import predict_fns
 from flax import linen as nn
-from scalax.sharding import MeshShardingHelper, ShardingRule
 
 from palivla.tokenizer import Tokenizer
 from palivla.spec import ModuleSpec
-from palivla.utils import key_string
 
 model_config = {
     "llm": {"vocab_size": 257_152},
@@ -25,11 +20,13 @@ model_config = {
     },
 }
 
+
 def get_model_spec(**kwargs):
     return ModuleSpec.create(
         paligemma.Model,
         model_config | kwargs,
     )
+
 
 def load_pretrained_params(
     checkpoint_path: str,
@@ -73,14 +70,26 @@ def load_model_params_decode(config: ConfigDict, tokenizer: Tokenizer):
 
     return model, params, decode
 
-def adamw_cosine_warmup(*, learning_rate, warmup_steps, total_steps, global_norm, weight_decay, b1=0.9, b2=0.999):
+
+def adamw_cosine_warmup(
+    *,
+    learning_rate,
+    warmup_steps,
+    total_steps,
+    global_norm,
+    weight_decay,
+    b1=0.9,
+    b2=0.999,
+):
     @optax.inject_hyperparams
     def _make_optimizer(lr):
         return optax.chain(
             optax.clip_by_global_norm(global_norm),
             optax.adamw(lr, weight_decay=weight_decay, b1=b1, b2=b2),
         )
-    return _make_optimizer(
-        optax.warmup_cosine_decay_schedule(0, learning_rate, warmup_steps, total_steps - warmup_steps)
-    )
 
+    return _make_optimizer(
+        optax.warmup_cosine_decay_schedule(
+            0, learning_rate, warmup_steps, total_steps - warmup_steps
+        )
+    )

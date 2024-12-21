@@ -215,9 +215,7 @@ class PaliVLAModel(nn.Module):
                 "mask_ar": jnp.concatenate(
                     [prompt_seq["mask_ar"], gen_seq["mask_ar"]], axis=1
                 ),
-                "mask": jnp.concatenate(
-                    [prompt_seq["mask"], gen_seq["mask"]], axis=1
-                ),
+                "mask": jnp.concatenate([prompt_seq["mask"], gen_seq["mask"]], axis=1),
             }
 
         sensors_embeds, sensors_masks, sensors_info = self.embed_sensors(

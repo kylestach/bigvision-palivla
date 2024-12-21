@@ -1,8 +1,6 @@
 from typing import Any, Dict, Sequence, Mapping, Union
 
-import jax
 from flax.typing import Collection, VariableDict
-from flax.struct import dataclass
 import chex
 
 Array = chex.Array

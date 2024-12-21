@@ -1,6 +1,5 @@
 from functools import partial
 from os import PathLike
-import os
 from typing import Any
 import cloudpickle
 import jax
@@ -193,7 +192,9 @@ class ModelComponents:
             ) / np.mean(sequences["gen"]["mask_loss"])
 
             decoded = self.language_tokenizer.batch_decode(tokens)
-            decoded_targets = self.language_tokenizer.batch_decode(sequences["gen"]["tokens"])
+            decoded_targets = self.language_tokenizer.batch_decode(
+                sequences["gen"]["tokens"]
+            )
             for i in range(len(decoded)):
                 print(decoded[i], decoded_targets[i])
                 break

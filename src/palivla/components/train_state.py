@@ -1,9 +1,7 @@
-from functools import partial
 from os import PathLike
 from typing import Any, Optional
 from flax.training.train_state import TrainState as FlaxTrainState
 from flax.struct import field
-from flax.core import freeze
 from flax import linen as nn
 import orbax.checkpoint as ocp
 import jax.experimental.multihost_utils
@@ -15,7 +13,6 @@ from scalax.sharding import (
 import tensorflow as tf
 import cloudpickle
 import jax
-import jax.numpy as jnp
 
 from palivla.spec import ModuleSpec, OptimizerSpec
 

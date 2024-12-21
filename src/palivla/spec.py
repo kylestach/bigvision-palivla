@@ -7,9 +7,6 @@ from flax import linen as nn
 from flax import struct
 from flax.core.frozen_dict import FrozenDict, freeze, unfreeze
 import jax
-import tensorflow as tf
-import orbax.checkpoint as ocp
-from scalax.sharding import MeshShardingHelper, PartitionSpec
 
 from palivla.utils import freeze_structure
 

@@ -74,9 +74,7 @@ def compute_gen_stats(
     metrics = {
         "mse": jnp.mean(jnp.square(out_actions - batch.actions)),
         "mae": jnp.mean(jnp.abs(out_actions - batch.actions)),
-        "accuracy": jnp.mean(
-            (out_tokens == target_tokens) * gen_mask
-        )
+        "accuracy": jnp.mean((out_tokens == target_tokens) * gen_mask)
         / jnp.mean(gen_mask),
     }
 

@@ -10,6 +10,7 @@ def freeze_structure(structure):
         is_leaf=lambda x: isinstance(x, list),
     )
 
+
 def key_string(path, separator="/") -> str:
     def _component_to_string(component) -> str:
         if isinstance(component, jax.tree_util.SequenceKey):
@@ -22,6 +23,7 @@ def key_string(path, separator="/") -> str:
             return str(component.key)
         else:
             return str(component)
+
     return separator.join(_component_to_string(component) for component in path)
 
 
@@ -45,4 +47,3 @@ def host_broadcast_str(x: str | None) -> str:
     decoded = "".join([chr(u) for u in encoded])
 
     return decoded.rstrip()
-

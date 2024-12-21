@@ -1,6 +1,4 @@
 from typing import Optional, Sequence
-import tensorflow as tf
-import numpy as np
 
 from octo.data.utils.data_utils import NormalizationType
 from octo.data.dataset import make_interleaved_dataset, make_single_dataset

@@ -20,7 +20,6 @@ Modified from PaliGemma in big_vision: https://github.com/google-research/big_vi
 
 import collections
 import functools
-from typing import Sequence
 
 import jax.experimental
 import jax.experimental.multihost_utils
@@ -80,6 +79,7 @@ def _image_avg_repr(
     zimg = jnp.mean(zimg, axis=range(1, zimg.ndim - 1))
     return zimg, out
 
+
 def _decode_with_logp(
     params,
     data: Data,
@@ -91,7 +91,7 @@ def _decode_with_logp(
     eos_token: int,
     best_of_n: int = 1,
     sampler: str = "greedy",
-    eos_look_behind: int = 0
+    eos_look_behind: int = 0,
 ):
     """Sample token continuations to the input sequences."""
     replicate_sharding = jax.sharding.NamedSharding(mesh, P())
@@ -303,7 +303,9 @@ def _sample_logits(logits: jnp.ndarray, sampler: str):
 
     return sampled_tokens, sampled_logp
 
+
 registry.Registry.global_registry().clear()
+
 
 @registry.Registry.register("palivla_sampler.greedy")
 def _greedy_sampling(*, logits: jnp.ndarray, rng: jnp.ndarray):
@@ -340,7 +342,7 @@ def _beam_decode(
     max_decode_len,
     eos_token,
     beam_size,
-    replicate_out=False
+    replicate_out=False,
 ):
     """Beam search (greedy/top-k exploration)."""
     mesh = jax.sharding.Mesh(devices, ("devices",))

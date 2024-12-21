@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from functools import cached_property
 from os import PathLike
 import cloudpickle
 import numpy as np
@@ -74,10 +73,12 @@ class SequenceBuilder:
                         for tok in prompt_tokens
                     ]
                 ),
-                "mask_ar": np.stack([
-                    _pad(np.equal(tok, boa_id), self.prompt_pad_length)
-                    for tok in prompt_tokens
-                ]),
+                "mask_ar": np.stack(
+                    [
+                        _pad(np.equal(tok, boa_id), self.prompt_pad_length)
+                        for tok in prompt_tokens
+                    ]
+                ),
                 "mask_loss": np.zeros((batch_size, self.prompt_pad_length), dtype=bool),
             },
             "gen": {
