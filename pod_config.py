@@ -101,7 +101,7 @@ launch_script = f"""
 {config["setup_script"]}
 cd {config["src_dir"]}
 
-uv run --prerelease=allow python {train_script} --config {config_file} \
+uv run --extra tpu python {train_script} --config {config_file} \
     {train_args_str}
 
 read -p "Press any key to continue..."
