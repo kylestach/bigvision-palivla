@@ -39,7 +39,7 @@ tpu = [
     "libtpu-nightly",
 ]
 gpu = [
-    "jax[cuda12]>=0.4.33", 
+    "jax[cuda12]==0.4.34", 
 ]
 
 [tool.uv]
@@ -57,8 +57,12 @@ override-dependencies = [
     "tensorflow_datasets ; sys_platform == 'never'",
 ]
 
-[tool.setuptools]
-packages = ["big_vision", "palivla"]
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.uv.sources]
 octo = { path = "orca", editable = true }

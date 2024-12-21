@@ -11,28 +11,6 @@ from jax.sharding import PartitionSpec
 from scalax.sharding import MeshShardingHelper
 
 
-def _compute_action_metrics_shim(
-    detokenize_fn,
-    log_segment_prefix: str | None,
-    action_dim: int,
-    tokenizer_config: Tokenizer.TokenizerConfig,
-    pred_action_tokens,
-    pred_action_logits,
-    gt_action_tokens,
-    gt_actions,
-):
-    return compute_action_metrics(
-        detokenize_fn=detokenize_fn,
-        pred_action_tokens=pred_action_tokens,
-        pred_action_logits=pred_action_logits,
-        gt_action_tokens=gt_action_tokens,
-        gt_actions=gt_actions,
-        action_dim=action_dim,
-        tokenizer_config=tokenizer_config,
-        log_segment_prefix=log_segment_prefix,
-    )
-
-
 def compute_gen_stats(
     decode_fn,
     tokenize_fn,
@@ -97,15 +75,28 @@ def compute_gen_stats(
         target_key_order=target_key_order,
     )
 
+    def _compute_action_metrics_shim(
+        pred_action_tokens,
+        pred_action_logits,
+        gt_action_tokens,
+        gt_actions,
+    ):
+        return compute_action_metrics(
+            detokenize_fn=detokenize_fn,
+            pred_action_tokens=pred_action_tokens,
+            pred_action_logits=pred_action_logits,
+            gt_action_tokens=gt_action_tokens,
+            gt_actions=gt_actions,
+            action_dim=batch.actions.shape[-1],
+            tokenizer_config=tokenizer_config,
+            log_segment_prefix=prefix,
+        )
+
+
     return mesh.sjit(
         _compute_action_metrics_shim,
-        static_argnums=(0, 1, 2, 3),
         out_shardings=PartitionSpec(),
     )(
-        detokenize_fn,
-        prefix,
-        batch.actions.shape[-1],
-        tokenizer_config,
         out_tokens,
         None,
         split_tokens["gen"][:, :tokenizer_config.num_action_tokens],

@@ -449,11 +449,14 @@ def load_from_pretrained(
             },
         }
     )
-    base_params = load_paligemma(
-        None,
-        path,
-        base_model_cfg,
-    )
+    if path is None:
+        base_params = {}
+    else:
+        base_params = load_paligemma(
+            None,
+            path,
+            base_model_cfg,
+        )
 
     model_spec = ModuleSpec.create(PaliVLAModel, model_cfg)
     palivla_model = model_spec.instantiate()

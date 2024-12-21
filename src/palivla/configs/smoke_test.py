@@ -9,21 +9,21 @@ def get_config():
     num_train_steps = FieldReference(100000, int)
 
     model_config = get_default_config()
-    model_config["llm_spec"]["variant"] = "smoke_test"
+    model_config["llm_spec"]["config"]["variant"] = "smoke_test"
 
 
     return ConfigDict(
         {
-            "wandb_project": "palivla",
-            "paligemma_weights_path": "models/paligemma-3b-mix-224.f16.npz",
+            "wandb_project": "palivla-debug",
+            "paligemma_weights_path": None,
             "language_tokenizer_path": "models/paligemma_tokenizer.model",
             "action_tokenizer_path": placeholder(str),
             "model_load_fn": "big_vision.models.proj.paligemma.paligemma.load",
             "tokenizer_path": "models/paligemma_tokenizer.model",
             "model_path": "models/paligemma",
             "save_path": placeholder(str),
-            "batch_size": 192,
-            "eval_batch_size": 128,
+            "batch_size": 16,
+            "eval_batch_size": 16,
             "num_steps": num_train_steps,
             "eval_interval": 100,
             "save_interval": 1000,

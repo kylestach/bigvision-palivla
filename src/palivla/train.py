@@ -179,13 +179,14 @@ def main(_):
         run_name = None
 
     run_name = host_broadcast_str(run_name)
-    checkpoint_save_path = tf.io.gfile.join(config.save_path, run_name)
+    if config.save_path is not None:
+        checkpoint_save_path = tf.io.gfile.join(config.save_path, run_name)
 
-    checkpoint_save_manager = ocp.CheckpointManager(
-        checkpoint_save_path,
-        item_handlers=PaliVLATrainState.get_checkpoint_handlers(),
-        options=ocp.CheckpointManagerOptions(),
-    )
+        checkpoint_save_manager = ocp.CheckpointManager(
+            checkpoint_save_path,
+            item_handlers=PaliVLATrainState.get_checkpoint_handlers(),
+            options=ocp.CheckpointManagerOptions(),
+        )
 
     wandb_logs = []
 
@@ -233,12 +234,13 @@ def main(_):
                 if config.save_path is not None:
                     print(f"Saving model to {config.save_path}/{i}")
                     checkpoint_save_manager.save(i+1, args=model.save_args())
-    checkpoint_save_manager.wait_until_finished()
+    if config.save_path is not None:
+        checkpoint_save_manager.wait_until_finished()
 
 
 if __name__ == "__main__":
     config_flags.DEFINE_config_file(
-        "config", "bridge_config.py", "Path to the config file."
+        "config", "src/palivla/configs/smoke_test.py", "Path to the config file."
     )
-    flags.DEFINE_string("platform", "tpu", "Platform to run on.")
+    flags.DEFINE_string("platform", "gpu", "Platform to run on.")
     app.run(main)
