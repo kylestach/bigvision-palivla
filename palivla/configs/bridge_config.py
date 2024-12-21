@@ -17,7 +17,7 @@ def get_config():
             "model_load_fn": "big_vision.models.proj.paligemma.paligemma.load",
             "tokenizer_path": "models/paligemma_tokenizer.model",
             "model_path": "models/paligemma",
-            "save_path": placeholder(str),
+            "save_path": "gs://oier-v4-bucket/paligemmaVLA",
             "batch_size": 192,
             "eval_batch_size": 128,
             "num_steps": num_train_steps,
