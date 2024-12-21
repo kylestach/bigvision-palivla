@@ -32,7 +32,7 @@ def get_config():
             "dataset_kwargs": {
                 "oxe_kwargs": {
                     "data_mix": "bridge",
-                    "data_dir": "/data/rlds/",
+                    "data_dir": "gs://rail-orca-central2/resize_256_256",
                     "load_camera_views": ["primary"],
                     "load_depth": False,
                     "load_proprio": True,
