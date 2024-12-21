@@ -25,7 +25,7 @@ from palivla.spec import ModuleSpec, OptimizerSpec, restore_gluon_module
 from palivla.tokenizer import Tokenizer
 from palivla.sentencepiece_model_pb2 import ModelProto as SentencepieceModelProto
 from palivla.train_step import TrainingBatch, step_fn
-from palivla.types import RolloutBatch
+from palivla.type_utils import RolloutBatch
 from palivla.predict_fns import _decode
 
 

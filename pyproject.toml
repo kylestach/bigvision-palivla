@@ -16,7 +16,7 @@ dependencies = [
     "matplotlib>=3.9.2",
     "ml-collections>=0.1.1",
     "numpy<2.0.0",
-    "octo",
+    "octo@git+https://github.com/octo-models/octo.git",
     "optax>=0.2.3",
     "orbax-checkpoint>=0.7.0",
     "orbax>=0.1.9",
@@ -31,6 +31,7 @@ dependencies = [
     "tf-nightly>=2.15.0",
     "wandb>=0.18.3",
     "protobuf>=3.20",
+    "huggingface-hub>=0.27.0",
 ]
 
 [project.optional-dependencies]
@@ -65,5 +66,4 @@ build-backend = "hatchling.build"
 allow-direct-references = true
 
 [tool.uv.sources]
-octo = { path = "orca", editable = true }
 big-vision = { workspace = true }

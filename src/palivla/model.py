@@ -14,7 +14,7 @@ from big_vision.models.proj.paligemma.gemma_bv import Model as GemmaModel
 from big_vision.models.vit import Model as ViTModel
 
 from palivla.spec import ModuleSpec
-from palivla.types import Data, Info
+from palivla.type_utils import Data, Info
 from scalax.sharding import MeshShardingHelper, ShardingRule, PartitionSpec
 
 from flax.core import FrozenDict, freeze

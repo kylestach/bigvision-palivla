@@ -5,7 +5,7 @@ import jax.numpy as jnp
 
 from palivla.tokenizer import Tokenizer
 from palivla.train_step import compute_action_metrics, compute_stats
-from palivla.types import TrainingBatch, RolloutBatch
+from palivla.type_utils import TrainingBatch, RolloutBatch
 
 from jax.sharding import PartitionSpec
 from scalax.sharding import MeshShardingHelper

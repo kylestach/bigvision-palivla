@@ -7,7 +7,7 @@ import optax
 from flax.training.train_state import TrainState
 from palivla.tokenizer import ActionTokenizer, Tokenizer
 from palivla.load_model import components_by_label
-from palivla.types import TrainingBatch
+from palivla.type_utils import TrainingBatch
 
 
 def smooth_nll_loss(logits, labels, sigma, base_action_token, action_vocab_size):
