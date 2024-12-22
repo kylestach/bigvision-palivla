@@ -15,7 +15,6 @@ from big_vision.models.vit import Model as ViTModel
 
 from palivla.spec import ModuleSpec
 from palivla.typing import Data, Info
-from scalax.sharding import MeshShardingHelper, ShardingRule, PartitionSpec
 
 from flax.core import FrozenDict
 

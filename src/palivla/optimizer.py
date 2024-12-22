@@ -87,7 +87,10 @@ def make_optimizer(
         )
 
     def _make_learning_rate(
-        learning_rate=base_learning_rate, init_learning_rate=0.0, warmup_steps=1000, **kwargs
+        learning_rate=base_learning_rate,
+        init_learning_rate=0.0,
+        warmup_steps=1000,
+        **kwargs,
     ):
         return optax.warmup_cosine_decay_schedule(
             init_learning_rate,
