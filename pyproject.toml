@@ -16,7 +16,7 @@ dependencies = [
     "matplotlib>=3.9.2",
     "ml-collections>=0.1.1",
     "numpy<2.0.0",
-    "octo@git+https://github.com/octo-models/octo.git",
+    "octo",
     "optax>=0.2.3",
     "orbax-checkpoint>=0.7.0",
     "orbax>=0.1.9",
