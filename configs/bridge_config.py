@@ -39,7 +39,7 @@ def get_config():
             "eval_batch_size": 128,
             "num_steps": num_train_steps,
             # Checkpoint settings
-            "save_path": placeholder(str),
+            "save_path": "gs://oier-v4-bucket/paligemmaVLA",
             "save_interval": 10000,
             "max_to_keep": 1,
             # Logging and visualization
@@ -63,7 +63,7 @@ def get_config():
             "dataset_kwargs": {
                 "oxe_kwargs": {
                     "data_mix": "bridge",
-                    "data_dir": "/data/rlds/",
+                    "data_dir": "gs://rail-orca-central2/resize_256_256",
                     "load_camera_views": ["primary"],
                     "load_depth": False,
                     "load_proprio": True,

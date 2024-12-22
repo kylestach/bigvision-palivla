@@ -14,6 +14,8 @@ We require some extra packages, namely [`dlimp`](https://github.com/kvablack/dli
 To train a model, run:
 ```bash
 python -m palivla/train.py --config_file palivla/configs/bridge_config.py
+uv run --extra tpu python scripts/train.py --config configs/bridge_config.py --config.dataset_kwargs.oxe_kwargs.data_dir=gs://rail-orca-central2/resize_256_256
+uv run --extra gpu python scripts/train.py --config configs/smoke_test.py --platform gpu
 ```
 
 This repository is (for now) a fork of [`big_vision`](https://github.com/google-research/big_vision).
