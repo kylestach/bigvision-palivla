@@ -69,3 +69,4 @@ allow-direct-references = true
 
 [tool.uv.sources]
 big-vision = { workspace = true }
+octo = { path = "./orca" }
