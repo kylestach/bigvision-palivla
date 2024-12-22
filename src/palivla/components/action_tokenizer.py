@@ -1,9 +1,9 @@
 from os import PathLike
 
 import cloudpickle
-from einops import rearrange
 import numpy as np
 import tensorflow as tf
+from einops import rearrange
 
 from big_vision.utils import Registry
 

@@ -1,7 +1,7 @@
-from typing import Any, Dict, Sequence, Mapping, Union
+from typing import Any, Dict, Mapping, Sequence, Union
 
-from flax.typing import Collection, VariableDict
 import chex
+from flax.typing import Collection, VariableDict
 
 Array = chex.Array
 ArrayTree = Union[chex.Array, Mapping[str, "ArrayTree"], Sequence["ArrayTree"]]

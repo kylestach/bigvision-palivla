@@ -1,10 +1,10 @@
 from dataclasses import dataclass
 from os import PathLike
+
 import cloudpickle
 import numpy as np
 import tensorflow as tf
 from transformers import AutoTokenizer
-
 
 from big_vision.utils import Registry
 from palivla.components.action_tokenizer import ActionTokenizer

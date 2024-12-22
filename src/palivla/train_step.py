@@ -1,9 +1,11 @@
 from typing import Any
+
+import chex
 import jax
 import jax.numpy as jnp
-import chex
 import optax
 from flax.training.train_state import TrainState
+
 from palivla.optimizer import components_by_label
 
 

@@ -1,4 +1,5 @@
 from typing import Literal
+
 import jax
 import jax.numpy as jnp
 
@@ -15,8 +16,10 @@ def load_paligemma_weights(
     path: str | None,
     param_dtype: jnp.dtype = jnp.float32,
 ):
-    from big_vision.models.proj.paligemma.paligemma import load as load_paligemma
     from ml_collections import FrozenConfigDict
+
+    from big_vision.models.proj.paligemma.paligemma import \
+        load as load_paligemma
 
     if hf_repo is not None:
         import huggingface_hub

@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 
 from palivla.train_step import compute_stats
-from palivla.typing import TrainingBatch, RolloutBatch
+from palivla.typing import RolloutBatch, TrainingBatch
 
 
 def compute_gen_stats(
