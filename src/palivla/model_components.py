@@ -183,20 +183,3 @@ class ModelComponents:
             )
 
             return predicted_actions
-
-            gt_actions = batch["action"][:, -1, :, :]
-
-            mse = np.mean(np.square(predicted_actions - gt_actions))
-            accuracy = np.mean(
-                (tokens == sequences["gen"]["tokens"]) * (sequences["gen"]["mask_loss"])
-            ) / np.mean(sequences["gen"]["mask_loss"])
-
-            decoded = self.language_tokenizer.batch_decode(tokens)
-            decoded_targets = self.language_tokenizer.batch_decode(
-                sequences["gen"]["tokens"]
-            )
-            for i in range(len(decoded)):
-                print(decoded[i], decoded_targets[i])
-                break
-
-            return {"gen_mse": mse, "gen_acc": accuracy}

@@ -40,10 +40,7 @@ def initialize_train_state(
     def init_train_state(example_batch: Any):
         params = model.lazy_init(
             rng,
-            example_batch["sensors"],
-            example_batch["sensors_mask"],
-            example_batch["prompt"],
-            example_batch["gen"],
+            *example_batch,
             train=False,
         )["params"]
 

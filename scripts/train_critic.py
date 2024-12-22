@@ -5,6 +5,8 @@ from palivla.components.model import PaliVLAModel
 from palivla.components.sequence_builder import SequenceBuilder
 from palivla.components.train_state import ShardingMetadata
 from palivla.components.action_tokenizer import ActionTokenizer
+from palivla.critic.model_components import CriticModelComponents
+from palivla.critic.vla_critic import PaliVLACritic
 
 os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
 
@@ -75,6 +77,10 @@ def create_model(config: ConfigDict, sharding_metadata: ShardingMetadata):
             "mask_ar": jax.ShapeDtypeStruct(shape=(1, 10), dtype=jnp.bool_),
             "mask_loss": jax.ShapeDtypeStruct(shape=(1, 10), dtype=jnp.float32),
         },
+        "actions": jax.ShapeDtypeStruct(shape=(1, 1, 7), dtype=jnp.float32),
+        "next_actions": jax.ShapeDtypeStruct(shape=(1, 1, 7), dtype=jnp.float32),
+        "rewards": jax.ShapeDtypeStruct(shape=(1,), dtype=jnp.float32),
+        "terminals": jax.ShapeDtypeStruct(shape=(1,), dtype=jnp.bool_),
     }
 
     language_tokenizer = AutoTokenizer.from_pretrained(config.language_tokenizer)
@@ -89,8 +95,9 @@ def create_model(config: ConfigDict, sharding_metadata: ShardingMetadata):
 
     model_config = config.model_config.to_dict()
     model_config["llm_spec"]["config"]["vocab_size"] = len(language_tokenizer)
+
     model_spec = ModuleSpec(
-        PaliVLAModel,
+        PaliVLACritic,
         freeze(model_config),
     )
     optimizer_spec = OptimizerSpec.create(
@@ -98,7 +105,7 @@ def create_model(config: ConfigDict, sharding_metadata: ShardingMetadata):
         config.optimizer.kwargs.to_dict(),
     )
 
-    return ModelComponents.initialize(
+    return CriticModelComponents.initialize(
         model_spec=model_spec,
         optimizer_spec=optimizer_spec,
         seed=config.get("seed", 0),
@@ -106,7 +113,7 @@ def create_model(config: ConfigDict, sharding_metadata: ShardingMetadata):
         action_tokenizer=action_tokenizer,
         sequence_builder=sequence_builder,
         sharding_metadata=sharding_metadata,
-        example_batch=(example_batch["sensors"], example_batch["sensors_mask"], example_batch["prompt"], example_batch["gen"]),
+        example_batch=(example_batch["sensors"], example_batch["sensors_mask"], example_batch["prompt"], example_batch["actions"]),
     )
 
 
@@ -201,7 +208,8 @@ def main(_):
             info = jax.device_get(info)
             wandb_logs.append(info)
             pbar.set_postfix(
-                loss=f"{info['loss']:.4f}",
+                loss=f"{info['loss']:.2f}",
+                q_value=f"{info['q_value']:.2f}",
             )
 
             if (i + 1) % config.log_interval == 0:
@@ -241,7 +249,7 @@ def main(_):
 
 if __name__ == "__main__":
     config_flags.DEFINE_config_file(
-        "config", "configs/smoke_test.py", "Path to the config file."
+        "config", "configs/smoke_test_critic.py", "Path to the config file."
     )
     flags.DEFINE_string("platform", "gpu", "Platform to run on.")
     app.run(main)
