@@ -62,7 +62,7 @@ def get_config():
             # Dataset settings
             "dataset_kwargs": {
                 "oxe_kwargs": {
-                    "data_mix": "hand_epic",
+                    "data_mix": "hand_epic_only",
                     "data_dir": "gs://oier-v4-bucket",
                     "load_camera_views": ["primary"],
                     "load_depth": False,
