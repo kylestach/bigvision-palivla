@@ -95,7 +95,7 @@ def create_model(config: ConfigDict, sharding_metadata: ShardingMetadata):
     )
     optimizer_spec = OptimizerSpec.create(
         make_optimizer,
-        config.optimizer_kwargs.to_dict(),
+        config.optimizer.kwargs.to_dict(),
     )
 
     return ModelComponents.initialize(

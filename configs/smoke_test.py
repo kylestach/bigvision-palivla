@@ -6,12 +6,21 @@ from palivla.components.model import get_default_config
 placeholder(int)._value
 
 
-def get_config():
+def get_config(variant_config: str):
     num_train_steps = FieldReference(100000, int)
 
     model_config = get_default_config()
-    model_config["llm_spec"]["config"]["variant"] = "smoke_test"
-    model_config["img_spec"]["config"]["variant"] = "S/14"
+    variant_config_kv_pairs = variant_config.split(",")
+    variant_config_dict = {
+        k: v for k, v in [pair.split("=") for pair in variant_config_kv_pairs]
+    }
+
+    model_config["llm_spec"]["config"]["variant"] = variant_config_dict.get(
+        "llm", "smoke_test"
+    )
+    model_config["img_spec"]["config"]["variant"] = variant_config_dict.get(
+        "img", "S/14"
+    )
 
     return ConfigDict(
         {
@@ -24,7 +33,6 @@ def get_config():
             "sequence_builder": "sequence_builder.default(prompt_pad_length=50, gen_pad_length=10)",
             # Initialization
             "load_fns": [],
-            # "load_fns": [("load.paligemma_weights", {"path": placeholder(str)})],
             "resume_checkpoint_dir": None,
             "resume_checkpoint_step": None,
             # Overfit the dataset (for smoke tests/debugging)
@@ -46,29 +54,12 @@ def get_config():
             # Model
             "model_config": model_config,
             # Optimizer settings
-            "optimizer_kwargs": {
-                "optimizer": "adamw",
-                "num_steps": num_train_steps,
-                "llm_optimizer_kwargs": {
-                    "init_learning_rate": 0,
-                    "learning_rate": 5e-5,
-                    "warmup_steps": 500,
-                    "weight_decay": 5e-6,
-                    "grad_norm_clip": 10.0,
-                },
-                "embed_optimizer_kwargs": {
-                    "init_learning_rate": 0,
-                    "learning_rate": 5e-5,
-                    "warmup_steps": 100,
-                    "weight_decay": 0.0,
-                    "grad_norm_clip": 10.0,
-                },
-                "img_optimizer_kwargs": {
-                    "init_learning_rate": 0,
-                    "learning_rate": 5e-5,
-                    "warmup_steps": 500,
-                    "weight_decay": 5e-6,
-                    "grad_norm_clip": 10.0,
+            "optimizer": {
+                "name": "optimizer.default_optimizer",
+                "kwargs": {
+                    "optimizer": "sgd",
+                    "num_train_steps": num_train_steps,
+                    "base_learning_rate": 1e-4,
                 },
             },
             # Dataset settings

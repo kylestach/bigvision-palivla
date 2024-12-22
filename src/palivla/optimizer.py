@@ -2,6 +2,7 @@ import optax
 import jax
 import fnmatch
 
+from big_vision.utils import Registry
 from palivla.utils import key_string
 
 
@@ -36,43 +37,44 @@ def components_by_label(values):
     return groups
 
 
-def make_optimizer(**config):
+@Registry.register("optimizer.default_optimizer")
+def make_optimizer(
+    optimizer: str,
+    num_train_steps: int,
+    base_learning_rate: float = 1e-4,
+    img_optimizer_kwargs: dict = {},
+    embed_optimizer_kwargs: dict = {},
+    llm_optimizer_kwargs: dict = {},
+):
     @optax.inject_hyperparams
     def _make_optimizer(llm_learning_rate, img_learning_rate, embed_learning_rate):
-        def _make_opt(lr, weight_decay, grad_norm_clip, b1, b2):
-            if config["optimizer"] == "adamw":
+        def _make_opt(
+            lr, weight_decay=1e-4, grad_norm_clip=10.0, b1=0.9, b2=0.999, **kwargs
+        ):
+            if optimizer == "adamw":
                 return optax.chain(
                     optax.clip_by_global_norm(grad_norm_clip),
                     optax.adamw(lr, weight_decay=weight_decay, b1=b1, b2=b2),
                 )
-            elif config["optimizer"] == "sgd":
+            elif optimizer == "sgd":
                 return optax.chain(
                     optax.clip_by_global_norm(grad_norm_clip),
                     optax.sgd(lr),
                 )
             else:
-                raise ValueError(f"Unknown optimizer: {config['optimizer']}")
+                raise ValueError(f"Unknown optimizer: {optimizer}")
 
         img_optimizer = _make_opt(
             img_learning_rate,
-            config["img_optimizer_kwargs"]["weight_decay"],
-            config["img_optimizer_kwargs"]["grad_norm_clip"],
-            config["img_optimizer_kwargs"].get("b1", 0.9),
-            config["img_optimizer_kwargs"].get("b2", 0.999),
+            **img_optimizer_kwargs,
         )
         embed_optimizer = _make_opt(
             embed_learning_rate,
-            config["embed_optimizer_kwargs"]["weight_decay"],
-            config["embed_optimizer_kwargs"]["grad_norm_clip"],
-            config["embed_optimizer_kwargs"].get("b1", 0.9),
-            config["embed_optimizer_kwargs"].get("b2", 0.999),
+            **embed_optimizer_kwargs,
         )
         llm_optimizer = _make_opt(
             llm_learning_rate,
-            config["llm_optimizer_kwargs"]["weight_decay"],
-            config["llm_optimizer_kwargs"]["grad_norm_clip"],
-            config["llm_optimizer_kwargs"].get("b1", 0.9),
-            config["llm_optimizer_kwargs"].get("b2", 0.999),
+            **llm_optimizer_kwargs,
         )
 
         return optax.multi_transform(
@@ -84,16 +86,18 @@ def make_optimizer(**config):
             component_label_fn,
         )
 
-    def _make_learning_rate(optimizer_kwargs):
+    def _make_learning_rate(
+        learning_rate=base_learning_rate, init_learning_rate=0.0, warmup_steps=1000, **kwargs
+    ):
         return optax.warmup_cosine_decay_schedule(
-            optimizer_kwargs["init_learning_rate"],
-            optimizer_kwargs["learning_rate"],
-            optimizer_kwargs["warmup_steps"],
-            config["num_steps"] - optimizer_kwargs["warmup_steps"],
+            init_learning_rate,
+            learning_rate,
+            warmup_steps,
+            num_train_steps - warmup_steps,
         )
 
     return _make_optimizer(
-        _make_learning_rate(config["llm_optimizer_kwargs"]),
-        _make_learning_rate(config["img_optimizer_kwargs"]),
-        _make_learning_rate(config["embed_optimizer_kwargs"]),
+        _make_learning_rate(**llm_optimizer_kwargs),
+        _make_learning_rate(**img_optimizer_kwargs),
+        _make_learning_rate(**embed_optimizer_kwargs),
     )
