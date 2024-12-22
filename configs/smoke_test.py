@@ -6,21 +6,22 @@ from palivla.components.model import get_default_config
 placeholder(int)._value
 
 
-def get_config(variant_config: str):
+def get_config(variant_config: str = None):
     num_train_steps = FieldReference(100000, int)
 
     model_config = get_default_config()
-    variant_config_kv_pairs = variant_config.split(",")
-    variant_config_dict = {
-        k: v for k, v in [pair.split("=") for pair in variant_config_kv_pairs]
-    }
+    if variant_config is not None:
+        variant_config_kv_pairs = variant_config.split(",")
+        variant_config_dict = {
+            k: v for k, v in [pair.split("=") for pair in variant_config_kv_pairs]
+        }
 
-    model_config["llm_spec"]["config"]["variant"] = variant_config_dict.get(
-        "llm", "smoke_test"
-    )
-    model_config["img_spec"]["config"]["variant"] = variant_config_dict.get(
-        "img", "S/14"
-    )
+        model_config["llm_spec"]["config"]["variant"] = variant_config_dict.get(
+            "llm", "smoke_test"
+        )
+        model_config["img_spec"]["config"]["variant"] = variant_config_dict.get(
+            "img", "S/14"
+        )
 
     return ConfigDict(
         {
@@ -66,7 +67,7 @@ def get_config(variant_config: str):
             "dataset_kwargs": {
                 "oxe_kwargs": {
                     "data_mix": "bridge",
-                    "data_dir": "/data/rlds/",
+                    "data_dir": "/home/oier",
                     "load_camera_views": ["primary"],
                     "load_depth": False,
                     "load_proprio": True,

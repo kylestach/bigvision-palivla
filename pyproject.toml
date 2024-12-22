@@ -42,7 +42,7 @@ tpu = [
     "libtpu-nightly",
 ]
 gpu = [
-    "jax[cuda12]>=0.4.34"
+    "jax[cuda12]==0.4.34"
 ]
 
 [tool.uv]
