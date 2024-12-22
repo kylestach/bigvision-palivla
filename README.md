@@ -7,6 +7,10 @@ We develop with `uv`, but other environment managers should work fine. To instal
 uv init --python=python3.10
 uv sync
 ```
+For local dev copy of Octo, install it with:
+```bash
+uv pip install -e ./orca
+```
 
 We require some extra packages, namely [`dlimp`](https://github.com/kvablack/dlimp) and [`octo`](https://github.com/octo-models/octo) for dataloading. To install them, clone them locally. You will have to install `dlimp` without its dependencies, as its specified tensorflow version has some mutual incompatibilities with other packages we use.
 
