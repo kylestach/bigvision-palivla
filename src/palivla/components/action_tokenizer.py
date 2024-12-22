@@ -29,13 +29,11 @@ class BinActionTokenizer(ActionTokenizer):
         self,
         min_action_value: np.ndarray | float,
         max_action_value: np.ndarray | float,
-        action_dim: int | None = None,
         action_vocab_size: int = 1000,
         action_horizon: int = 10,
     ):
         self.min_action_value = min_action_value
         self.max_action_value = max_action_value
-        self.action_dim = action_dim
         self.action_vocab_size = action_vocab_size
         self.action_horizon = action_horizon
 
@@ -58,7 +56,7 @@ class BinActionTokenizer(ActionTokenizer):
             self.vocab_size - 1,
         )
 
-    def detokenize(self, tokens, obs=None, action_dim: int | None = None):
+    def detokenize(self, tokens, *, obs=None, action_dim: int):
         values = np.where(
             (tokens < 0) | (tokens >= self.vocab_size),
             np.nan,
@@ -68,5 +66,6 @@ class BinActionTokenizer(ActionTokenizer):
             values * (self.max_action_value - self.min_action_value)
             + self.min_action_value
         )
-        data = rearrange(data, "... (p a) -> ... p a", a=action_dim or self.action_dim)
+        data = data[..., :action_dim]
+        data = rearrange(data, "... (p a) -> ... p a", a=action_dim)
         return data

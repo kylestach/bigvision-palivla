@@ -147,7 +147,7 @@ class ModelComponents:
     def eval_step(self, batch):
         pass
 
-    def predict(self, batch):
+    def predict(self, batch, action_dim: int):
         # Tokenize the batch and build sequences
         sequences = self.sequence_builder.build_sequence(
             batch, self.language_tokenizer, self.action_tokenizer, boa_is_prompt=True
@@ -177,9 +177,8 @@ class ModelComponents:
             )
 
             action_offset = self.language_tokenizer.encode("<act0>")[0]
-            # TODO(Kyle): don't hardcode the action dimension
             predicted_actions = self.action_tokenizer.detokenize(
-                tokens[:, :7] - action_offset, action_dim=7
+                tokens - action_offset, action_dim=action_dim
             )
 
             return predicted_actions

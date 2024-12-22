@@ -9,10 +9,22 @@ from palivla.typing import Params
 
 @Registry.register("load.paligemma_weights")
 def load_paligemma_weights(
-    model: ModelComponents, *, path: str | None, param_dtype: jnp.dtype = jnp.float32
+    model: ModelComponents,
+    *,
+    hf_repo: str | None,
+    path: str | None,
+    param_dtype: jnp.dtype = jnp.float32,
 ):
     from big_vision.models.proj.paligemma.paligemma import load as load_paligemma
     from ml_collections import FrozenConfigDict
+
+    if hf_repo is not None:
+        import huggingface_hub
+
+        path = huggingface_hub.hf_hub_download(
+            hf_repo,
+            path,
+        )
 
     # TODO(Kyle): Allow loading other variants of PaliGemma
     base_model_cfg = FrozenConfigDict(

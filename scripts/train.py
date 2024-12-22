@@ -213,7 +213,7 @@ def main(_):
                 wandb_logs = []
 
             if (i + 1) % config.eval_interval == 0:
-                print(model.predict(batch))
+                print(model.predict(batch, action_dim=batch["action"].shape[-1]))
                 '''
                 eval_info = {}
                 eval_batch = next(gen_eval_it)

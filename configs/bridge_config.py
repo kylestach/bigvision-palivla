@@ -14,8 +14,8 @@ def get_config():
     return ConfigDict(
         {
             # W&B settings
-            "wandb_project": "palivla-debug",
-            "wandb_mode": "disabled",
+            "wandb_project": "palivla-bridge",
+            "wandb_mode": "online",
             # Tokenizers
             "language_tokenizer": "google/paligemma-3b-pt-224",
             "action_tokenizer": "action_tokenizer.bin(min_action_value=-3, max_action_value=3)",
@@ -25,17 +25,18 @@ def get_config():
                 (
                     "load.paligemma_weights",
                     {
-                        "path": "models/paligemma-3b-pt-224.f16.npz",
+                        "hf_repo": "google/paligemma-3b-pt-224-jax",
+                        "path": "paligemma-3b-pt-224.npz",
                     },
                 )
             ],
             "resume_checkpoint_dir": None,
             "resume_checkpoint_step": None,
             # Overfit the dataset (for smoke tests/debugging)
-            "overfit_dataset": True,
+            "overfit_dataset": False,
             # Training settings
-            "batch_size": 16,
-            "eval_batch_size": 16,
+            "batch_size": 192,
+            "eval_batch_size": 128,
             "num_steps": num_train_steps,
             # Checkpoint settings
             "save_path": placeholder(str),
