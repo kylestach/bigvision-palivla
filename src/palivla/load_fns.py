@@ -18,8 +18,7 @@ def load_paligemma_weights(
 ):
     from ml_collections import FrozenConfigDict
 
-    from big_vision.models.proj.paligemma.paligemma import \
-        load as load_paligemma
+    from big_vision.models.proj.paligemma.paligemma import load as load_paligemma
 
     if hf_repo is not None:
         import huggingface_hub
@@ -78,6 +77,8 @@ def load_paligemma_weights(
             raise ValueError(f"Invalid mismatch strategy: {mismatch_strategy}")
 
     def _replace_params_fn(params: Params, param_replacements: Params, path_str=""):
+        if param_replacements is None:
+            return params
         if isinstance(param_replacements, dict):
             return {
                 k: _replace_params_fn(
