@@ -15,13 +15,15 @@ def get_config(variant_config: str = None):
         variant_config_dict = {
             k: v for k, v in [pair.split("=") for pair in variant_config_kv_pairs]
         }
+    else:
+        variant_config_dict = {}
 
-        model_config["llm_spec"]["config"]["variant"] = variant_config_dict.get(
-            "llm", "smoke_test"
-        )
-        model_config["img_spec"]["config"]["variant"] = variant_config_dict.get(
-            "img", "S/14"
-        )
+    model_config["llm_spec"]["config"]["variant"] = variant_config_dict.get(
+        "llm", "smoke_test"
+    )
+    model_config["img_spec"]["config"]["variant"] = variant_config_dict.get(
+        "img", "S/14"
+    )
 
     return ConfigDict(
         {

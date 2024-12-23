@@ -71,7 +71,9 @@ class CriticModelComponents(ModelComponents):
         )
 
         batch["next_observation"] = batch["observation"]
-        batch["next_observation"]["pad_mask_dict"] = batch["observation"]["pad_mask_dict"]
+        batch["next_observation"]["pad_mask_dict"] = batch["observation"][
+            "pad_mask_dict"
+        ]
         batch["next_action"] = np.zeros_like(batch["action"])
         batch["reward"] = np.zeros((batch["action"].shape[0],))
         batch["terminal"] = np.zeros((batch["action"].shape[0],), dtype=np.bool_)

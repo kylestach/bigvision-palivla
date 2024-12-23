@@ -116,7 +116,9 @@ class PaliVLACritic(PaliVLAModel):
         info["text_tokens"] = jnp.argmax(critic_logits, axis=-1)
 
         critic_value = jnp.sum(
-            jax.nn.softmax(critic_logits) * jnp.linspace(self.q_min, self.q_max, self.num_critic_bins), axis=-1
+            jax.nn.softmax(critic_logits)
+            * jnp.linspace(self.q_min, self.q_max, self.num_critic_bins),
+            axis=-1,
         )
 
         return critic_logits, critic_value, info
