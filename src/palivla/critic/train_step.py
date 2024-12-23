@@ -33,35 +33,38 @@ def train_step(
     ) -> Tuple[jnp.ndarray, Dict[str, Any]]:
         rng, target_key, critic_key = jax.random.split(rng, 3)
         if regress_to_mc_returns:
-            next_target_value = batch["mc_return"]
-        elif train_with_sarsa:
-            _, next_target_value, _ = train_state.apply_fn(
-                {"params": train_state.ema_params},
-                batch["next_sensors"],
-                batch["next_sensors_mask"],
-                batch["next_prompt"],
-                batch["next_action"],
-                train=train,
-                rngs={"dropout": target_key},
-            )
+            target_value = batch["mc_return"]
         else:
-            _, next_target_value, _ = train_state.apply_fn(
-                {"params": train_state.ema_params},
-                batch["next_sensors"],
-                batch["next_sensors_mask"],
-                batch["next_prompt"],
-                batch["counterfactual_next_actions"],
-                train=train,
-                rngs={"dropout": target_key},
-            )
+            if train_with_sarsa:
+                _, next_target_value, _ = train_state.apply_fn(
+                    {"params": train_state.ema_params},
+                    batch["next_sensors"],
+                    batch["next_sensors_mask"],
+                    batch["next_prompt"],
+                    batch["next_action"],
+                    train=train,
+                    rngs={"dropout": target_key},
+                )
+            else:
+                _, next_target_value, _ = train_state.apply_fn(
+                    {"params": train_state.ema_params},
+                    batch["next_sensors"],
+                    batch["next_sensors_mask"],
+                    batch["next_prompt"],
+                    batch["counterfactual_next_actions"],
+                    train=train,
+                    rngs={"dropout": target_key},
+                )
 
-            # Maximize over next action options
-            next_target_value = jnp.max(next_target_value, axis=-1)
+                # Maximize over next action options
+                next_target_value = jnp.max(next_target_value, axis=-1)
 
-        chex.assert_shape(next_target_value, (batch["rewards"].shape[0],))
-        target_value = batch[
-            "rewards"
-        ] + train_state.model.discount * next_target_value * (batch["td_mask"])
+            chex.assert_shape(next_target_value, (batch["rewards"].shape[0],))
+            target_value = batch[
+                "rewards"
+            ] + train_state.model.discount * next_target_value * (batch["td_mask"])
+
+        chex.assert_shape(target_value, (batch["rewards"].shape[0],))
 
         critic_target_probs = hl_gauss_target(
             q_min=train_state.model.q_min,
