@@ -38,7 +38,7 @@ tf.config.set_visible_devices([], "GPU")
 def main(_):
 
     print(sys.version)
-    jax.distributed.initialize(coordinator_address="127.0.0.1:1234", num_processes=1, process_id=0)
+    jax.distributed.initialize()
 
     # Turn off debug logs
     tf.get_logger().setLevel("WARNING")
@@ -167,7 +167,7 @@ def main(_):
             generation=True,
             **config.extra_dataset_transform_kwargs
         )
-        .batch(per_host_train_batch_size)
+        .batch(per_host_eval_batch_size)
         .iterator(),
     )
 

@@ -563,7 +563,7 @@ class PaliVLATrainState:
             target_key_order=target_key_order or self.config.get("target_key_order"),
             model=self.model_state.model,
             devices=self.mesh.mesh.devices,
-            max_decode_len=410, #ria todo: make this cleaner. self.action_tokenizer_state.model.num_tokens,
+            max_decode_len=self.tokenizer.config.max_pad_length, #ria todo: make this cleaner. self.action_tokenizer_state.model.num_tokens,
             eos_token=self.tokenizer_config.eos_token,
             best_of_n=1,
             sampler="greedy",

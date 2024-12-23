@@ -19,38 +19,12 @@ import tensorflow as tf
 import wandb
 import numpy as np
 
-def _compute_action_metrics_shim(
-    detokenize_fn,
-    log_segment_prefix: str | None,
-    action_dim: int,
-    tokenizer_config: Tokenizer.TokenizerConfig,
-    pred_action_tokens,
-    pred_action_logits,
-    gt_action_tokens,
-    gt_actions,
-):
-    metrics = compute_action_metrics(
-        detokenize_fn=detokenize_fn,
-        pred_action_tokens=pred_action_tokens,
-        pred_action_logits=pred_action_logits,
-        gt_action_tokens=gt_action_tokens,
-        gt_actions=gt_actions,
-        action_dim=action_dim,
-        tokenizer_config=tokenizer_config,
-        log_segment_prefix=log_segment_prefix,
-    )
-
-    return metrics 
-
 # get the next seven tokens after the begin of action token; otherwise, use zeros
 def extract_action_tokens(step_tokens, begin_of_action_token):
-    token_exists = jnp.any(step_tokens == begin_of_action_token)
-    action_start_idx = jnp.argmax(step_tokens == begin_of_action_token)
-    
-    action_start_idx = jnp.where(token_exists, action_start_idx, -1)
+    action_start_idx = jnp.argmax(step_tokens == begin_of_action_token)+1
     
     action_tokens = lax.cond(
-        (action_start_idx == -1) | (action_start_idx + 7 > step_tokens.shape[0]),
+        (action_start_idx == 1) | (action_start_idx + 7 > step_tokens.shape[0]),
         lambda _: jnp.zeros(7, dtype=step_tokens.dtype),
         lambda _: lax.dynamic_slice(step_tokens, (action_start_idx,), (7,)),
         operand=None
@@ -73,15 +47,15 @@ def extract_cot_strs(step_tokens, masked_prompt_tokens, beg_cot_token, beg_actio
     step_tokens_np = np.array(step_tokens)
 
     try:
-        cot_start_idx = np.where(step_tokens_np == beg_cot_token)[0][0]
         action_start_idx = np.where(step_tokens_np == beg_action_token)[0][0]
     except IndexError:
         return prompt_str, "" 
     
-    if cot_start_idx >= action_start_idx:
+    if action_start_idx<=0:
         return prompt_str, ""
 
-    cot_tokens = step_tokens_np[cot_start_idx + 1: action_start_idx]
+    #the output sequence (step_tokens) directly starts from CoT, bc the prompt now includes the beg_cot_token
+    cot_tokens = step_tokens_np[:action_start_idx]
 
     detokenized_cot = detokenize_lang_fn(tf.convert_to_tensor(cot_tokens, dtype=tf.int32))
     cot_str = tf.strings.reduce_join(detokenized_cot, separator="").numpy().decode("utf-8")
@@ -130,13 +104,21 @@ def compute_gen_stats(
             jnp.zeros_like(mask_ar),
         )
 
-        gen_mask = jnp.arange(seq_len) >= gen_start
-        gen_mask = jnp.roll(mask, -gen_start, axis=0)
-        gen = jnp.where(
-            gen_mask,
-            jnp.roll(tokens, -gen_start, axis=0),
-            0,
+        gen_start = jnp.argmax(tokens == tokenizer_config.begin_of_action_token)+1
+
+        gen, gen_mask = jax.lax.cond(
+            gen_start == 1,
+            lambda: (jnp.zeros_like(jnp.arange(seq_len)), jnp.zeros_like(jnp.arange(seq_len)).astype(mask.dtype)),
+            lambda: (
+                jnp.where(
+                        jnp.roll(mask, -gen_start, axis=0),
+                        jnp.roll(tokens, -gen_start, axis=0),
+                        0,
+                      ),
+                jnp.roll(mask, -gen_start, axis=0).astype(mask.dtype)
+            ),
         )
+         
         gen_ar = jnp.ones_like(gen_mask)
 
         return {
@@ -161,18 +143,30 @@ def compute_gen_stats(
     out_tokens = decode_fn(
         rollout_batch,
         target_key_order=target_key_order,
-    ) 
-    
-    gt_action_tokens = tokenize_fn(batch.actions)
+    )
+
+    def _compute_action_metrics_shim(
+        pred_action_tokens,
+        pred_action_logits,
+        gt_action_tokens,
+        gt_actions,
+    ):
+        return compute_action_metrics(
+            detokenize_fn=detokenize_fn,
+            pred_action_tokens=pred_action_tokens,
+            pred_action_logits=pred_action_logits,
+            gt_action_tokens=gt_action_tokens,
+            gt_actions=gt_actions,
+            action_dim=batch.actions.shape[-1],
+            tokenizer_config=tokenizer_config,
+            log_segment_prefix=prefix,
+        )
     
     extract_action_tokens_vmap = jax.vmap(extract_action_tokens, in_axes=(0, None)) # only map over batch argument
     out_action_tokens = extract_action_tokens_vmap(out_tokens, tokenizer_config.begin_of_action_token)
 
     if use_cot:
         # batch.tokens refers to the masked prompt tokens, so we'd have to add batch.cot_tokens to get the ground truth
-        # skipping for now
-        from jax.experimental import multihost_utils
-
         gathered_batch_tokens = multihost_utils.process_allgather(batch.tokens)
         gathered_out_tokens = multihost_utils.process_allgather(out_tokens)
 
@@ -185,21 +179,13 @@ def compute_gen_stats(
         ]
         cot_metrics = get_cot_table_metrics(lang_and_cot_strs)
 
-    __compute_action_metrics_shim = partial(
-        _compute_action_metrics_shim,
-        detokenize_fn,
-        prefix,
-        batch.actions.shape[-1],
-        tokenizer_config,
-    )
-
     action_metrics = mesh.sjit(
-        __compute_action_metrics_shim,
+        _compute_action_metrics_shim,
         out_shardings=PartitionSpec(),
     )(
         out_action_tokens,
         None,
-        gt_action_tokens,
+        split_tokens["gen"][:, :tokenizer_config.num_action_tokens],
         batch.actions,
     )
 

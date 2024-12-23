@@ -145,17 +145,21 @@ class Tokenizer:
                 [config.bos_token],
                 "prompt",
             ],
-            "causal": [
-                [config.begin_of_action_token],
-                "action",
-            ],
             "pad": [
                 [pad_token] * config.max_pad_length,
             ],
         }
 
         if config.use_cot:
-            token_structure['causal'] = [[config.begin_of_cot_token], "reasonings"] + token_structure['causal']
+            token_structure['prefix'].append([config.begin_of_cot_token])
+            token_structure['causal'] = [
+                    "reasonings",
+                    [config.begin_of_action_token],
+                    "action",
+            ]
+        else:
+            token_structure['prefix'].append([config.begin_of_action_token])
+            token_structure['causal'] = ['action']
 
         return cls(
             config=cls.TokenizerConfig.create(action_tokenizer, language_tokenizer, prompt_autoregressive, config.use_cot),
