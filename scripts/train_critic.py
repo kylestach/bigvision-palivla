@@ -158,6 +158,7 @@ def main(_):
     # Make the basic dataset
     # We have to do this first, since we need to know how the dataset is set up before we can construct the model
     train_ds = make_base_dataset(**config.dataset_kwargs.to_dict(), train=True)
+    validation_ds = make_base_dataset(**config.dataset_kwargs.to_dict(), train=False)
 
     # Construct the final dataset
     # We need to do this after the model is constructed, since we need to have a tokenizer
@@ -167,9 +168,17 @@ def main(_):
     def make_training_batch(batch):
         return batch
 
+    def make_validation_batch(batch):
+        return batch
+
     train_it = map(
         make_training_batch,
         train_ds.batch(per_host_train_batch_size).iterator(),
+    )
+
+    eval_it = map(
+        make_validation_batch,
+        validation_ds.batch(per_host_eval_batch_size).iterator(),
     )
 
     # W&B setup
@@ -229,24 +238,14 @@ def main(_):
                 wandb_logs = []
 
             if (i + 1) % config.eval_interval == 0:
-                print(model.predict(batch, action_dim=batch["action"].shape[-1]))
-                """
-                eval_info = {}
-                eval_batch = next(gen_eval_it)
-                eval_info = model.eval_step(
-                    eval_batch, "eval/gen_", include_regular_stats=False
-                )
-
-                train_batch_for_eval = next(gen_train_it)
-                train_info = model.eval_step(train_batch_for_eval, "train/gen_")
-
+                eval_batch = next(eval_it)
+                eval_info = model.eval_step(eval_batch)
                 if jax.process_index() == 0:
                     wandb.log(
-                        eval_info | train_info,
+                        eval_info,
                         commit=False,
                         step=i,
                     )
-                """
 
             if (i + 1) % config.save_interval == 0:
                 if config.save_path is not None:

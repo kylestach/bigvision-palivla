@@ -18,7 +18,7 @@ from palivla.spec import ModuleSpec, OptimizerSpec
 
 def make_step_fn(sharding: ShardingMetadata, **kwargs):
     return sharding.mesh.sjit(
-        partial(train_step, **kwargs, train=True),
+        partial(train_step, **kwargs),
         in_shardings=(
             sharding.model_sharding_rule,
             PartitionSpec("fsdp"),
@@ -37,7 +37,12 @@ def make_step_fn(sharding: ShardingMetadata, **kwargs):
 class CriticModelComponents(ModelComponents):
     def __init__(self, *args, critic_train_step_kwargs={}, **kwargs):
         super().__init__(*args, **kwargs)
-        self.step_fn = make_step_fn(self.sharding, **critic_train_step_kwargs)
+        self.train_step_fn = make_step_fn(
+            self.sharding, **critic_train_step_kwargs, train=True
+        )
+        self.eval_step_fn = make_step_fn(
+            self.sharding, **critic_train_step_kwargs, train=False
+        )
 
     @classmethod
     def initialize(
@@ -70,12 +75,7 @@ class CriticModelComponents(ModelComponents):
             critic_train_step_kwargs=critic_train_step_kwargs,
         )
 
-    def train_step(
-        self,
-        batch: Any,
-        regress_to_mc_returns: bool = False,
-        train_with_sarsa: bool = False,
-    ):
+    def prepare_batch_for_train_step(self, batch: dict):
         # Tokenize the batch and build sequences
         sequences = self.sequence_builder.build_sequence(
             batch, self.language_tokenizer, self.action_tokenizer
@@ -102,13 +102,30 @@ class CriticModelComponents(ModelComponents):
             "mc_return": batch["mc_return"],
         }
         batch = self.sharding.mesh.local_data_to_global_array(batch)
+        return batch
+
+    def train_step(
+        self,
+        batch: dict,
+    ):
+        batch = self.prepare_batch_for_train_step(batch)
 
         # Run the train step
         with self.sharding.mesh.mesh, nn.logical_axis_rules([("act_batch", "fsdp")]):
-            self.train_state, info, self.rng = self.step_fn(
+            self.train_state, info, self.rng = self.train_step_fn(
                 self.train_state,
                 batch,
                 self.rng,
             )
 
+        return info
+
+    def eval_step(self, batch: dict):
+        batch = self.prepare_batch_for_train_step(batch)
+        with self.sharding.mesh.mesh, nn.logical_axis_rules([("act_batch", "fsdp")]):
+            _, info, self.rng = self.eval_step_fn(
+                self.train_state,
+                batch,
+                self.rng,
+            )
         return info

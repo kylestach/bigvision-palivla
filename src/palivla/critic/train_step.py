@@ -112,9 +112,10 @@ def train_step(
     key, dropout_key = jax.random.split(key)
     grads, info = grad_fn(train_state.params, batch, dropout_key)
 
-    train_state = train_state.apply_gradients(
-        grads=grads,
-    )
+    if train:
+        train_state = train_state.apply_gradients(
+            grads=grads,
+        )
 
     info = info | train_state.opt_state.hyperparams
 
