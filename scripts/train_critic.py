@@ -81,6 +81,8 @@ def create_model(config: ConfigDict, sharding_metadata: ShardingMetadata):
         "next_actions": jax.ShapeDtypeStruct(shape=(1, 1, 7), dtype=jnp.float32),
         "rewards": jax.ShapeDtypeStruct(shape=(1,), dtype=jnp.float32),
         "terminals": jax.ShapeDtypeStruct(shape=(1,), dtype=jnp.bool_),
+        "td_mask": jax.ShapeDtypeStruct(shape=(1,), dtype=jnp.bool_),
+        "mc_returns": jax.ShapeDtypeStruct(shape=(1,), dtype=jnp.float32),
     }
 
     language_tokenizer = AutoTokenizer.from_pretrained(config.language_tokenizer)
@@ -113,7 +115,13 @@ def create_model(config: ConfigDict, sharding_metadata: ShardingMetadata):
         action_tokenizer=action_tokenizer,
         sequence_builder=sequence_builder,
         sharding_metadata=sharding_metadata,
-        example_batch=(example_batch["sensors"], example_batch["sensors_mask"], example_batch["prompt"], example_batch["actions"]),
+        example_batch=(
+            example_batch["sensors"],
+            example_batch["sensors_mask"],
+            example_batch["prompt"],
+            example_batch["actions"],
+        ),
+        critic_train_step_kwargs=config.critic_train_step_kwargs.to_dict(),
     )
 
 
@@ -222,7 +230,7 @@ def main(_):
 
             if (i + 1) % config.eval_interval == 0:
                 print(model.predict(batch, action_dim=batch["action"].shape[-1]))
-                '''
+                """
                 eval_info = {}
                 eval_batch = next(gen_eval_it)
                 eval_info = model.eval_step(
@@ -238,7 +246,7 @@ def main(_):
                         commit=False,
                         step=i,
                     )
-                '''
+                """
 
             if (i + 1) % config.save_interval == 0:
                 if config.save_path is not None:

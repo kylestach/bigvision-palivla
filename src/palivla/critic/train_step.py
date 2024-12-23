@@ -1,9 +1,9 @@
 from typing import Any, Dict, Tuple
 
+import chex
 import jax
 import jax.numpy as jnp
 import optax
-
 from palivla.critic.train_state import EMATrainState
 from palivla.optimizer import components_by_label
 from palivla.typing import Data, Params
@@ -21,28 +21,47 @@ def hl_gauss_target(
 
 
 def train_step(
-    train_state: EMATrainState, batch: Data, key: jax.random.PRNGKey, train: bool
+    train_state: EMATrainState,
+    batch: Data,
+    key: jax.random.PRNGKey,
+    train: bool,
+    regress_to_mc_returns: bool = False,
+    train_with_sarsa: bool = False,
 ) -> Tuple[EMATrainState, Dict[str, Any]]:
     def loss_fn(
         params: Params, batch: Data, rng: jax.random.PRNGKey
     ) -> Tuple[jnp.ndarray, Dict[str, Any]]:
         rng, target_key, critic_key = jax.random.split(rng, 3)
-        _, next_target_value, _ = train_state.apply_fn(
-            {"params": train_state.ema_params},
-            batch["next_sensors"],
-            batch["next_sensors_mask"],
-            batch["next_prompt"],
-            batch["next_actions"],
-            train=train,
-            rngs={"dropout": target_key},
-        )
+        if regress_to_mc_returns:
+            next_target_value = batch["mc_return"]
+        elif train_with_sarsa:
+            _, next_target_value, _ = train_state.apply_fn(
+                {"params": train_state.ema_params},
+                batch["next_sensors"],
+                batch["next_sensors_mask"],
+                batch["next_prompt"],
+                batch["next_action"],
+                train=train,
+                rngs={"dropout": target_key},
+            )
+        else:
+            _, next_target_value, _ = train_state.apply_fn(
+                {"params": train_state.ema_params},
+                batch["next_sensors"],
+                batch["next_sensors_mask"],
+                batch["next_prompt"],
+                batch["counterfactual_next_actions"],
+                train=train,
+                rngs={"dropout": target_key},
+            )
 
-        # Maximize over next action options
-        next_target_value = jnp.max(next_target_value, axis=-1)
+            # Maximize over next action options
+            next_target_value = jnp.max(next_target_value, axis=-1)
 
+        chex.assert_shape(next_target_value, (batch["rewards"].shape[0],))
         target_value = batch[
             "rewards"
-        ] + train_state.model.discount * next_target_value * (1 - batch["terminals"])
+        ] + train_state.model.discount * next_target_value * (batch["td_mask"])
 
         critic_target_probs = hl_gauss_target(
             q_min=train_state.model.q_min,

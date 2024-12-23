@@ -91,5 +91,10 @@ def get_config():
                 "traj_transform_threads": 16,
                 "traj_read_threads": 16,
             },
+            # Critic training kwargs
+            "critic_train_step_kwargs": {
+                "regress_to_mc_returns": False,
+                "train_with_sarsa": False,
+            },
         }
     )
