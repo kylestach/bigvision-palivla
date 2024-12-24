@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Any, Callable, Dict, Tuple
+from typing import Any, Dict, Tuple
 
 import chex
 import jax
@@ -62,9 +62,9 @@ def loss_fn(
             next_target_value = jnp.max(next_target_value, axis=-1)
 
         chex.assert_shape(next_target_value, (batch["rewards"].shape[0],))
-        target_value = batch[
-            "rewards"
-        ] + model.discount * next_target_value * (batch["td_mask"])
+        target_value = (
+            batch["rewards"] + model.discount * next_target_value * (batch["td_mask"])
+        )
 
     chex.assert_shape(target_value, (batch["rewards"].shape[0],))
 

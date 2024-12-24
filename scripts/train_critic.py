@@ -27,6 +27,7 @@ import wandb
 import numpy as np
 from flax.core.frozen_dict import freeze
 
+import palivla.load_fns
 from palivla.dataset import make_base_dataset, make_trajectory_dataset
 from palivla.optimizer import make_optimizer
 from palivla.spec import ModuleSpec, OptimizerSpec
