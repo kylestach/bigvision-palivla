@@ -100,12 +100,18 @@ def load_paligemma_weights(
                 params,
                 param_replacements,
                 strategy,
-            ).astype(param_dtype)
+            )
         except ValueError as e:
             raise ValueError(f"Error replacing param {path_str}: {e}")
 
+    def _replace_params(params: Params, param_replacements: Params):
+        return jax.tree.map(
+            lambda x: x.astype(param_dtype),
+            _replace_params_fn(params, param_replacements, ""),
+        )
+
     replace_params_fn = model.sharding.mesh.sjit(
-        _replace_params_fn,
+        _replace_params,
         in_shardings=(model.sharding.model_sharding_rule, None),
         out_shardings=model.sharding.model_sharding_rule,
         donate_argnums=(0,),

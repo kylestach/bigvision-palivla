@@ -57,6 +57,7 @@ def get_config(variant_config: str | None = None):
             "max_to_keep": 1,
             # Logging and visualization
             "eval_interval": 100,
+            "viz_interval": 1000,
             "log_interval": 10,
             # Multi-device settings
             "data_axis_size": 1,
@@ -97,5 +98,22 @@ def get_config(variant_config: str | None = None):
                 "traj_transform_threads": 16,
                 "traj_read_threads": 16,
             },
+            "viz_traj_datasets": {
+                "bridge": {
+                    "name": "bridge_dataset",
+                    "data_dir": "/data/rlds/",
+                    "load_camera_views": ["primary"],
+                    "load_depth": False,
+                    "load_proprio": True,
+                    "load_language": True,
+                    "force_recompute_dataset_statistics": False,
+                    "action_proprio_normalization_type": NormalizationType.NORMAL,
+                }
+            },
+            "viz_num_trajectories": 4,
+            "critic_train_step_kwargs": {
+                "regress_to_mc_returns": True,
+                "train_with_sarsa": False,
+            }
         }
     )

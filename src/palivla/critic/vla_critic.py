@@ -92,8 +92,10 @@ class PaliVLACritic(PaliVLAModel):
 
         # Action embeddings
         # Actions should have shape [batch, n_counterfactuals, action_dim] or [batch, action_dim]
+        actions_squeeze = False
         if actions.ndim == 2:
             actions = actions[:, None, :]
+            actions_squeeze = True
         chex.assert_rank(actions, 3)
         actions_embeds = self.action_proj(actions)
 
@@ -116,7 +118,13 @@ class PaliVLACritic(PaliVLAModel):
         info["text_tokens"] = jnp.argmax(critic_logits, axis=-1)
 
         critic_value = jnp.sum(
-            jax.nn.softmax(critic_logits) * jnp.linspace(self.q_min, self.q_max, self.num_critic_bins), axis=-1
+            jax.nn.softmax(critic_logits)
+            * jnp.linspace(self.q_min, self.q_max, self.num_critic_bins),
+            axis=-1,
         )
+
+        if actions_squeeze:
+            critic_logits = jnp.squeeze(critic_logits, axis=1)
+            critic_value = jnp.squeeze(critic_value, axis=1)
 
         return critic_logits, critic_value, info

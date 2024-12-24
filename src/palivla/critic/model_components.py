@@ -11,13 +11,13 @@ from palivla.components.action_tokenizer import ActionTokenizer
 from palivla.components.sequence_builder import SequenceBuilder
 from palivla.components.train_state import ShardingMetadata
 from palivla.critic.train_state import EMATrainState
-from palivla.critic.train_step import train_step
+from palivla.critic.train_step import train_step, loss_fn
 from palivla.model_components import ModelComponents
 from palivla.spec import ModuleSpec, OptimizerSpec
+from palivla.typing import Data
 
 
-def make_step_fn(sharding: ShardingMetadata, donate_train_state: bool = True, **kwargs):
-    donate_argnums = (0,) if donate_train_state else None
+def make_train_step_fn(sharding: ShardingMetadata, **kwargs):
     return sharding.mesh.sjit(
         partial(train_step, **kwargs),
         in_shardings=(
@@ -35,20 +35,43 @@ def make_step_fn(sharding: ShardingMetadata, donate_train_state: bool = True, **
     )
 
 
+def make_eval_step_fn(sharding: ShardingMetadata, **kwargs):
+    def eval_step(train_state, batch, rng):
+        rng, key = jax.random.split(rng)
+        _, info = loss_fn(
+            train_state.ema_params,
+            batch,
+            key,
+            model=train_state.model,
+            ema_params=train_state.ema_params,
+            **kwargs,
+        )
+        return info, key
+
+    return sharding.mesh.sjit(
+        eval_step,
+        in_shardings=(
+            sharding.model_sharding_rule,
+            PartitionSpec("fsdp"),
+            None,
+        ),
+        out_shardings=(None, None),
+        args_sharding_constraint=(
+            sharding.model_sharding_rule,
+            PartitionSpec("fsdp"),
+            None,
+        ),
+    )
+
+
 class CriticModelComponents(ModelComponents):
     def __init__(self, *args, critic_train_step_kwargs={}, **kwargs):
         super().__init__(*args, **kwargs)
-        self.train_step_fn = make_step_fn(
-            self.sharding,
-            **critic_train_step_kwargs,
-            donate_train_state=True,
-            train=True,
+        self.train_step_fn = make_train_step_fn(
+            self.sharding, **critic_train_step_kwargs, train=True
         )
-        self.eval_step_fn = make_step_fn(
-            self.sharding,
-            **critic_train_step_kwargs,
-            donate_train_state=False,
-            train=False,
+        self.eval_step_fn = make_eval_step_fn(
+            self.sharding, **critic_train_step_kwargs, train=False
         )
 
     @classmethod
@@ -127,10 +150,41 @@ class CriticModelComponents(ModelComponents):
 
         return info
 
+    def predict(self, batch: Data, *, train: bool = False) -> Data:
+        # Tokenize the batch and build sequences
+        sequences = self.sequence_builder.build_sequence(
+            batch,
+            self.language_tokenizer,
+            self.action_tokenizer,
+            include_action_tokens=False,
+        )
+
+        # Shard the batch to devices
+        batch = {
+            "sensors": batch["observation"],
+            "sensors_mask": batch["observation"]["pad_mask_dict"],
+            "prompt": sequences["prompt"],
+            "action": batch["action"],
+        }
+        batch = self.sharding.mesh.local_data_to_global_array(batch)
+
+        with self.sharding.mesh.mesh, nn.logical_axis_rules([("act_batch", "fsdp")]):
+            _, critic_value, _ = self.sharding.mesh.sjit(
+                self.train_state.apply_fn, out_shardings=None
+            )(
+                {"params": self.train_state.params},
+                batch["sensors"],
+                batch["sensors_mask"],
+                batch["prompt"],
+                batch["action"],
+            )
+
+        return jax.device_get(critic_value)
+
     def eval_step(self, batch: dict):
         batch = self.prepare_batch_for_train_step(batch)
         with self.sharding.mesh.mesh, nn.logical_axis_rules([("act_batch", "fsdp")]):
-            _, info, self.rng = self.eval_step_fn(
+            info, self.rng = self.eval_step_fn(
                 self.train_state,
                 batch,
                 self.rng,

@@ -16,6 +16,7 @@ dependencies = [
     "matplotlib>=3.9.2",
     "ml-collections>=0.1.1",
     "numpy<2.0.0",
+    "octo@git+https://github.com/nakamotoo/octo.git",
     "optax>=0.2.3",
     "orbax-checkpoint>=0.7.0",
     "orbax>=0.1.9",
@@ -24,7 +25,6 @@ dependencies = [
     "scalax>=0.2.4",
     "scikit-learn>=1.5.2",
     "scipy>=1.14.1",
-    "sentencepiece>=0.2.0",
     "tfds-nightly>=4.9.0",
     "tensorflow-text-nightly>=2.15.0",
     "tf-nightly>=2.15.0",
@@ -33,7 +33,6 @@ dependencies = [
     "huggingface-hub>=0.27.0",
     "transformers>=4.47.1",
     "tensorflow-metadata==1.16.1",
-    "octo",
 ]
 
 [project.optional-dependencies]
@@ -74,4 +73,3 @@ allow-direct-references = true
 
 [tool.uv.sources]
 big-vision = { workspace = true }
-octo = { path = "../octo", editable = true }

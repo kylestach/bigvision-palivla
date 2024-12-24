@@ -1,3 +1,4 @@
+from functools import partial
 from typing import Any, Dict, Tuple
 
 import chex
@@ -5,6 +6,7 @@ import jax
 import jax.numpy as jnp
 import optax
 from palivla.critic.train_state import EMATrainState
+from palivla.critic.vla_critic import PaliVLACritic
 from palivla.optimizer import components_by_label
 from palivla.typing import Data, Params
 
@@ -20,6 +22,91 @@ def hl_gauss_target(
     return jnp.diff(cdf, axis=-1)
 
 
+def loss_fn(
+    params: Params,
+    batch: Data,
+    rng: jax.random.PRNGKey,
+    *,
+    train: bool,
+    regress_to_mc_returns: bool = False,
+    train_with_sarsa: bool = False,
+    model: PaliVLACritic,
+    ema_params: Params,
+) -> Tuple[jnp.ndarray, Dict[str, Any]]:
+    rng, target_key, critic_key = jax.random.split(rng, 3)
+    if regress_to_mc_returns:
+        target_value = batch["mc_return"]
+    else:
+        if train_with_sarsa:
+            _, next_target_value, _ = model.apply(
+                {"params": ema_params},
+                batch["next_sensors"],
+                batch["next_sensors_mask"],
+                batch["next_prompt"],
+                batch["next_action"],
+                train=train,
+                rngs={"dropout": target_key},
+            )
+        else:
+            _, next_target_value, _ = model.apply(
+                {"params": ema_params},
+                batch["next_sensors"],
+                batch["next_sensors_mask"],
+                batch["next_prompt"],
+                batch["counterfactual_next_actions"],
+                train=train,
+                rngs={"dropout": target_key},
+            )
+
+            # Maximize over next action options
+            next_target_value = jnp.max(next_target_value, axis=-1)
+
+        chex.assert_shape(next_target_value, (batch["rewards"].shape[0],))
+        target_value = batch["rewards"] + model.discount * next_target_value * (
+            batch["td_mask"]
+        )
+
+    chex.assert_shape(target_value, (batch["rewards"].shape[0],))
+
+    critic_target_probs = hl_gauss_target(
+        q_min=model.q_min,
+        q_max=model.q_max,
+        num_bins=model.num_critic_bins,
+        critic_value=target_value,
+        sigma=model.critic_sigma,
+    )
+
+    critic_logits, critic_value, critic_info = model.apply(
+        {"params": params},
+        batch["sensors"],
+        batch["sensors_mask"],
+        batch["prompt"],
+        batch["action"],
+        train=train,
+        rngs={"dropout": critic_key},
+    )
+
+    critic_probs = jax.nn.softmax(critic_logits)
+    critic_atoms = jnp.linspace(
+        model.q_min,
+        model.q_max,
+        model.num_critic_bins,
+    )
+    critic_std = jnp.sqrt(
+        jnp.sum(critic_probs * (critic_atoms - critic_value[..., None]) ** 2, axis=-1)
+    )
+
+    loss = optax.softmax_cross_entropy(critic_logits, critic_target_probs).mean()
+    return loss, {
+        "loss": loss,
+        "q_target": jnp.mean(target_value),
+        "q_value": jnp.mean(critic_value),
+        "q_mse": jnp.mean(jnp.square(critic_value - target_value)),
+        "q_std": jnp.mean(critic_std),
+        "q - mc": jnp.mean(critic_value - batch["mc_return"]),
+    }
+
+
 def train_step(
     train_state: EMATrainState,
     batch: Data,
@@ -28,87 +115,17 @@ def train_step(
     regress_to_mc_returns: bool = False,
     train_with_sarsa: bool = False,
 ) -> Tuple[EMATrainState, Dict[str, Any]]:
-    def loss_fn(
-        params: Params, batch: Data, rng: jax.random.PRNGKey
-    ) -> Tuple[jnp.ndarray, Dict[str, Any]]:
-        rng, target_key, critic_key = jax.random.split(rng, 3)
-        if regress_to_mc_returns:
-            target_value = batch["mc_return"]
-        else:
-            if train_with_sarsa:
-                _, next_target_value, _ = train_state.apply_fn(
-                    {"params": train_state.ema_params},
-                    batch["next_sensors"],
-                    batch["next_sensors_mask"],
-                    batch["next_prompt"],
-                    batch["next_action"],
-                    train=train,
-                    rngs={"dropout": target_key},
-                )
-            else:
-                _, next_target_value, _ = train_state.apply_fn(
-                    {"params": train_state.ema_params},
-                    batch["next_sensors"],
-                    batch["next_sensors_mask"],
-                    batch["next_prompt"],
-                    batch["counterfactual_next_actions"],
-                    train=train,
-                    rngs={"dropout": target_key},
-                )
-
-                # Maximize over next action options
-                next_target_value = jnp.max(next_target_value, axis=-1)
-
-            chex.assert_shape(next_target_value, (batch["rewards"].shape[0],))
-            target_value = batch[
-                "rewards"
-            ] + train_state.model.discount * next_target_value * (batch["td_mask"])
-
-        chex.assert_shape(target_value, (batch["rewards"].shape[0],))
-
-        critic_target_probs = hl_gauss_target(
-            q_min=train_state.model.q_min,
-            q_max=train_state.model.q_max,
-            num_bins=train_state.model.num_critic_bins,
-            critic_value=target_value,
-            sigma=train_state.model.critic_sigma,
-        )
-
-        critic_logits, critic_value, critic_info = train_state.apply_fn(
-            {"params": params},
-            batch["sensors"],
-            batch["sensors_mask"],
-            batch["prompt"],
-            batch["action"],
+    grad_fn = jax.grad(
+        partial(
+            loss_fn,
+            model=train_state.model,
             train=train,
-            rngs={"dropout": critic_key},
-        )
-
-        critic_probs = jax.nn.softmax(critic_logits)
-        critic_atoms = jnp.linspace(
-            train_state.model.q_min,
-            train_state.model.q_max,
-            train_state.model.num_critic_bins,
-        )
-        critic_std = jnp.sqrt(
-            jnp.sum(
-                critic_probs * (critic_atoms - critic_value[..., None]) ** 2, axis=-1
-            )
-        )
-
-        loss = optax.softmax_cross_entropy(
-            critic_logits, critic_target_probs[:, None, :]
-        ).mean()
-        return loss, {
-            "loss": loss,
-            "q_target": jnp.mean(target_value),
-            "q_value": jnp.mean(critic_value),
-            "q_mse": jnp.mean(jnp.square(critic_value - target_value)),
-            "q_std": jnp.mean(critic_std),
-            "q - mc": jnp.mean(critic_value - batch["mc_return"]),
-        }
-
-    grad_fn = jax.grad(loss_fn, has_aux=True)
+            ema_params=train_state.ema_params,
+            regress_to_mc_returns=regress_to_mc_returns,
+            train_with_sarsa=train_with_sarsa,
+        ),
+        has_aux=True,
+    )
 
     key, dropout_key = jax.random.split(key)
     grads, info = grad_fn(train_state.params, batch, dropout_key)

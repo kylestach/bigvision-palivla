@@ -6,6 +6,7 @@ from palivla.components.action_tokenizer import ActionTokenizer
 from palivla.components.sequence_builder import SequenceBuilder
 from palivla.components.train_state import ShardingMetadata
 from palivla.critic.model_components import CriticModelComponents
+from palivla.critic.visualize_critic import visualize_critic
 from palivla.critic.vla_critic import PaliVLACritic
 
 
@@ -20,12 +21,12 @@ from absl import app, flags
 from absl import logging as absl_logging
 from flax.core.frozen_dict import freeze
 from ml_collections import ConfigDict, config_flags
-from palivla.dataset import make_base_dataset
 from palivla.model_components import ModelComponents
+import palivla.load_fns
+from palivla.dataset import make_base_dataset, make_trajectory_dataset
 from palivla.optimizer import make_optimizer
 from palivla.spec import ModuleSpec, OptimizerSpec
 from palivla.utils import host_broadcast_str
-import palivla.load_fns
 from scalax.sharding import FSDPShardingRule, MeshShardingHelper
 from transformers import AutoTokenizer
 
@@ -178,6 +179,17 @@ def main(_):
     # Make the basic dataset
     # We have to do this first, since we need to know how the dataset is set up before we can construct the model
     train_ds = make_base_dataset(**config.dataset_kwargs.to_dict(), train=True)
+
+    viz_datasets = {
+        k: make_trajectory_dataset(**viz_dataset_kwargs.to_dict(), train=False)
+        for k, viz_dataset_kwargs in config.viz_traj_datasets.items()
+    }
+    viz_dataset_iters = {k: v.iterator() for k, v in viz_datasets.items()}
+
+    viz_trajectories = {
+        k: [next(v_iter) for _ in range(config.viz_num_trajectories)]
+        for k, v_iter in viz_dataset_iters.items()
+    }
     validation_ds = make_base_dataset(**config.dataset_kwargs.to_dict(), train=False)
 
     # Construct the final dataset
@@ -266,6 +278,17 @@ def main(_):
                     )
                 train_infos = []
 
+            if (i + 1) % config.viz_interval == 0:
+                for viz_ds_name, trajectories in viz_trajectories.items():
+                    for j, trajectory in enumerate(trajectories):
+                        wandb.log(
+                            {
+                                f"critic_visualization_{viz_ds_name}_{j}": wandb.Image(
+                                    visualize_critic(model, trajectory)
+                                )
+                            },
+                            step=i,
+                        )
             if (i + 1) % config.eval_interval == 0:
                 eval_batch = next(eval_it)
                 eval_info = model.eval_step(eval_batch)

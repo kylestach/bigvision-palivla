@@ -8,6 +8,7 @@ placeholder(int)._value
 
 def get_config():
     num_train_steps = FieldReference(100000, int)
+    data_dir = FieldReference("/data/rlds/", str)
 
     model_config = get_default_config()
 
@@ -52,6 +53,7 @@ def get_config():
             "max_to_keep": 1,
             # Logging and visualization
             "eval_interval": 100,
+            "viz_interval": 1000,
             "log_interval": 1,
             # Multi-device settings
             "data_axis_size": 1,
@@ -71,7 +73,7 @@ def get_config():
             "dataset_kwargs": {
                 "oxe_kwargs": {
                     "data_mix": "bridge",
-                    "data_dir": "/data/rlds/",
+                    "data_dir": data_dir,
                     "load_camera_views": ["primary"],
                     "load_depth": False,
                     "load_proprio": True,
@@ -92,7 +94,20 @@ def get_config():
                 "traj_transform_threads": 16,
                 "traj_read_threads": 16,
             },
+            "viz_traj_datasets": {
+                "bridge": {
+                    "name": "bridge_dataset",
+                    "data_dir": data_dir,
+                    "load_camera_views": ["primary"],
+                    "load_depth": False,
+                    "load_proprio": True,
+                    "load_language": True,
+                    "force_recompute_dataset_statistics": False,
+                    "action_proprio_normalization_type": NormalizationType.NORMAL,
+                }
+            },
             # Critic training kwargs
+            "viz_num_trajectories": 4,
             "critic_train_step_kwargs": {
                 "regress_to_mc_returns": False,
                 "train_with_sarsa": False,

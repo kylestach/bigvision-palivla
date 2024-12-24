@@ -5,7 +5,6 @@ from typing import Any
 import cloudpickle
 import flax.linen as nn
 import jax
-import numpy as np
 import orbax.checkpoint as ocp
 import tensorflow as tf
 from jax.sharding import PartitionSpec

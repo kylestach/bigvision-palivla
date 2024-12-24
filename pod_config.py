@@ -90,10 +90,10 @@ for config_re, maybe_pod_type in TPU_POD_TYPES.items():
 config = TPU_POD_CONFIGS[pod_type]
 
 train_args = os.environ.get("TRAIN_ARGS")
-config_file = os.environ.get("CONFIG_FILE", "bridge_config.py")
+config_file = os.environ.get("CONFIG_FILE", "config/bridge_critic_config.py")
 train_args = DEFAULT_TRAIN_ARGS | config["train_args"] | parse_args(train_args)
 train_args_str = " \\\n\t".join([f"--config.{k} {v}" for k, v in train_args.items()])
-train_script = os.environ.get("TRAIN_SCRIPT", "palivla/train.py")
+train_script = os.environ.get("TRAIN_SCRIPT", "scripts/train_critic.py")
 
 launch_script = f"""
 #!/bin/bash
