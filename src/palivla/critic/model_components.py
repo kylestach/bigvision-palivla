@@ -11,16 +11,20 @@ from palivla.components.action_tokenizer import ActionTokenizer
 from palivla.components.sequence_builder import SequenceBuilder
 from palivla.components.train_state import ShardingMetadata
 from palivla.critic.train_state import EMATrainState
-from palivla.critic.train_step import train_step
+from palivla.critic.train_step import train_step, loss_fn
 from palivla.model_components import ModelComponents
 from palivla.spec import ModuleSpec, OptimizerSpec
 from palivla.typing import Data
 
 
-def make_step_fn(sharding: ShardingMetadata):
+def make_train_step_fn(sharding: ShardingMetadata, **kwargs):
     return sharding.mesh.sjit(
-        partial(train_step, train=True),
-        in_shardings=(sharding.model_sharding_rule, PartitionSpec("fsdp"), None),
+        partial(train_step, **kwargs),
+        in_shardings=(
+            sharding.model_sharding_rule,
+            PartitionSpec("fsdp"),
+            None,
+        ),
         out_shardings=(sharding.model_sharding_rule, None, None),
         args_sharding_constraint=(
             sharding.model_sharding_rule,
@@ -31,10 +35,44 @@ def make_step_fn(sharding: ShardingMetadata):
     )
 
 
+def make_eval_step_fn(sharding: ShardingMetadata, **kwargs):
+    def eval_step(train_state, batch, rng):
+        rng, key = jax.random.split(rng)
+        _, info = loss_fn(
+            train_state.ema_params,
+            batch,
+            key,
+            model=train_state.model,
+            ema_params=train_state.ema_params,
+            **kwargs,
+        )
+        return info, key
+
+    return sharding.mesh.sjit(
+        eval_step,
+        in_shardings=(
+            sharding.model_sharding_rule,
+            PartitionSpec("fsdp"),
+            None,
+        ),
+        out_shardings=(None, None),
+        args_sharding_constraint=(
+            sharding.model_sharding_rule,
+            PartitionSpec("fsdp"),
+            None,
+        ),
+    )
+
+
 class CriticModelComponents(ModelComponents):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, critic_train_step_kwargs={}, **kwargs):
         super().__init__(*args, **kwargs)
-        self.step_fn = make_step_fn(self.sharding)
+        self.train_step_fn = make_train_step_fn(
+            self.sharding, **critic_train_step_kwargs, train=True
+        )
+        self.eval_step_fn = make_eval_step_fn(
+            self.sharding, **critic_train_step_kwargs, train=False
+        )
 
     @classmethod
     def initialize(
@@ -48,6 +86,7 @@ class CriticModelComponents(ModelComponents):
         sequence_builder: SequenceBuilder,
         sharding_metadata: ShardingMetadata,
         example_batch: Any,
+        critic_train_step_kwargs: dict,
     ):
         rng, key = jax.random.split(jax.random.PRNGKey(seed))
         return cls(
@@ -63,24 +102,17 @@ class CriticModelComponents(ModelComponents):
                 sharding=sharding_metadata,
                 rng=key,
             ),
+            critic_train_step_kwargs=critic_train_step_kwargs,
         )
 
-    def train_step(self, batch: Any):
+    def prepare_batch_for_train_step(self, batch: dict):
         # Tokenize the batch and build sequences
         sequences = self.sequence_builder.build_sequence(
-            batch,
-            self.language_tokenizer,
-            self.action_tokenizer,
-            include_action_tokens=False,
+            batch, self.language_tokenizer, self.action_tokenizer
         )
 
-        batch["next_observation"] = batch["observation"]
-        batch["next_observation"]["pad_mask_dict"] = batch["observation"][
-            "pad_mask_dict"
-        ]
-        batch["next_action"] = np.zeros_like(batch["action"])
-        batch["reward"] = np.zeros((batch["action"].shape[0],))
-        batch["terminal"] = np.zeros((batch["action"].shape[0],), dtype=np.bool_)
+        # TODO: load counterfactual_next_actions
+        batch["counterfactual_next_actions"] = np.zeros_like(batch["action"])
 
         # Shard the batch to devices
         batch = {
@@ -90,18 +122,30 @@ class CriticModelComponents(ModelComponents):
             "next_sensors_mask": batch["next_observation"]["pad_mask_dict"],
             "prompt": sequences["prompt"],
             "next_prompt": sequences["prompt"],
-            # Action should only have one action, next_actions should contain counterfactuals from the policy
             "action": batch["action"][:, -1, -1, :],
-            "next_actions": batch["next_action"][:, -1, :, :],
+            "next_action": batch["next_action"][:, -1, -1, :],
+            "counterfactual_next_actions": batch["counterfactual_next_actions"][
+                :, -1, :, :
+            ],
             "rewards": batch["reward"],
-            "terminals": batch["terminal"],
+            "td_mask": batch["td_mask"],
+            "mc_return": batch["mc_return"],
         }
         batch = self.sharding.mesh.local_data_to_global_array(batch)
+        return batch
+
+    def train_step(
+        self,
+        batch: dict,
+    ):
+        batch = self.prepare_batch_for_train_step(batch)
 
         # Run the train step
         with self.sharding.mesh.mesh, nn.logical_axis_rules([("act_batch", "fsdp")]):
-            self.train_state, info, self.rng = self.step_fn(
-                self.train_state, batch, self.rng
+            self.train_state, info, self.rng = self.train_step_fn(
+                self.train_state,
+                batch,
+                self.rng,
             )
 
         return info
@@ -136,3 +180,13 @@ class CriticModelComponents(ModelComponents):
             )
 
         return jax.device_get(critic_value)
+
+    def eval_step(self, batch: dict):
+        batch = self.prepare_batch_for_train_step(batch)
+        with self.sharding.mesh.mesh, nn.logical_axis_rules([("act_batch", "fsdp")]):
+            info, self.rng = self.eval_step_fn(
+                self.train_state,
+                batch,
+                self.rng,
+            )
+        return info

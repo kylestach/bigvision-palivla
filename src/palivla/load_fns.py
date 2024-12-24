@@ -77,6 +77,8 @@ def load_paligemma_weights(
             raise ValueError(f"Invalid mismatch strategy: {mismatch_strategy}")
 
     def _replace_params_fn(params: Params, param_replacements: Params, path_str=""):
+        if param_replacements is None:
+            return params
         if isinstance(param_replacements, dict):
             return {
                 k: _replace_params_fn(

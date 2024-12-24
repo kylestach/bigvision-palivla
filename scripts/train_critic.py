@@ -80,6 +80,8 @@ def create_model(config: ConfigDict, sharding_metadata: ShardingMetadata):
         "next_actions": jax.ShapeDtypeStruct(shape=(1, 1, 7), dtype=jnp.float32),
         "rewards": jax.ShapeDtypeStruct(shape=(1,), dtype=jnp.float32),
         "terminals": jax.ShapeDtypeStruct(shape=(1,), dtype=jnp.bool_),
+        "td_mask": jax.ShapeDtypeStruct(shape=(1,), dtype=jnp.bool_),
+        "mc_returns": jax.ShapeDtypeStruct(shape=(1,), dtype=jnp.float32),
     }
 
     language_tokenizer = AutoTokenizer.from_pretrained(config.language_tokenizer)
@@ -118,6 +120,7 @@ def create_model(config: ConfigDict, sharding_metadata: ShardingMetadata):
             example_batch["prompt"],
             example_batch["actions"],
         ),
+        critic_train_step_kwargs=config.critic_train_step_kwargs.to_dict(),
     )
 
 
@@ -165,6 +168,7 @@ def main(_):
         k: [next(v_iter) for _ in range(config.viz_num_trajectories)]
         for k, v_iter in viz_dataset_iters.items()
     }
+    validation_ds = make_base_dataset(**config.dataset_kwargs.to_dict(), train=False)
 
     # Construct the final dataset
     # We need to do this after the model is constructed, since we need to have a tokenizer
@@ -174,9 +178,17 @@ def main(_):
     def make_training_batch(batch):
         return batch
 
+    def make_validation_batch(batch):
+        return batch
+
     train_it = map(
         make_training_batch,
         train_ds.batch(per_host_train_batch_size).iterator(),
+    )
+
+    eval_it = map(
+        make_validation_batch,
+        validation_ds.batch(per_host_eval_batch_size).iterator(),
     )
 
     # W&B setup
@@ -232,7 +244,7 @@ def main(_):
                     lambda *xs: np.mean(np.stack(xs), axis=0), *wandb_logs
                 )
                 if jax.process_index() == 0:
-                    wandb.log(avg_info, step=i)
+                    wandb.log({"train": avg_info}, step=i)
                 wandb_logs = []
 
             if (i + 1) % config.viz_interval == 0:
@@ -246,6 +258,15 @@ def main(_):
                             },
                             step=i,
                         )
+            if (i + 1) % config.eval_interval == 0:
+                eval_batch = next(eval_it)
+                eval_info = model.eval_step(eval_batch)
+                if jax.process_index() == 0:
+                    wandb.log(
+                        {"eval": eval_info},
+                        commit=False,
+                        step=i,
+                    )
 
             if (i + 1) % config.save_interval == 0:
                 if config.save_path is not None:

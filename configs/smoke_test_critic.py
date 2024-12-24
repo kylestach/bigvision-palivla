@@ -111,5 +111,9 @@ def get_config(variant_config: str | None = None):
                 }
             },
             "viz_num_trajectories": 4,
+            "critic_train_step_kwargs": {
+                "regress_to_mc_returns": True,
+                "train_with_sarsa": False,
+            }
         }
     )
