@@ -1,6 +1,6 @@
 import jax
-from jax.experimental import multihost_utils
 import numpy as np
+from jax.experimental import multihost_utils
 
 
 def freeze_structure(structure):

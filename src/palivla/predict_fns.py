@@ -21,19 +21,17 @@ Modified from PaliGemma in big_vision: https://github.com/google-research/big_vi
 import collections
 import functools
 
-import jax.experimental
-import jax.experimental.multihost_utils
-
-from big_vision.pp import registry
-import big_vision.utils as u
 import einops
 import jax
+import jax.experimental
+import jax.experimental.multihost_utils
 import jax.numpy as jnp
 import numpy as np
 
+import big_vision.utils as u
+from big_vision.pp import registry
 from palivla.components.model import PaliVLAModel
 from palivla.typing import Data, Params, Variables
-
 
 P = jax.sharding.PartitionSpec
 

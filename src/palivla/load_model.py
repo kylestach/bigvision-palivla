@@ -1,15 +1,15 @@
 from functools import partial
+
 import jax
 import jax.numpy as jnp
-from ml_collections import ConfigDict, FrozenConfigDict
 import optax
+from flax import linen as nn
+from ml_collections import ConfigDict, FrozenConfigDict
 
 from big_vision.models.proj.paligemma import paligemma
 from big_vision.trainers.proj.paligemma import predict_fns
-from flax import linen as nn
-
-from palivla.tokenizer import Tokenizer
 from palivla.spec import ModuleSpec
+from palivla.tokenizer import Tokenizer
 
 model_config = {
     "llm": {"vocab_size": 257_152},

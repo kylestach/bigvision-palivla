@@ -1,35 +1,31 @@
 import os
 
 from big_vision.utils import Registry
+from palivla.components.action_tokenizer import ActionTokenizer
 from palivla.components.model import PaliVLAModel
 from palivla.components.sequence_builder import SequenceBuilder
 from palivla.components.train_state import ShardingMetadata
-from palivla.components.action_tokenizer import ActionTokenizer
 
 os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 import orbax.checkpoint as ocp
-from transformers import AutoTokenizer
 import tensorflow as tf
 import tqdm
-from absl import app, flags, logging as absl_logging
+from absl import app, flags
+from absl import logging as absl_logging
+from flax.core.frozen_dict import freeze
 from ml_collections import ConfigDict, config_flags
-from scalax.sharding import (
-    MeshShardingHelper,
-    FSDPShardingRule,
-)
+from scalax.sharding import FSDPShardingRule, MeshShardingHelper
+from transformers import AutoTokenizer
 
 import wandb
-import numpy as np
-from flax.core.frozen_dict import freeze
-
-import palivla.load_fns
 from palivla.dataset import make_base_dataset
+from palivla.model_components import ModelComponents
 from palivla.optimizer import make_optimizer
 from palivla.spec import ModuleSpec, OptimizerSpec
-from palivla.model_components import ModelComponents
 from palivla.utils import host_broadcast_str
 
 jax.config.update("jax_compilation_cache_dir", "/tmp/jax_cache")
@@ -147,7 +143,6 @@ def main(_):
     # Construct the final dataset
     # We need to do this after the model is constructed, since we need to have a tokenizer
     per_host_train_batch_size = config.batch_size // jax.process_count()
-    per_host_eval_batch_size = config.eval_batch_size // jax.process_count()
 
     def make_training_batch(batch):
         return batch

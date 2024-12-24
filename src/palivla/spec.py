@@ -2,11 +2,11 @@ import importlib
 import json
 from typing import Any, Callable, Dict, Generic, Mapping, TypeVar
 
+import jax
 import optax
 from flax import linen as nn
 from flax import struct
 from flax.core.frozen_dict import FrozenDict, freeze, unfreeze
-import jax
 
 from palivla.utils import freeze_structure
 

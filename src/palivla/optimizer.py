@@ -1,6 +1,7 @@
-import optax
-import jax
 import fnmatch
+
+import jax
+import optax
 
 from big_vision.utils import Registry
 from palivla.utils import key_string
@@ -48,24 +49,6 @@ def ema_params(rate: float):
         init=_init_fn,
         update=_update_fn,
     )
-
-
-def get_optimizer_info(opt_state: optax.OptState):
-    info = info | train_state.opt_state.hyperparams
-
-    def _norm_info(values, prefix):
-        components = components_by_label(values)
-        result = {f"{prefix}_{k}": optax.global_norm(v) for k, v in components.items()}
-        result[prefix] = jnp.sqrt(sum(x**2 for x in result.values()))
-        return result
-
-    info = (
-        info
-        | _norm_info(grads, "norm/grad")
-        | _norm_info(updates, "norm/update")
-        | _norm_info(train_state.params, "norm/param")
-    )
-
 
 
 @Registry.register("optimizer.default_optimizer")

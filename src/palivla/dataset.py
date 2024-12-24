@@ -1,9 +1,10 @@
 from typing import Optional, Sequence
 
-from octo.data.utils.data_utils import NormalizationType
-from octo.data.dataset import make_interleaved_dataset, make_single_dataset
-from octo.data.oxe import make_oxe_dataset_kwargs_and_weights, make_oxe_dataset_kwargs
 import dlimp
+from octo.data.dataset import make_interleaved_dataset, make_single_dataset
+from octo.data.oxe import (make_oxe_dataset_kwargs,
+                           make_oxe_dataset_kwargs_and_weights)
+from octo.data.utils.data_utils import NormalizationType
 
 
 def make_base_dataset(

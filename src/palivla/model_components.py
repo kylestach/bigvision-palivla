@@ -1,19 +1,20 @@
 from functools import partial
 from os import PathLike
 from typing import Any
+
 import cloudpickle
+import flax.linen as nn
 import jax
 import numpy as np
 import orbax.checkpoint as ocp
 import tensorflow as tf
-from transformers import AutoTokenizer
-import flax.linen as nn
 from jax.sharding import PartitionSpec
+from transformers import AutoTokenizer
 
-from palivla.components.sequence_builder import SequenceBuilder
-from palivla.spec import ModuleSpec, OptimizerSpec
 from palivla.components.action_tokenizer import ActionTokenizer
+from palivla.components.sequence_builder import SequenceBuilder
 from palivla.components.train_state import ShardingMetadata, TrainState
+from palivla.spec import ModuleSpec, OptimizerSpec
 from palivla.train_step import step_fn
 
 
@@ -165,13 +166,9 @@ class ModelComponents:
 
         return {
             "gen_valid_pct": actions_mask.mean(),
-            "gen_l2": np.mean(
-                np.square(predicted_actions - gt_actions) * actions_mask
-            )
+            "gen_l2": np.mean(np.square(predicted_actions - gt_actions) * actions_mask)
             / actions_mask.mean(),
-            "gen_l1": np.mean(
-                np.abs(predicted_actions - gt_actions) * actions_mask
-            )
+            "gen_l1": np.mean(np.abs(predicted_actions - gt_actions) * actions_mask)
             / actions_mask.mean(),
             "gen_acc": np.mean(
                 (tokens["predicted"] == tokens["target"]) * tokens["mask"]

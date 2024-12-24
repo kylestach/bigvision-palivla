@@ -1,11 +1,11 @@
 from dataclasses import dataclass
 from os import PathLike
+
 import cloudpickle
 import einops
 import numpy as np
 import tensorflow as tf
 from transformers import AutoTokenizer
-
 
 from big_vision.utils import Registry
 from palivla.components.action_tokenizer import ActionTokenizer
@@ -137,7 +137,7 @@ class SequenceBuilder:
         action = tokens[start_idx:end_idx] - act0_id
         try:
             return action_tokenizer.detokenize(action, action_dim=action_dim)
-        except:
+        except ValueError:
             return None
 
     def batch_get_actions(
@@ -179,7 +179,11 @@ class SequenceBuilder:
         actions = np.stack(
             [
                 (
-                    np.pad(action, ((0, action_horizon - action.shape[0]), (0, 0)), constant_values=np.nan)
+                    np.pad(
+                        action,
+                        ((0, action_horizon - action.shape[0]), (0, 0)),
+                        constant_values=np.nan,
+                    )
                     if action is not None
                     else np.zeros((action_horizon, action_dim))
                 )
