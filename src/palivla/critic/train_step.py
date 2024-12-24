@@ -105,6 +105,7 @@ def train_step(
             "q_value": jnp.mean(critic_value),
             "q_mse": jnp.mean(jnp.square(critic_value - target_value)),
             "q_std": jnp.mean(critic_std),
+            "q - mc": jnp.mean(critic_value - batch["mc_return"]),
         }
 
     grad_fn = jax.grad(loss_fn, has_aux=True)

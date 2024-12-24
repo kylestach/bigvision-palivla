@@ -23,6 +23,7 @@ def get_config():
             # W&B settings
             "wandb_project": "palivla-bridge",
             "wandb_mode": "online",
+            "wandb_experiment_name": "bridge-critic",
             # Tokenizers
             "language_tokenizer": "google/paligemma-3b-pt-224",
             "action_tokenizer": "action_tokenizer.bin(min_action_value=-3, max_action_value=3)",
