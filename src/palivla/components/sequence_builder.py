@@ -37,6 +37,7 @@ class SequenceBuilder:
         language_tokenizer: AutoTokenizer,
         action_tokenizer: ActionTokenizer,
         boa_is_prompt: bool = False,
+        include_action_tokens: bool = True,
     ):
         boa_id = language_tokenizer.encode("<begin_of_action>")[0]
 
@@ -46,13 +47,19 @@ class SequenceBuilder:
             self.prepare_prompt(instruction) + boa_prompt
             for instruction in batch["task"]["language_instruction"]
         ]
-        action_tokens = [
-            boa_gen + self.prepare_gen(t)
-            for t in action_tokenizer.tokenize(batch["action"][..., -1, :, :])
-        ]
 
         prompt_tokens = language_tokenizer.batch_encode_plus(prompt)["input_ids"]
-        action_tokens = language_tokenizer.batch_encode_plus(action_tokens)["input_ids"]
+
+        if include_action_tokens:
+            action_tokens = [
+                boa_gen + self.prepare_gen(t)
+                for t in action_tokenizer.tokenize(batch["action"][..., -1, :, :])
+            ]
+            action_tokens = language_tokenizer.batch_encode_plus(action_tokens)[
+                "input_ids"
+            ]
+        else:
+            action_tokens = [[] for _ in range(len(prompt_tokens))]
 
         def _pad(data, pad_length, pad_value=0):
             num_pad_tokens = max(0, pad_length - len(data))

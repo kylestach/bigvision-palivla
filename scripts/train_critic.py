@@ -1,11 +1,11 @@
 import os
 
 from big_vision.utils import Registry
-from palivla.components.model import PaliVLAModel
 from palivla.components.sequence_builder import SequenceBuilder
 from palivla.components.train_state import ShardingMetadata
 from palivla.components.action_tokenizer import ActionTokenizer
 from palivla.critic.model_components import CriticModelComponents
+from palivla.critic.visualize_critic import visualize_critic
 from palivla.critic.vla_critic import PaliVLACritic
 
 os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
@@ -27,8 +27,7 @@ import wandb
 import numpy as np
 from flax.core.frozen_dict import freeze
 
-import palivla.load_fns
-from palivla.dataset import make_base_dataset
+from palivla.dataset import make_base_dataset, make_trajectory_dataset
 from palivla.optimizer import make_optimizer
 from palivla.spec import ModuleSpec, OptimizerSpec
 from palivla.model_components import ModelComponents
@@ -113,7 +112,12 @@ def create_model(config: ConfigDict, sharding_metadata: ShardingMetadata):
         action_tokenizer=action_tokenizer,
         sequence_builder=sequence_builder,
         sharding_metadata=sharding_metadata,
-        example_batch=(example_batch["sensors"], example_batch["sensors_mask"], example_batch["prompt"], example_batch["actions"]),
+        example_batch=(
+            example_batch["sensors"],
+            example_batch["sensors_mask"],
+            example_batch["prompt"],
+            example_batch["actions"],
+        ),
     )
 
 
@@ -150,6 +154,17 @@ def main(_):
     # Make the basic dataset
     # We have to do this first, since we need to know how the dataset is set up before we can construct the model
     train_ds = make_base_dataset(**config.dataset_kwargs.to_dict(), train=True)
+
+    viz_datasets = {
+        k: make_trajectory_dataset(**viz_dataset_kwargs.to_dict(), train=False)
+        for k, viz_dataset_kwargs in config.viz_traj_datasets.items()
+    }
+    viz_dataset_iters = {k: v.iterator() for k, v in viz_datasets.items()}
+
+    viz_trajectories = {
+        k: [next(v_iter) for _ in range(config.viz_num_trajectories)]
+        for k, v_iter in viz_dataset_iters.items()
+    }
 
     # Construct the final dataset
     # We need to do this after the model is constructed, since we need to have a tokenizer
@@ -220,25 +235,17 @@ def main(_):
                     wandb.log(avg_info, step=i)
                 wandb_logs = []
 
-            if (i + 1) % config.eval_interval == 0:
-                print(model.predict(batch, action_dim=batch["action"].shape[-1]))
-                '''
-                eval_info = {}
-                eval_batch = next(gen_eval_it)
-                eval_info = model.eval_step(
-                    eval_batch, "eval/gen_", include_regular_stats=False
-                )
-
-                train_batch_for_eval = next(gen_train_it)
-                train_info = model.eval_step(train_batch_for_eval, "train/gen_")
-
-                if jax.process_index() == 0:
-                    wandb.log(
-                        eval_info | train_info,
-                        commit=False,
-                        step=i,
-                    )
-                '''
+            if (i + 1) % config.viz_interval == 0:
+                for viz_ds_name, trajectories in viz_trajectories.items():
+                    for j, trajectory in enumerate(trajectories):
+                        wandb.log(
+                            {
+                                f"critic_visualization_{viz_ds_name}_{j}": wandb.Image(
+                                    visualize_critic(model, trajectory)
+                                )
+                            },
+                            step=i,
+                        )
 
             if (i + 1) % config.save_interval == 0:
                 if config.save_path is not None:

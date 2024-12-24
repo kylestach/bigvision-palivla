@@ -14,6 +14,7 @@ from palivla.critic.train_state import EMATrainState
 from palivla.critic.train_step import train_step
 from palivla.model_components import ModelComponents
 from palivla.spec import ModuleSpec, OptimizerSpec
+from palivla.typing import Data
 
 
 def make_step_fn(sharding: ShardingMetadata):
@@ -67,7 +68,10 @@ class CriticModelComponents(ModelComponents):
     def train_step(self, batch: Any):
         # Tokenize the batch and build sequences
         sequences = self.sequence_builder.build_sequence(
-            batch, self.language_tokenizer, self.action_tokenizer
+            batch,
+            self.language_tokenizer,
+            self.action_tokenizer,
+            include_action_tokens=False,
         )
 
         batch["next_observation"] = batch["observation"]
@@ -101,3 +105,34 @@ class CriticModelComponents(ModelComponents):
             )
 
         return info
+
+    def predict(self, batch: Data, *, train: bool = False) -> Data:
+        # Tokenize the batch and build sequences
+        sequences = self.sequence_builder.build_sequence(
+            batch,
+            self.language_tokenizer,
+            self.action_tokenizer,
+            include_action_tokens=False,
+        )
+
+        # Shard the batch to devices
+        batch = {
+            "sensors": batch["observation"],
+            "sensors_mask": batch["observation"]["pad_mask_dict"],
+            "prompt": sequences["prompt"],
+            "action": batch["action"],
+        }
+        batch = self.sharding.mesh.local_data_to_global_array(batch)
+
+        with self.sharding.mesh.mesh, nn.logical_axis_rules([("act_batch", "fsdp")]):
+            _, critic_value, _ = self.sharding.mesh.sjit(
+                self.train_state.apply_fn, out_shardings=None
+            )(
+                {"params": self.train_state.params},
+                batch["sensors"],
+                batch["sensors_mask"],
+                batch["prompt"],
+                batch["action"],
+            )
+
+        return jax.device_get(critic_value)

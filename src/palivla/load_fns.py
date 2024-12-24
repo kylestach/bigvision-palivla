@@ -18,8 +18,7 @@ def load_paligemma_weights(
 ):
     from ml_collections import FrozenConfigDict
 
-    from big_vision.models.proj.paligemma.paligemma import \
-        load as load_paligemma
+    from big_vision.models.proj.paligemma.paligemma import load as load_paligemma
 
     if hf_repo is not None:
         import huggingface_hub

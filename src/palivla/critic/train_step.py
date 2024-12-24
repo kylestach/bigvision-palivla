@@ -74,9 +74,7 @@ def train_step(
             )
         )
 
-        loss = optax.softmax_cross_entropy(
-            critic_logits, critic_target_probs[:, None, :]
-        ).mean()
+        loss = optax.softmax_cross_entropy(critic_logits, critic_target_probs).mean()
         return loss, {
             "loss": loss,
             "q_target": jnp.mean(target_value),
