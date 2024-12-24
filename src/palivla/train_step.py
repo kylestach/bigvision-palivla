@@ -53,8 +53,6 @@ def step_fn(
 
     key, dropout_key = jax.random.split(key)
     grads, info = grad_fn(train_state.params, batch, dropout_key)
-    params, info["optimizer"] = train_state.apply_gradients_with_info(grads=grads)
-
-    info = info | train_state.opt_state.hyperparams
+    train_state, info["optimizer"] = train_state.apply_gradients_with_info(grads=grads)
 
     return train_state, info, key

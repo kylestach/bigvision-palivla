@@ -1,5 +1,6 @@
 from os import PathLike
 from typing import Any, Optional
+import cloudpickle
 from flax.training.train_state import TrainState as FlaxTrainState
 from flax.struct import field
 from flax import linen as nn
@@ -133,6 +134,11 @@ class TrainState(FlaxTrainState):
 
     def load_state(self, step: int, checkpoint_manager: ocp.CheckpointManager):
         return checkpoint_manager.restore(step, ocp.args.StandardRestore(self))
+
+    def get_params(self, *, use_ema_params: bool = False):
+        if use_ema_params:
+            return self.opt_state["ema"]
+        return self.params
 
     def apply_gradients_with_info(self, *, grads: jax.Array, **kwargs):
         updates, opt_state = self.tx.update(grads, self.opt_state, params=self.params)

@@ -10,18 +10,21 @@ def get_config(variant_config: str = None):
     num_train_steps = FieldReference(100000, int)
 
     model_config = get_default_config()
+
     if variant_config is not None:
         variant_config_kv_pairs = variant_config.split(",")
         variant_config_dict = {
             k: v for k, v in [pair.split("=") for pair in variant_config_kv_pairs]
         }
+    else:
+        variant_config_dict = {}
 
-        model_config["llm_spec"]["config"]["variant"] = variant_config_dict.get(
-            "llm", "smoke_test"
-        )
-        model_config["img_spec"]["config"]["variant"] = variant_config_dict.get(
-            "img", "S/14"
-        )
+    model_config["llm_spec"]["config"]["variant"] = variant_config_dict.get(
+        "llm", "smoke_test"
+    )
+    model_config["img_spec"]["config"]["variant"] = variant_config_dict.get(
+        "img", "S/14"
+    )
 
     return ConfigDict(
         {
@@ -60,7 +63,7 @@ def get_config(variant_config: str = None):
                 "kwargs": {
                     "optimizer": "sgd",
                     "num_train_steps": num_train_steps,
-                    "base_learning_rate": 1e-4,
+                    "base_learning_rate": 1e-3,
                 },
             },
             # Dataset settings

@@ -204,37 +204,23 @@ def main(_):
                 loss=f"{info['loss']:.4f}",
             )
 
+            if (i + 1) % config.eval_interval == 0:
+                eval_info = model.eval_step(batch)
+                if jax.process_index() == 0:
+                    wandb.log(eval_info, step=i + 1, commit=False)
+
             if (i + 1) % config.log_interval == 0:
                 avg_info = jax.tree.map(
                     lambda *xs: np.mean(np.stack(xs), axis=0), *wandb_logs
                 )
                 if jax.process_index() == 0:
-                    wandb.log(avg_info, step=i)
+                    wandb.log(avg_info, step=i + 1)
                 wandb_logs = []
-
-            if (i + 1) % config.eval_interval == 0:
-                print(model.predict(batch, action_dim=batch["action"].shape[-1]))
-                '''
-                eval_info = {}
-                eval_batch = next(gen_eval_it)
-                eval_info = model.eval_step(
-                    eval_batch, "eval/gen_", include_regular_stats=False
-                )
-
-                train_batch_for_eval = next(gen_train_it)
-                train_info = model.eval_step(train_batch_for_eval, "train/gen_")
-
-                if jax.process_index() == 0:
-                    wandb.log(
-                        eval_info | train_info,
-                        commit=False,
-                        step=i,
-                    )
-                '''
 
             if (i + 1) % config.save_interval == 0:
                 if config.save_path is not None:
                     checkpoint_save_manager.save(i + 1, args=model.save_args())
+
     if config.save_path is not None:
         checkpoint_save_manager.wait_until_finished()
 
