@@ -3,8 +3,8 @@ from typing import Any
 
 import jax
 import optax
+import orbax.checkpoint as ocp
 from flax.struct import dataclass, field
-
 from palivla.components.train_state import ShardingMetadata, TrainState
 from palivla.spec import OptimizerSpec
 from palivla.typing import Params
@@ -76,3 +76,12 @@ class EMATrainState(TrainState):
             sharding,
             rng,
         )
+
+    def save_args(self):
+        save_args = super().save_args()
+        args = {k: v for k, v in save_args.items()}
+        args["model_ema_params"] = ocp.args.StandardSave(
+            {"ema_params": self.ema_params}
+        )
+
+        return ocp.args.Composite(**args)

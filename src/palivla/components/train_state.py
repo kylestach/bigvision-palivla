@@ -84,6 +84,18 @@ class TrainState(FlaxTrainState):
             rng,
         )
 
+    def save_args(self):
+        args = {
+            "model_spec": ocp.args.JsonSave(self.model_spec.to_dict()),
+            "model_params": ocp.args.StandardSave({"params": self.params}),
+        }
+
+        if self.optimizer_spec is not None:
+            args["optimizer_spec"] = ocp.args.JsonSave(self.optimizer_spec.to_dict())
+            args["opt_state"] = ocp.args.StandardSave({"opt_state": self.opt_state})
+
+        return ocp.args.Composite(**args)
+
     def save_static(self, path: PathLike):
         with tf.io.gfile.GFile(path / "model_spec.json", "w") as f:
             f.write(self.model_spec.to_json())

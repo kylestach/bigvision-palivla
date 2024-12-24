@@ -16,7 +16,8 @@ from palivla.model_components import ModelComponents
 from palivla.spec import ModuleSpec, OptimizerSpec
 
 
-def make_step_fn(sharding: ShardingMetadata, **kwargs):
+def make_step_fn(sharding: ShardingMetadata, donate_train_state: bool = True, **kwargs):
+    donate_argnums = (0,) if donate_train_state else None
     return sharding.mesh.sjit(
         partial(train_step, **kwargs),
         in_shardings=(
@@ -30,7 +31,7 @@ def make_step_fn(sharding: ShardingMetadata, **kwargs):
             PartitionSpec("fsdp"),
             None,
         ),
-        donate_argnums=(0,),
+        donate_argnums=donate_argnums,
     )
 
 
@@ -38,10 +39,16 @@ class CriticModelComponents(ModelComponents):
     def __init__(self, *args, critic_train_step_kwargs={}, **kwargs):
         super().__init__(*args, **kwargs)
         self.train_step_fn = make_step_fn(
-            self.sharding, **critic_train_step_kwargs, train=True
+            self.sharding,
+            **critic_train_step_kwargs,
+            donate_train_state=True,
+            train=True,
         )
         self.eval_step_fn = make_step_fn(
-            self.sharding, **critic_train_step_kwargs, train=False
+            self.sharding,
+            **critic_train_step_kwargs,
+            donate_train_state=False,
+            train=False,
         )
 
     @classmethod
@@ -129,3 +136,6 @@ class CriticModelComponents(ModelComponents):
                 self.rng,
             )
         return info
+
+    def save_args(self):
+        return self.train_state.save_args()
