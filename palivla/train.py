@@ -13,6 +13,7 @@ from scalax.sharding import (
 )
 
 import wandb
+import datetime
 import numpy as np
 import os
 
@@ -178,9 +179,10 @@ def main(_):
         wandb.init(**wandb_kwargs)
         wandb.config.update(config.to_dict())
 
-        wandb.run.name = config.run_name if config.run_name else wandb.run.name
+        run_name = config.run_name if config.run_name else wandb.run.name
+        run_name = f'{run_name}_{datetime.now().strftime("%d%m%Y_%H%M%S")}'
 
-        run_name = wandb.run.name
+        wandb.run.name = run_name
     else:
         run_name = None
 

@@ -21,15 +21,17 @@ import numpy as np
 
 # get the next seven tokens after the begin of action token; otherwise, use zeros
 def extract_action_tokens(step_tokens, begin_of_action_token):
-    action_start_idx = jnp.argmax(step_tokens == begin_of_action_token)+1
+    action_starts = (step_tokens == begin_of_action_token).astype(jnp.int32)
+    first_action_start_idx = jnp.argmax(action_starts)+1 # first index of action token. will be 0+1 if none found
     
     action_tokens = lax.cond(
-        (action_start_idx == 1) | (action_start_idx + 7 > step_tokens.shape[0]),
+        (first_action_start_idx == 1) | (first_action_start_idx + 7 > step_tokens.shape[0]),
         lambda _: jnp.zeros(7, dtype=step_tokens.dtype),
-        lambda _: lax.dynamic_slice(step_tokens, (action_start_idx,), (7,)),
+        lambda _: lax.dynamic_slice(step_tokens, (first_action_start_idx,), (7,)),
         operand=None
+    
     )
-
+    
     return action_tokens
 
 # get the cot tokens (tokens btwn begin CoT token and begin action token)

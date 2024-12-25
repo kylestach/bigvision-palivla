@@ -493,6 +493,7 @@ class PaliVLATrainState:
                 restored_action_tokenizer_state.model,
                 language_tokenizer,
                 config["prompt_autoregressive"],
+                use_cot=config["use_cot"],
             ),
             mesh=mesh,
             data_sharding=data_sharding,

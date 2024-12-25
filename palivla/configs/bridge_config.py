@@ -50,6 +50,10 @@ def get_config():
                 "traj_transform_kwargs": {
                     "window_size": 1,
                     "action_horizon": 1,
+                    "task_augment_strategy": "delete_task_conditioning",
+                    "task_augment_kwargs": {
+                        "keep_image_prob": 0,
+                    },
                 },
                 "frame_transform_kwargs": {
                     "image_augment_kwargs": {},
