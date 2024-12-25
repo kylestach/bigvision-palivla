@@ -6,6 +6,7 @@ notebooks
 wandb/
 *.egg-info
 
+/orca
 /trained_tokenizers
 /models
 /checkpoints
