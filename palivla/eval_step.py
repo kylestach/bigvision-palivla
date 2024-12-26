@@ -176,8 +176,8 @@ def compute_gen_stats(
         out_tokens_np = np.asarray(gathered_out_tokens)
 
         lang_and_cot_strs = [
-            extract_cot_strs(tokens, prompt_tokens, tokenizer_config.begin_of_cot_token, tokenizer_config.begin_of_action_token, detokenize_lang_fn)
-            for prompt_tokens, tokens in zip(batch_tokens_np, out_tokens_np)
+            extract_cot_strs(step_out_tokens, step_prompt_tokens, tokenizer_config.begin_of_cot_token, tokenizer_config.begin_of_action_token, detokenize_lang_fn)
+            for step_out_tokens, step_prompt_tokens in zip(out_tokens_np, batch_tokens_np)
         ]
         cot_metrics = get_cot_table_metrics(lang_and_cot_strs)
 
