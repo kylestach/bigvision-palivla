@@ -23,7 +23,7 @@ class TrainingBatch:
     tokens_ar: jax.Array
     tokens_loss: jax.Array
     tokens_mask: jax.Array
-    gen_start: jax.Array | None = None
+    action_start_idx: jax.Array | None = None # refers to where the actions are in the GROUND TRUTH sequence
 
 
 @dataclass

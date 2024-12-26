@@ -20,14 +20,14 @@ import wandb
 import numpy as np
 
 # get the next seven tokens after the begin of action token; otherwise, use zeros
-def extract_action_tokens(step_tokens, begin_of_action_token):
-    action_starts = (step_tokens == begin_of_action_token).astype(jnp.int32)
+def extract_action_tokens(step_out_tokens, begin_of_action_token):
+    action_starts = (step_out_tokens == begin_of_action_token).astype(jnp.int32)
     first_action_start_idx = jnp.argmax(action_starts)+1 # first index of action token. will be 0+1 if none found
     
     action_tokens = lax.cond(
-        (first_action_start_idx == 1) | (first_action_start_idx + 7 > step_tokens.shape[0]),
-        lambda _: jnp.zeros(7, dtype=step_tokens.dtype),
-        lambda _: lax.dynamic_slice(step_tokens, (first_action_start_idx,), (7,)),
+        (first_action_start_idx == 1) | (first_action_start_idx + 7 > step_out_tokens.shape[0]),
+        lambda _: jnp.zeros(7, dtype=step_out_tokens.dtype),
+        lambda _: lax.dynamic_slice(step_out_tokens, (first_action_start_idx,), (7,)),
         operand=None
     
     )
@@ -35,7 +35,7 @@ def extract_action_tokens(step_tokens, begin_of_action_token):
     return action_tokens
 
 # get the cot tokens (tokens btwn begin CoT token and begin action token)
-def extract_cot_strs(step_tokens, masked_prompt_tokens, beg_cot_token, beg_action_token, detokenize_lang_fn):
+def extract_cot_strs(step_out_tokens, masked_prompt_tokens, beg_cot_token, beg_action_token, detokenize_lang_fn):
 
     # get prompt
     masked_prompt_tokens = np.array(masked_prompt_tokens)
@@ -46,10 +46,10 @@ def extract_cot_strs(step_tokens, masked_prompt_tokens, beg_cot_token, beg_actio
     prompt_str = tf.strings.reduce_join(detokenize_prompt, separator="").numpy().decode("utf-8")
 
     # get cot
-    step_tokens_np = np.array(step_tokens)
+    step_out_tokens_np = np.array(step_out_tokens)
 
     try:
-        action_start_idx = np.where(step_tokens_np == beg_action_token)[0][0]
+        action_start_idx = np.where(step_out_tokens_np == beg_action_token)[0][0]
     except IndexError:
         return prompt_str, "" 
     
@@ -57,7 +57,7 @@ def extract_cot_strs(step_tokens, masked_prompt_tokens, beg_cot_token, beg_actio
         return prompt_str, ""
 
     #the output sequence (step_tokens) directly starts from CoT, bc the prompt now includes the beg_cot_token
-    cot_tokens = step_tokens_np[:action_start_idx]
+    cot_tokens = step_out_tokens_np[:action_start_idx]
 
     detokenized_cot = detokenize_lang_fn(tf.convert_to_tensor(cot_tokens, dtype=tf.int32))
     cot_str = tf.strings.reduce_join(detokenized_cot, separator="").numpy().decode("utf-8")
@@ -88,36 +88,36 @@ def compute_gen_stats(
     Compute generative (rollout) statistics on a batch of data.
     """
 
-    def _split_tokens(tokens, mask, mask_ar, gen_start):
+    def _split_tokens(tokens, mask, mask_ar, action_start_idx):
         seq_len = tokens.shape[0]
         prompt = jnp.where(
-            jnp.arange(seq_len) < gen_start,
+            jnp.arange(seq_len) < action_start_idx,
             tokens,
             jnp.zeros_like(tokens),
         )
         prompt_mask = jnp.where(
-            jnp.arange(seq_len) < gen_start,
+            jnp.arange(seq_len) < action_start_idx,
             mask,
             jnp.zeros_like(mask),
         )
         prompt_ar = jnp.where(
-            jnp.arange(seq_len) < gen_start,
+            jnp.arange(seq_len) < action_start_idx,
             mask_ar,
             jnp.zeros_like(mask_ar),
         )
 
-        gen_start = jnp.argmax(tokens == tokenizer_config.begin_of_action_token)+1
+        action_start_idx = jnp.argmax(tokens == tokenizer_config.begin_of_action_token)+1
 
         gen, gen_mask = jax.lax.cond(
-            gen_start == 1,
+            action_start_idx == 1,
             lambda: (jnp.zeros_like(jnp.arange(seq_len)), jnp.zeros_like(jnp.arange(seq_len)).astype(mask.dtype)),
             lambda: (
                 jnp.where(
-                        jnp.roll(mask, -gen_start, axis=0),
-                        jnp.roll(tokens, -gen_start, axis=0),
+                        jnp.roll(mask, -action_start_idx, axis=0),
+                        jnp.roll(tokens, -action_start_idx, axis=0),
                         0,
                       ),
-                jnp.roll(mask, -gen_start, axis=0).astype(mask.dtype)
+                jnp.roll(mask, -action_start_idx, axis=0).astype(mask.dtype)
             ),
         )
          
@@ -132,7 +132,7 @@ def compute_gen_stats(
             "gen_ar": gen_ar,
         }
 
-    split_tokens = jax.vmap(_split_tokens)(batch.tokens, batch.tokens_mask, batch.tokens_ar, batch.gen_start)
+    split_tokens = jax.vmap(_split_tokens)(batch.tokens, batch.tokens_mask, batch.tokens_ar, batch.action_start_idx)
 
     rollout_batch = RolloutBatch(
         sensor_data=batch.sensors,
@@ -165,7 +165,7 @@ def compute_gen_stats(
         )
     
     extract_action_tokens_vmap = jax.vmap(extract_action_tokens, in_axes=(0, None)) # only map over batch argument
-    out_action_tokens = extract_action_tokens_vmap(out_tokens, tokenizer_config.begin_of_action_token)
+    out_action_tokens = extract_action_tokens_vmap(out_tokens, tokenizer_config.begin_of_action_token) # check that this actually contains actions
 
     if use_cot:
         # batch.tokens refers to the masked prompt tokens, so we'd have to add batch.cot_tokens to get the ground truth

@@ -128,7 +128,7 @@ def main(_):
                 tokens_ar=batch["mask_ar"],
                 tokens_loss=batch.get("mask_loss", None),
                 tokens_mask=batch["mask_input"],
-                gen_start=batch.get("gen_start", None),
+                action_start_idx=batch.get("action_start_idx", None),
             )
         )
 
