@@ -29,10 +29,13 @@ def loss_fn(
     train: bool,
     regress_to_mc_returns: bool = False,
     train_with_sarsa: bool = False,
+    zero_out_actions: bool = False,
     model: PaliVLACritic,
     ema_params: Params,
 ) -> Tuple[jnp.ndarray, Dict[str, Any]]:
     rng, target_key, critic_key = jax.random.split(rng, 3)
+    if zero_out_actions:
+        batch["next_action"] = jnp.zeros_like(batch["next_action"])
     if regress_to_mc_returns:
         target_value = batch["mc_return"]
     else:
@@ -113,6 +116,7 @@ def train_step(
     train: bool,
     regress_to_mc_returns: bool = False,
     train_with_sarsa: bool = False,
+    zero_out_actions: bool = False,
 ) -> Tuple[TrainState, Dict[str, Any]]:
     grad_fn = jax.grad(
         partial(
@@ -122,6 +126,7 @@ def train_step(
             ema_params=train_state.opt_state["ema"],
             regress_to_mc_returns=regress_to_mc_returns,
             train_with_sarsa=train_with_sarsa,
+            zero_out_actions=zero_out_actions,
         ),
         has_aux=True,
     )

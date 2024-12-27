@@ -121,6 +121,7 @@ def get_config():
             "critic_train_step_kwargs": {
                 "regress_to_mc_returns": False,
                 "train_with_sarsa": False,
+                "zero_out_actions": False,
             },
         }
     )
