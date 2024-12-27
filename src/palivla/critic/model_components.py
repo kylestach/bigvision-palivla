@@ -179,7 +179,7 @@ class CriticModelComponents(ModelComponents):
                 batch["action"],
             )
 
-        return jax.device_get(critic_value)
+        return self.data_gather_fn(critic_value)
 
     def eval_step(self, batch: dict):
         batch = self.prepare_batch_for_train_step(batch)

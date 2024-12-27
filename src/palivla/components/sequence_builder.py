@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from os import PathLike
 
 import cloudpickle
+import einops
 import numpy as np
 import tensorflow as tf
 from transformers import AutoTokenizer
@@ -107,3 +108,97 @@ class SequenceBuilder:
                 ),
             },
         }
+
+    def get_actions(
+        self,
+        tokens: np.ndarray,
+        language_tokenizer: AutoTokenizer,
+        action_tokenizer: ActionTokenizer,
+        *,
+        boa_is_prompt: bool = False,
+        action_dim: int | None,
+        boa_id: int | None = None,
+        eos_id: int | None = None,
+        act0_id: int | None = None,
+    ):
+        boa_id = boa_id or language_tokenizer.encode("<begin_of_action>")[0]
+        eos_id = eos_id or language_tokenizer.encode("<eos>")[0]
+        act0_id = act0_id or language_tokenizer.encode("<act0>")[0]
+
+        # Find the beginning of the action
+        if boa_is_prompt:
+            start_idx = 0
+        else:
+            try:
+                start_idx = np.where(tokens == boa_id)[0][0] + 1
+            except IndexError:
+                return None
+
+        # Find the end of the action
+        try:
+            end_idx = np.where(tokens == eos_id)[0][0]
+        except IndexError:
+            return None
+
+        # Get the action
+        action = tokens[start_idx:end_idx] - act0_id
+        try:
+            return action_tokenizer.detokenize(action, action_dim=action_dim)
+        except ValueError:
+            return None
+
+    def batch_get_actions(
+        self,
+        tokens,
+        language_tokenizer: AutoTokenizer,
+        action_tokenizer: ActionTokenizer,
+        *,
+        boa_is_prompt: bool = False,
+        action_dim: int,
+    ):
+        boa_id = language_tokenizer.encode("<begin_of_action>")[0]
+        eos_id = language_tokenizer.encode("<eos>")[0]
+        act0_id = language_tokenizer.encode("<act0>")[0]
+
+        actions = [
+            self.get_actions(
+                tokens[i],
+                language_tokenizer,
+                action_tokenizer,
+                boa_is_prompt=boa_is_prompt,
+                boa_id=boa_id,
+                eos_id=eos_id,
+                act0_id=act0_id,
+                action_dim=action_dim,
+            )
+            for i in range(len(tokens))
+        ]
+
+        # Get the shape of a valid action
+        action_horizon = 0
+        for action in actions:
+            if action is not None:
+                action_horizon = max(action_horizon, action.shape[0])
+                action_dim = action.shape[1]
+                break
+
+        actions_mask = np.array([action is not None for action in actions])
+        actions = np.stack(
+            [
+                (
+                    np.pad(
+                        action,
+                        ((0, action_horizon - action.shape[0]), (0, 0)),
+                        constant_values=np.nan,
+                    )
+                    if action is not None
+                    else np.zeros((action_horizon, action_dim))
+                )
+                for action in actions
+            ]
+        )
+        actions_mask = einops.repeat(
+            actions_mask, "b -> b p a", p=action_horizon, a=action_dim
+        ) & ~np.isnan(actions)
+
+        return actions, actions_mask
