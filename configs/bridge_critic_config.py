@@ -12,12 +12,19 @@ def get_config():
 
     model_config = get_default_config()
 
-    model_config["num_critic_bins"] = 256
+    model_config["num_critic_bins"] = 128
     model_config["q_min"] = 0.0
     model_config["q_max"] = 1.0
-    model_config["critic_sigma"] = 0.01
-    model_config["discount"] = 0.5
-    model_config["target_ema_rate"] = 0.5
+    # set to default value suggested by the paper
+    # https://arxiv.org/pdf/2403.03950.pdf
+    # model_config["critic_sigma"] = 0.01
+    model_config["critic_sigma"] = (
+        0.75
+        * (model_config["q_max"] - model_config["q_min"])
+        / model_config["num_critic_bins"]
+    )
+    model_config["discount"] = 0.98
+    model_config["target_ema_rate"] = 0.005
 
     return ConfigDict(
         {

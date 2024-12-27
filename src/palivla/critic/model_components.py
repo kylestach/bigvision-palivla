@@ -31,7 +31,7 @@ def make_train_step_fn(sharding: ShardingMetadata, **kwargs):
             PartitionSpec("fsdp"),
             None,
         ),
-        donate_argnums=donate_argnums,
+        donate_argnums=(0,),
     )
 
 
