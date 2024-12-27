@@ -4,7 +4,8 @@ import chex
 import jax
 import jax.numpy as jnp
 import optax
-from flax.training.train_state import TrainState
+
+from palivla.components.train_state import TrainState
 
 
 def compute_stats(

@@ -43,7 +43,7 @@ def ema_params(rate: float):
         return params
 
     def _update_fn(updates, state, params):
-        return updates, optax.incremental_update(state, params, rate)
+        return updates, optax.incremental_update(params, state, rate)
 
     return optax.GradientTransformation(
         init=_init_fn,

@@ -57,10 +57,11 @@ def visualize_critic(critic: CriticModelComponents, trajectory: Data) -> Dict:
 
     # Second row - task_completed plot spanning full width
     ax = plt.subplot(2, 1, 2)
-    ax.plot(critic_values)
+    ax.plot(critic_values, label="Predicted $Q(s, a)$")
+    ax.plot(trajectory["mc_return"], label="Monte-Carlo $Q(s, a)$")
     ax.set_xlabel("Time step")
     ax.set_ylabel("$Q(s, a)$")
-    # ax.grid(True)
+    ax.legend()
 
     plt.tight_layout()
 

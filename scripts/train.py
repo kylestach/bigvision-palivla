@@ -22,6 +22,7 @@ from scalax.sharding import FSDPShardingRule, MeshShardingHelper
 from transformers import AutoTokenizer
 
 import wandb
+import palivla.load_fns
 from palivla.dataset import make_base_dataset
 from palivla.model_components import ModelComponents
 from palivla.optimizer import make_optimizer

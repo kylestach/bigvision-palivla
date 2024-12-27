@@ -71,6 +71,7 @@ def get_config(variant_config: str | None = None):
                     "optimizer": "sgd",
                     "num_train_steps": num_train_steps,
                     "base_learning_rate": 1e-3,
+                    "ema_rate": 0.005,
                 },
             },
             # Dataset settings
