@@ -5,9 +5,8 @@ import chex
 import jax
 import jax.numpy as jnp
 import optax
-from palivla.critic.train_state import EMATrainState
+from palivla.components.train_state import TrainState
 from palivla.critic.vla_critic import PaliVLACritic
-from palivla.optimizer import components_by_label
 from palivla.typing import Data, Params
 
 
@@ -108,19 +107,19 @@ def loss_fn(
 
 
 def train_step(
-    train_state: EMATrainState,
+    train_state: TrainState,
     batch: Data,
     key: jax.random.PRNGKey,
     train: bool,
     regress_to_mc_returns: bool = False,
     train_with_sarsa: bool = False,
-) -> Tuple[EMATrainState, Dict[str, Any]]:
+) -> Tuple[TrainState, Dict[str, Any]]:
     grad_fn = jax.grad(
         partial(
             loss_fn,
             model=train_state.model,
             train=train,
-            ema_params=train_state.ema_params,
+            ema_params=train_state.opt_state["ema"],
             regress_to_mc_returns=regress_to_mc_returns,
             train_with_sarsa=train_with_sarsa,
         ),
@@ -130,23 +129,6 @@ def train_step(
     key, dropout_key = jax.random.split(key)
     grads, info = grad_fn(train_state.params, batch, dropout_key)
 
-    if train:
-        train_state = train_state.apply_gradients(
-            grads=grads,
-        )
-
-    info = info | train_state.opt_state.hyperparams
-
-    def _norm_info(values, prefix):
-        components = components_by_label(values)
-        result = {f"{prefix}_{k}": optax.global_norm(v) for k, v in components.items()}
-        result[prefix] = jnp.sqrt(sum(x**2 for x in result.values()))
-        return result
-
-    info = (
-        info
-        | _norm_info(grads, "norm/grad")
-        | _norm_info(train_state.params, "norm/param")
-    )
+    train_state, info["optimizer"] = train_state.apply_gradients_with_info(grads=grads)
 
     return train_state, info, key

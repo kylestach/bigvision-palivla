@@ -9,6 +9,7 @@ placeholder(int)._value
 def get_config():
     num_train_steps = FieldReference(100000, int)
     data_dir = FieldReference("/data/rlds/", str)
+    ema_rate = FieldReference(0.005, float)
 
     model_config = get_default_config()
 
@@ -25,6 +26,7 @@ def get_config():
     )
     model_config["discount"] = 0.98
     model_config["target_ema_rate"] = 0.005
+    model_config["target_ema_rate"] = ema_rate
 
     return ConfigDict(
         {
@@ -73,7 +75,8 @@ def get_config():
                 "kwargs": {
                     "optimizer": "sgd",
                     "num_train_steps": num_train_steps,
-                    "base_learning_rate": 1e-4,
+                    "base_learning_rate": 1e-3,
+                    "ema_rate": ema_rate,
                 },
             },
             # Dataset settings

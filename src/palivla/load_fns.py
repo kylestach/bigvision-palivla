@@ -6,7 +6,7 @@ import jax.numpy as jnp
 from big_vision.utils import Registry
 from palivla.model_components import ModelComponents
 from palivla.typing import Params
-
+from ml_collections import FrozenConfigDict
 
 @Registry.register("load.paligemma_weights")
 def load_paligemma_weights(
@@ -16,8 +16,6 @@ def load_paligemma_weights(
     path: str | None,
     param_dtype: jnp.dtype = jnp.float32,
 ):
-    from ml_collections import FrozenConfigDict
-
     from big_vision.models.proj.paligemma.paligemma import load as load_paligemma
 
     if hf_repo is not None:

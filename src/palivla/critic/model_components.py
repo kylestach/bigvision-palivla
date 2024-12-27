@@ -9,8 +9,7 @@ from transformers import AutoTokenizer
 
 from palivla.components.action_tokenizer import ActionTokenizer
 from palivla.components.sequence_builder import SequenceBuilder
-from palivla.components.train_state import ShardingMetadata
-from palivla.critic.train_state import EMATrainState
+from palivla.components.train_state import ShardingMetadata, TrainState
 from palivla.critic.train_step import train_step, loss_fn
 from palivla.model_components import ModelComponents
 from palivla.spec import ModuleSpec, OptimizerSpec
@@ -39,11 +38,11 @@ def make_eval_step_fn(sharding: ShardingMetadata, **kwargs):
     def eval_step(train_state, batch, rng):
         rng, key = jax.random.split(rng)
         _, info = loss_fn(
-            train_state.ema_params,
+            train_state.opt_state["ema"],
             batch,
             key,
             model=train_state.model,
-            ema_params=train_state.ema_params,
+            ema_params=train_state.opt_state["ema"],
             **kwargs,
         )
         return info, key
@@ -95,7 +94,7 @@ class CriticModelComponents(ModelComponents):
             sequence_builder=sequence_builder,
             sharding=sharding_metadata,
             rng=rng,
-            train_state=EMATrainState.initialize(
+            train_state=TrainState.initialize(
                 model_spec=model_spec,
                 optimizer_spec=optimizer_spec,
                 example_batch=example_batch,
@@ -179,7 +178,7 @@ class CriticModelComponents(ModelComponents):
                 batch["action"],
             )
 
-        return jax.device_get(critic_value)
+        return self.data_gather_fn(critic_value)
 
     def eval_step(self, batch: dict):
         batch = self.prepare_batch_for_train_step(batch)

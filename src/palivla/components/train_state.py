@@ -2,8 +2,9 @@ from os import PathLike
 from typing import Any, Optional
 
 import cloudpickle
-import jax
 import jax.experimental.multihost_utils
+import jax.numpy as jnp
+import optax
 import orbax.checkpoint as ocp
 import tensorflow as tf
 from flax import linen as nn
@@ -11,6 +12,7 @@ from flax.struct import field
 from flax.training.train_state import TrainState as FlaxTrainState
 from scalax.sharding import MeshShardingHelper, PartitionSpec, ShardingRule
 
+from palivla.optimizer import components_by_label
 from palivla.spec import ModuleSpec, OptimizerSpec
 
 
@@ -134,3 +136,35 @@ class TrainState(FlaxTrainState):
 
     def load_state(self, step: int, checkpoint_manager: ocp.CheckpointManager):
         return checkpoint_manager.restore(step, ocp.args.StandardRestore(self))
+
+    def get_params(self, *, use_ema_params: bool = False):
+        if use_ema_params:
+            return self.opt_state["ema"]
+        return self.params
+
+    def apply_gradients_with_info(self, *, grads: jax.Array, **kwargs):
+        updates, opt_state = self.tx.update(grads, self.opt_state, params=self.params)
+        params = optax.apply_updates(self.params, updates)
+        self.apply_gradients
+
+        def _norm_info(values, prefix):
+            components = components_by_label(values)
+            result = {
+                f"{prefix}_{k}": optax.global_norm(v) for k, v in components.items()
+            }
+            result[prefix] = jnp.sqrt(sum(x**2 for x in result.values()))
+            return result
+
+        info = (
+            self.opt_state["optimizer"].hyperparams
+            | _norm_info(grads, "grad_norm")
+            | _norm_info(updates, "update_norm")
+            | _norm_info(self.params, "param_norm")
+        )
+
+        return (
+            self.replace(
+                params=params, opt_state=opt_state, step=self.step + 1, **kwargs
+            ),
+            info,
+        )

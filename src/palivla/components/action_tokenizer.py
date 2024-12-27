@@ -3,7 +3,7 @@ from os import PathLike
 import cloudpickle
 import numpy as np
 import tensorflow as tf
-from einops import rearrange
+from einops import rearrange, EinopsError
 
 from big_vision.utils import Registry
 
@@ -67,5 +67,8 @@ class BinActionTokenizer(ActionTokenizer):
             + self.min_action_value
         )
         data = data[..., :action_dim]
-        data = rearrange(data, "... (p a) -> ... p a", a=action_dim)
+        try:
+            data = rearrange(data, "... (p a) -> ... p a", a=action_dim)
+        except EinopsError:
+            raise ValueError(f"Could not detokenize data with shape {data.shape} into {action_dim} dimensions")
         return data
