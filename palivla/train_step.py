@@ -104,6 +104,12 @@ def compute_action_metrics(
             jnp.mean(jnp.square(tokenization_error), axis=1), "tok_l2", action_dim
         ),
         **stats_for_metric(
+            jnp.mean(decoded_actions_gt, axis=1), "gt_action_mean", action_dim
+        ),
+        **stats_for_metric(
+            jnp.mean(decoded_actions, axis=1), "pred_action_mean", action_dim
+        ),
+        **stats_for_metric(
             pred_action_tokens == gt_action_tokens, "acc", tokenizer_config.num_action_tokens
         ),
     } | (

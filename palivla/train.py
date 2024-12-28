@@ -128,6 +128,7 @@ def main(_):
                 tokens_ar=batch["mask_ar"],
                 tokens_loss=batch.get("mask_loss", None),
                 tokens_mask=batch["mask_input"],
+                gen_start_idx=batch.get("gen_start_idx", None),
                 action_start_idx=batch.get("action_start_idx", None),
             )
         )
@@ -236,7 +237,7 @@ def main(_):
                 if jax.process_index() == 0:
                     wandb.log(
                         eval_info | train_info,
-                        commit=False,
+                        commit=True,
                         step=i
                     )
 

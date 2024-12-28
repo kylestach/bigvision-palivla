@@ -23,6 +23,7 @@ class TrainingBatch:
     tokens_ar: jax.Array
     tokens_loss: jax.Array
     tokens_mask: jax.Array
+    gen_start_idx: jax.Array | None = None # refers to where the prompt ends in the ground truth sequence. either CoT token or action token idx
     action_start_idx: jax.Array | None = None # refers to where the actions are in the GROUND TRUTH sequence
 
 

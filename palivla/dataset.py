@@ -234,7 +234,7 @@ def make_frame_transform(
 
             if generation:
                 data = data | tokenizer.prepare_tokens_for_generation(
-                    data, language_token_instructions, cot_tokens
+                    data, language_token_instructions, cot_tokens, training=True
                 )
             else:
                 data = data | tokenizer.prepare_tokens_for_training(

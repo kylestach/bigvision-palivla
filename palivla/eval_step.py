@@ -11,6 +11,7 @@ from functools import partial
 from palivla.tokenizer import Tokenizer
 from palivla.train_step import compute_action_metrics, compute_stats
 from palivla.palivla_types import TrainingBatch, RolloutBatch
+from palivla.cot_utils import extract_action_tokens, extract_cot_strs, get_cot_table_metrics, viz_cot
 
 from jax.sharding import PartitionSpec
 from scalax.sharding import MeshShardingHelper
@@ -18,59 +19,6 @@ from scalax.sharding import MeshShardingHelper
 import tensorflow as tf
 import wandb
 import numpy as np
-
-# get the next seven tokens after the begin of action token; otherwise, use zeros
-def extract_action_tokens(step_out_tokens, begin_of_action_token):
-    action_starts = (step_out_tokens == begin_of_action_token).astype(jnp.int32)
-    first_action_start_idx = jnp.argmax(action_starts)+1 # first index of action token. will be 0+1 if none found
-    
-    action_tokens = lax.cond(
-        (first_action_start_idx == 1) | (first_action_start_idx + 7 > step_out_tokens.shape[0]),
-        lambda _: jnp.zeros(7, dtype=step_out_tokens.dtype),
-        lambda _: lax.dynamic_slice(step_out_tokens, (first_action_start_idx,), (7,)),
-        operand=None
-    
-    )
-    
-    return action_tokens
-
-# get the cot tokens (tokens btwn begin CoT token and begin action token)
-def extract_cot_strs(step_out_tokens, masked_prompt_tokens, beg_cot_token, beg_action_token, detokenize_lang_fn):
-
-    # get prompt
-    masked_prompt_tokens = np.array(masked_prompt_tokens)
-    first_zero_idx = np.where(masked_prompt_tokens == 0)[0][0] if 0 in masked_prompt_tokens else len(masked_prompt_tokens)
-    prompt_tokens = masked_prompt_tokens[:first_zero_idx]
-
-    detokenize_prompt = detokenize_lang_fn(tf.convert_to_tensor(prompt_tokens, dtype=tf.int32))
-    prompt_str = tf.strings.reduce_join(detokenize_prompt, separator="").numpy().decode("utf-8")
-
-    # get cot
-    step_out_tokens_np = np.array(step_out_tokens)
-
-    try:
-        action_start_idx = np.where(step_out_tokens_np == beg_action_token)[0][0]
-    except IndexError:
-        return prompt_str, "" 
-    
-    if action_start_idx<=0:
-        return prompt_str, ""
-
-    #the output sequence (step_tokens) directly starts from CoT, bc the prompt now includes the beg_cot_token
-    cot_tokens = step_out_tokens_np[:action_start_idx]
-
-    detokenized_cot = detokenize_lang_fn(tf.convert_to_tensor(cot_tokens, dtype=tf.int32))
-    cot_str = tf.strings.reduce_join(detokenized_cot, separator="").numpy().decode("utf-8")
-
-    return prompt_str, cot_str 
-
-def get_cot_table_metrics(lang_and_cot_strs):
-    table = wandb.Table(columns=["GT Language Label", "Predicted CoT"])
-    for lang_str, cot_str in lang_and_cot_strs:
-        table.add_data(lang_str, cot_str)
-    dct = {"CoT Outputs": table}
-    return dct
-
 
 def compute_gen_stats(
     decode_fn,
@@ -88,39 +36,31 @@ def compute_gen_stats(
     Compute generative (rollout) statistics on a batch of data.
     """
 
-    def _split_tokens(tokens, mask, mask_ar, action_start_idx):
+    def _split_tokens(tokens, mask, mask_ar, gen_start_idx, action_start_idx):
         seq_len = tokens.shape[0]
         prompt = jnp.where(
-            jnp.arange(seq_len) < action_start_idx,
+            jnp.arange(seq_len) < gen_start_idx,
             tokens,
             jnp.zeros_like(tokens),
         )
         prompt_mask = jnp.where(
-            jnp.arange(seq_len) < action_start_idx,
+            jnp.arange(seq_len) < gen_start_idx,
             mask,
             jnp.zeros_like(mask),
         )
         prompt_ar = jnp.where(
-            jnp.arange(seq_len) < action_start_idx,
+            jnp.arange(seq_len) < gen_start_idx,
             mask_ar,
             jnp.zeros_like(mask_ar),
         )
 
-        action_start_idx = jnp.argmax(tokens == tokenizer_config.begin_of_action_token)+1
-
-        gen, gen_mask = jax.lax.cond(
-            action_start_idx == 1,
-            lambda: (jnp.zeros_like(jnp.arange(seq_len)), jnp.zeros_like(jnp.arange(seq_len)).astype(mask.dtype)),
-            lambda: (
-                jnp.where(
-                        jnp.roll(mask, -action_start_idx, axis=0),
-                        jnp.roll(tokens, -action_start_idx, axis=0),
-                        0,
-                      ),
-                jnp.roll(mask, -action_start_idx, axis=0).astype(mask.dtype)
-            ),
+        # we will always be able to find an action token, bc this is ground truth
+        gen = jnp.where(
+            jnp.roll(mask, -action_start_idx, axis=0),
+            jnp.roll(tokens, -action_start_idx, axis=0),
+            0,
         )
-         
+        gen_mask = jnp.roll(mask, -action_start_idx, axis=0).astype(mask.dtype)
         gen_ar = jnp.ones_like(gen_mask)
 
         return {
@@ -132,7 +72,7 @@ def compute_gen_stats(
             "gen_ar": gen_ar,
         }
 
-    split_tokens = jax.vmap(_split_tokens)(batch.tokens, batch.tokens_mask, batch.tokens_ar, batch.action_start_idx)
+    split_tokens = jax.vmap(_split_tokens)(batch.tokens, batch.tokens_mask, batch.tokens_ar, batch.gen_start_idx, batch.action_start_idx)
 
     rollout_batch = RolloutBatch(
         sensor_data=batch.sensors,
@@ -163,23 +103,12 @@ def compute_gen_stats(
             tokenizer_config=tokenizer_config,
             log_segment_prefix=prefix,
         )
-    
-    extract_action_tokens_vmap = jax.vmap(extract_action_tokens, in_axes=(0, None)) # only map over batch argument
-    out_action_tokens = extract_action_tokens_vmap(out_tokens, tokenizer_config.begin_of_action_token) # check that this actually contains actions
 
     if use_cot:
-        # batch.tokens refers to the masked prompt tokens, so we'd have to add batch.cot_tokens to get the ground truth
-        gathered_batch_tokens = multihost_utils.process_allgather(batch.tokens)
-        gathered_out_tokens = multihost_utils.process_allgather(out_tokens)
-
-        batch_tokens_np = np.asarray(gathered_batch_tokens)
-        out_tokens_np = np.asarray(gathered_out_tokens)
-
-        lang_and_cot_strs = [
-            extract_cot_strs(step_out_tokens, step_prompt_tokens, tokenizer_config.begin_of_cot_token, tokenizer_config.begin_of_action_token, detokenize_lang_fn)
-            for step_out_tokens, step_prompt_tokens in zip(out_tokens_np, batch_tokens_np)
-        ]
-        cot_metrics = get_cot_table_metrics(lang_and_cot_strs)
+        extract_action_tokens_vmap = jax.vmap(extract_action_tokens, in_axes=(0, None)) # only map over batch argument
+        out_action_tokens = extract_action_tokens_vmap(out_tokens, tokenizer_config.begin_of_action_token) # check that this actually contains actions
+    else:
+        out_action_tokens = out_tokens # all generated tokens are action tokens if we don't use chain of thought
 
     action_metrics = mesh.sjit(
         _compute_action_metrics_shim,
@@ -191,12 +120,29 @@ def compute_gen_stats(
         batch.actions,
     )
 
-    action_metrics = jax.device_get(action_metrics)
+    metrics = jax.device_get(action_metrics)
 
     if use_cot:
-        return {**action_metrics, **cot_metrics}
+        # batch.tokens refers to the masked prompt tokens, so we'd have to add batch.cot_tokens to get the ground truth
+        gathered_batch_tokens = multihost_utils.process_allgather(batch.tokens)
+        gathered_batch_images = multihost_utils.process_allgather(batch.sensors)['image_primary']
+        gathered_out_tokens = multihost_utils.process_allgather(out_tokens)
+
+        batch_tokens_np = np.asarray(gathered_batch_tokens)
+        out_tokens_np = np.asarray(gathered_out_tokens)
+
+        lang_and_cot_strs = [
+            extract_cot_strs(step_out_tokens, step_prompt_tokens, tokenizer_config.begin_of_action_token, detokenize_lang_fn)
+            for step_out_tokens, step_prompt_tokens in zip(out_tokens_np, batch_tokens_np)
+        ]
+
+        # now visualize just one of the chain of thoughts 
+        viz_metrics = viz_cot(image=gathered_batch_images[0], lang_str=lang_and_cot_strs[0][0], reasoning_str=lang_and_cot_strs[0][1])
+        cot_metrics = get_cot_table_metrics(lang_and_cot_strs)
+        metrics = metrics | cot_metrics
+        metrics = metrics | viz_metrics
     
-    return action_metrics
+    return metrics
 
 
 def compute_eval_stats(

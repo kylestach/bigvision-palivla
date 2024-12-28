@@ -286,12 +286,15 @@ class Tokenizer:
 
         return prepared_tokens
 
-    # this should really be for prepare_tokens_for_eval
-    # for generation, we assume that data doesn't contain any action data at all, so there's no ground truth to compare to
-    def prepare_tokens_for_generation(self, data, language_token_instructions, cot_tokens):
-        # tokenize everything first -- only used to determine action start idx
-        all_tokens = self.prepare_tokens_for_training(data, language_token_instructions, cot_tokens)['tokens']
-        action_start_idx = tf.argmax(all_tokens == self.config.begin_of_action_token, axis=-1) + 1
+    
+    def prepare_tokens_for_generation(self, data, language_token_instructions, cot_tokens=None, training=True):
+        prepared_tokens = {} 
+
+        if training:
+            # tokenize everything first -- only used to determine action start idx
+            all_tokens = self.prepare_tokens_for_training(data, language_token_instructions, cot_tokens)['tokens']
+            action_start_idx = tf.argmax(all_tokens == self.config.begin_of_action_token, axis=-1) + 1
+            prepared_tokens['action_start_idx'] = action_start_idx
 
         # tokenize only prompt for generation, as usual
         tokens = {
@@ -304,11 +307,17 @@ class Tokenizer:
                 tokens, include_keys=include_keys
         )
 
-        prepared_tokens = {
+        if cot_tokens is not None:
+            gen_start_idx = tf.argmax(tokens==self.config.begin_of_cot_token, axis=-1) + 1
+        else:
+            gen_start_idx = tf.argmax(tokens==self.config.begin_of_action_token, axis=-1) + 1
+
+
+        prepared_tokens = prepared_tokens | {
             "tokens": tokens,
             "mask_ar": mask_ar,
             "mask_input": tokens != self.config.pad_token,
-            "action_start_idx": action_start_idx,
+            "gen_start_idx": gen_start_idx,
         }
 
         return prepared_tokens
