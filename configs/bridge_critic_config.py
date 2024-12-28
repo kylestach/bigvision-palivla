@@ -70,13 +70,46 @@ def get_config():
             # Model
             "model_config": model_config,
             # Optimizer settings
+            # "optimizer": {
+            #     "name": "optimizer.default_optimizer",
+            #     "kwargs": {
+            #         "optimizer": "sgd",
+            #         "num_train_steps": num_train_steps,
+            #         "base_learning_rate": 1e-3,
+            #         "ema_rate": ema_rate,
+            #         "img_optimizer_kwargs": {
+            #             "weight_decay": 0.0,
+            #         },
+            #     },
+            # },
             "optimizer": {
                 "name": "optimizer.default_optimizer",
                 "kwargs": {
-                    "optimizer": "sgd",
+                    "optimizer": "adamw",
                     "num_train_steps": num_train_steps,
-                    "base_learning_rate": 1e-3,
+                    "base_learning_rate": 5e-5,
                     "ema_rate": ema_rate,
+                    "llm_optimizer_kwargs": {
+                        "init_learning_rate": 0,
+                        "learning_rate": 5e-5,
+                        "warmup_steps": 500,
+                        "weight_decay": 5e-6,
+                        "grad_norm_clip": 10.0,
+                    },
+                    "embed_optimizer_kwargs": {
+                        "init_learning_rate": 0,
+                        "learning_rate": 5e-5,
+                        "warmup_steps": 100,
+                        "weight_decay": 0.0,
+                        "grad_norm_clip": 10.0,
+                    },
+                    "img_optimizer_kwargs": {
+                        "init_learning_rate": 0,
+                        "learning_rate": 5e-5,
+                        "warmup_steps": 500,
+                        "weight_decay": 5e-6,
+                        "grad_norm_clip": 10.0,
+                    },
                 },
             },
             # Dataset settings
