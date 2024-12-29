@@ -22,7 +22,6 @@ from absl import app, flags
 from absl import logging as absl_logging
 from flax.core.frozen_dict import freeze
 from ml_collections import ConfigDict, config_flags
-from palivla.model_components import ModelComponents
 import palivla.load_fns
 from palivla.dataset import make_base_dataset, make_trajectory_dataset
 from palivla.optimizer import make_optimizer
@@ -160,7 +159,7 @@ def main(_):
     if config.resume_checkpoint_dir != "":
         # Load the model from a checkpoint
         example_batch = get_example_batch()
-        model = ModelComponents.load_static(
+        model = CriticModelComponents.load_static(
             Path(config.resume_checkpoint_dir) / str(config.resume_checkpoint_step),
             sharding_metadata,
             example_batch=example_batch,
