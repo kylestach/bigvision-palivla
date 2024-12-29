@@ -69,10 +69,8 @@ class PaliVLAModel(nn.Module):
     target_key_order: Sequence[str]
 
     def setup(self):
-        self.llm: GemmaModel = ModuleSpec.from_dict(self.llm_spec).instantiate(
-            name="llm"
-        )
-        self.image: ViTModel = ModuleSpec.from_dict(self.img_spec).instantiate(
+        self.llm: GemmaModel = self.llm_spec.instantiate(name="llm")
+        self.image: ViTModel = self.img_spec.instantiate(
             name="img", num_classes=self.llm.embdim
         )
 

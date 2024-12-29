@@ -110,8 +110,8 @@ def make_optimizer(
         return optax.warmup_cosine_decay_schedule(
             init_learning_rate,
             learning_rate,
-            warmup_steps,
-            num_train_steps - warmup_steps,
+            min(warmup_steps, num_train_steps - 1),
+            max(num_train_steps - warmup_steps, 1),  # Ensure at least one step
         )
 
     transforms = [

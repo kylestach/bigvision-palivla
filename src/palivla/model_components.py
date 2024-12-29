@@ -1,6 +1,6 @@
 from functools import partial
 from os import PathLike
-from typing import Any
+from typing import Any, Optional
 
 import cloudpickle
 import flax.linen as nn
@@ -111,12 +111,16 @@ class ModelComponents:
         checkpoint_manager.save(step, ocp.args.StandardSave(self.train_state))
 
     @classmethod
-    def load_static(cls, path: PathLike, sharding: ShardingMetadata):
+    def load_static(
+        cls, path: PathLike, sharding: ShardingMetadata, example_batch: Optional[dict]
+    ):
         language_tokenizer = AutoTokenizer.from_pretrained(path)
         action_tokenizer = ActionTokenizer.load(path)
         sequence_builder = SequenceBuilder.load(path)
         train_state = TrainState.load_static(
-            path, mesh=sharding.mesh, sharding=sharding.model_sharding_rule
+            path,
+            sharding=sharding,
+            example_batch=example_batch,
         )
         with tf.io.gfile.GFile(path / "rng.pkl", "rb") as f:
             rng = cloudpickle.load(f)

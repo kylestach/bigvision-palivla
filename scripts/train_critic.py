@@ -1,4 +1,5 @@
 import os
+from collections import OrderedDict
 from pathlib import Path
 
 from big_vision.utils import Registry
@@ -73,38 +74,34 @@ def get_batch_info(batch: dict):
     }
 
 
+def get_example_batch():
+    return OrderedDict(
+        {
+            "sensors": {
+                "image_primary": jax.ShapeDtypeStruct(
+                    shape=(1, 224, 224, 3), dtype=jnp.uint8
+                ),
+                "proprio": jax.ShapeDtypeStruct(shape=(1, 7), dtype=jnp.float32),
+            },
+            "sensors_mask": {
+                "image_primary": jax.ShapeDtypeStruct(
+                    shape=(1, 224, 224, 3), dtype=jnp.bool_
+                ),
+                "proprio": jax.ShapeDtypeStruct(shape=(1, 7), dtype=jnp.bool_),
+            },
+            "prompt": {
+                "tokens": jax.ShapeDtypeStruct(shape=(1, 10), dtype=jnp.int32),
+                "mask": jax.ShapeDtypeStruct(shape=(1, 10), dtype=jnp.bool_),
+                "mask_ar": jax.ShapeDtypeStruct(shape=(1, 10), dtype=jnp.bool_),
+                "mask_loss": jax.ShapeDtypeStruct(shape=(1, 10), dtype=jnp.float32),
+            },
+            "actions": jax.ShapeDtypeStruct(shape=(1, 1, 7), dtype=jnp.float32),
+        }
+    )
+
+
 def create_model(config: ConfigDict, sharding_metadata: ShardingMetadata):
-    example_batch = {
-        "sensors": {
-            "image_primary": jax.ShapeDtypeStruct(
-                shape=(1, 224, 224, 3), dtype=jnp.uint8
-            ),
-            "proprio": jax.ShapeDtypeStruct(shape=(1, 7), dtype=jnp.float32),
-        },
-        "sensors_mask": {
-            "image_primary": jax.ShapeDtypeStruct(
-                shape=(1, 224, 224, 3), dtype=jnp.bool_
-            ),
-            "proprio": jax.ShapeDtypeStruct(shape=(1, 7), dtype=jnp.bool_),
-        },
-        "prompt": {
-            "tokens": jax.ShapeDtypeStruct(shape=(1, 10), dtype=jnp.int32),
-            "mask": jax.ShapeDtypeStruct(shape=(1, 10), dtype=jnp.bool_),
-            "mask_ar": jax.ShapeDtypeStruct(shape=(1, 10), dtype=jnp.bool_),
-            "mask_loss": jax.ShapeDtypeStruct(shape=(1, 10), dtype=jnp.float32),
-        },
-        "gen": {
-            "tokens": jax.ShapeDtypeStruct(shape=(1, 10), dtype=jnp.int32),
-            "mask": jax.ShapeDtypeStruct(shape=(1, 10), dtype=jnp.bool_),
-            "mask_ar": jax.ShapeDtypeStruct(shape=(1, 10), dtype=jnp.bool_),
-            "mask_loss": jax.ShapeDtypeStruct(shape=(1, 10), dtype=jnp.float32),
-        },
-        "actions": jax.ShapeDtypeStruct(shape=(1, 1, 7), dtype=jnp.float32),
-        "next_actions": jax.ShapeDtypeStruct(shape=(1, 1, 7), dtype=jnp.float32),
-        "rewards": jax.ShapeDtypeStruct(shape=(1,), dtype=jnp.float32),
-        "td_mask": jax.ShapeDtypeStruct(shape=(1,), dtype=jnp.bool_),
-        "mc_returns": jax.ShapeDtypeStruct(shape=(1,), dtype=jnp.float32),
-    }
+    example_batch = get_example_batch()
 
     language_tokenizer = AutoTokenizer.from_pretrained(config.language_tokenizer)
     action_tokenizer: ActionTokenizer = Registry.lookup(config.action_tokenizer)()
@@ -160,10 +157,13 @@ def main(_):
 
     sharding_metadata = make_sharding(config)
 
-    if config.resume_checkpoint_dir is not None:
+    if config.resume_checkpoint_dir != "":
         # Load the model from a checkpoint
+        example_batch = get_example_batch()
         model = ModelComponents.load_static(
-            config.resume_checkpoint_dir, sharding_metadata
+            Path(config.resume_checkpoint_dir) / str(config.resume_checkpoint_step),
+            sharding_metadata,
+            example_batch=example_batch,
         )
         restore_manager = ocp.CheckpointManager(
             config.resume_checkpoint_dir, options=ocp.CheckpointManagerOptions()
@@ -239,7 +239,7 @@ def main(_):
             options=ocp.CheckpointManagerOptions(max_to_keep=config.max_to_keep),
         )
 
-        # model.save_static(Path(tf.io.gfile.join(checkpoint_save_path)))
+        model.save_static(Path(tf.io.gfile.join(checkpoint_save_path)))
 
     train_infos = []
 

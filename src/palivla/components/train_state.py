@@ -42,7 +42,7 @@ def initialize_train_state(
     def init_train_state(example_batch: Any):
         params = model.lazy_init(
             rng,
-            *example_batch,
+            *example_batch.values(),
             train=False,
         )["params"]
 
@@ -98,6 +98,19 @@ class TrainState(FlaxTrainState):
 
         return ocp.args.Composite(**args)
 
+    def restore_args(self):
+        # Support loading with different devices than the original save
+        args = {
+            "model_spec": ocp.args.JsonRestore(self.model_spec),
+            "model_params": ocp.args.StandardRestore({"params": self.params}),
+        }
+
+        if self.optimizer_spec is not None:
+            args["optimizer_spec"] = ocp.args.JsonRestore(self.optimizer_spec)
+            args["opt_state"] = ocp.args.StandardRestore({"opt_state": self.opt_state})
+
+        return ocp.args.Composite(**args)
+
     def save_static(self, path: PathLike):
         with tf.io.gfile.GFile(path / "model_spec.json", "w") as f:
             f.write(self.model_spec.to_json())
@@ -105,8 +118,9 @@ class TrainState(FlaxTrainState):
             f.write(self.optimizer_spec.to_json())
 
         # Write example batch as pickle
-        with tf.io.gfile.GFile(path / "example_batch.pkl", "wb") as f:
-            cloudpickle.dump(self.example_batch, f)
+        if hasattr(self, "example_batch"):
+            with tf.io.gfile.GFile(path / "example_batch.pkl", "wb") as f:
+                cloudpickle.dump(self.example_batch, f)
 
     @classmethod
     def load_static(
@@ -114,13 +128,16 @@ class TrainState(FlaxTrainState):
         path: PathLike,
         *,
         sharding: ShardingMetadata,
+        example_batch: Optional[dict] = None,
+        **kwargs,
     ):
         with tf.io.gfile.GFile(path / "model_spec.json", "r") as f:
             model_spec = ModuleSpec.from_json(f.read())
         with tf.io.gfile.GFile(path / "optimizer_spec.json", "r") as f:
             optimizer_spec = OptimizerSpec.from_json(f.read())
-        with tf.io.gfile.GFile(path / "example_batch.pkl", "rb") as f:
-            example_batch = cloudpickle.load(f)
+        if example_batch is None:
+            with tf.io.gfile.GFile(path / "example_batch.pkl", "rb") as f:
+                example_batch = cloudpickle.load(f)
 
         # Initialize the model
         return initialize_train_state(
@@ -132,10 +149,11 @@ class TrainState(FlaxTrainState):
         )
 
     def save_state(self, step: int, checkpoint_manager: ocp.CheckpointManager):
+        assert False, "This seems to be incorrect, should save with save_args"
         checkpoint_manager.save(step, ocp.args.StandardSave(self))
 
     def load_state(self, step: int, checkpoint_manager: ocp.CheckpointManager):
-        return checkpoint_manager.restore(step, ocp.args.StandardRestore(self))
+        return checkpoint_manager.restore(step, args=self.restore_args())
 
     def get_params(self, *, use_ema_params: bool = False):
         if use_ema_params:

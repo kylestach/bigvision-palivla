@@ -48,8 +48,8 @@ def get_config():
                     },
                 )
             ],
-            "resume_checkpoint_dir": None,
-            "resume_checkpoint_step": None,
+            "resume_checkpoint_dir": "",
+            "resume_checkpoint_step": -1,
             # Overfit the dataset (for smoke tests/debugging)
             "overfit_dataset": False,
             # Training settings
