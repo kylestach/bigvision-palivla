@@ -55,11 +55,7 @@ def compute_gen_stats(
         )
 
         # we will always be able to find an action token, bc this is ground truth
-        gen = jnp.where(
-            jnp.roll(mask, -action_start_idx, axis=0),
-            jnp.roll(tokens, -action_start_idx, axis=0),
-            0,
-        )
+        gen = jnp.roll(tokens, -action_start_idx, axis=0)
         gen_mask = jnp.roll(mask, -action_start_idx, axis=0).astype(mask.dtype)
         gen_ar = jnp.ones_like(gen_mask)
 
@@ -117,7 +113,7 @@ def compute_gen_stats(
         out_action_tokens,
         None,
         split_tokens["gen"][:, :tokenizer_config.num_action_tokens],
-        batch.actions,
+        batch.actions
     )
 
     metrics = jax.device_get(action_metrics)
