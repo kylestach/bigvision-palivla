@@ -11,7 +11,7 @@ from functools import partial
 from palivla.tokenizer import Tokenizer
 from palivla.train_step import compute_action_metrics, compute_stats
 from palivla.palivla_types import TrainingBatch, RolloutBatch
-from palivla.cot_utils import extract_action_tokens, extract_cot_strs, get_cot_table_metrics, viz_cot
+from palivla.cot_utils import extract_action_tokens, extract_language_label, extract_cot_str, get_cot_table_metrics, viz_cot
 
 from jax.sharding import PartitionSpec
 from scalax.sharding import MeshShardingHelper
@@ -119,22 +119,23 @@ def compute_gen_stats(
     metrics = jax.device_get(action_metrics)
 
     if use_cot:
-        # batch.tokens refers to the masked prompt tokens, so we'd have to add batch.cot_tokens to get the ground truth
-        gathered_batch_tokens = multihost_utils.process_allgather(batch.tokens)
+        gathered_gt_tokens = np.asarray(multihost_utils.process_allgather(batch.tokens))
         gathered_batch_images = multihost_utils.process_allgather(batch.sensors)['image_primary']
-        gathered_out_tokens = multihost_utils.process_allgather(out_tokens)
-
-        batch_tokens_np = np.asarray(gathered_batch_tokens)
-        out_tokens_np = np.asarray(gathered_out_tokens)
-
-        lang_and_cot_strs = [
-            extract_cot_strs(step_out_tokens, step_prompt_tokens, tokenizer_config.begin_of_action_token, detokenize_lang_fn)
-            for step_out_tokens, step_prompt_tokens in zip(out_tokens_np, batch_tokens_np)
+        gathered_out_tokens = np.asarray(multihost_utils.process_allgather(out_tokens))
+        gathered_gen_start_idxs = np.asarray(multihost_utils.process_allgather(batch.gen_start_idx))
+        
+        cot_strs = [
+            extract_cot_str(step_out_tokens, tokenizer_config.begin_of_action_token, detokenize_lang_fn)
+            for step_out_tokens in gathered_out_tokens
+        ]
+        lang_strs = [
+            extract_language_label(step_gt_tokens, step_gen_start_idx, detokenize_lang_fn)
+            for step_gt_tokens, step_gen_start_idx in zip(gathered_gt_tokens, gathered_gen_start_idxs)
         ]
 
         # now visualize just one of the chain of thoughts 
-        viz_metrics = viz_cot(image=gathered_batch_images[0], lang_str=lang_and_cot_strs[0][0], reasoning_str=lang_and_cot_strs[0][1])
-        cot_metrics = get_cot_table_metrics(lang_and_cot_strs)
+        viz_metrics = viz_cot(image=gathered_batch_images[0], lang_str=lang_strs[0], reasoning_str=cot_strs[0])
+        cot_metrics = get_cot_table_metrics(lang_strs, cot_strs)
         metrics = metrics | cot_metrics
         metrics = metrics | viz_metrics
     

@@ -20,34 +20,32 @@ def extract_action_tokens(step_out_tokens, begin_of_action_token):
     )
     return action_tokens
 
-# get the cot tokens (tokens btwn begin CoT token and begin action token)
-def extract_cot_strs(step_out_tokens, masked_prompt_tokens, beg_action_token, detokenize_lang_fn):
-
-    # get prompt
-    masked_prompt_tokens = np.array(masked_prompt_tokens)
-    first_zero_idx = np.where(masked_prompt_tokens == 0)[0][0] if 0 in masked_prompt_tokens else len(masked_prompt_tokens)
-    prompt_tokens = masked_prompt_tokens[:first_zero_idx]
-
+def extract_language_label(step_gt_tokens, gen_start_idx, detokenize_lang_fn):
+    step_gt_tokens_np = np.array(step_gt_tokens)
+    prompt_tokens = step_gt_tokens_np[:gen_start_idx]
     detokenize_prompt = detokenize_lang_fn(tf.convert_to_tensor(prompt_tokens, dtype=tf.int32))
     prompt_str = tf.strings.reduce_join(detokenize_prompt, separator="").numpy().decode("utf-8")
 
-    # get cot
+    return prompt_str
+
+# get the cot tokens (tokens btwn begin CoT token and begin action token)
+def extract_cot_str(step_out_tokens, begin_action_token, detokenize_lang_fn):
+
     step_out_tokens_np = np.array(step_out_tokens)
-
     try:
-        action_start_idx = np.where(step_out_tokens_np == beg_action_token)[0][0]
+        action_start_idx = np.where(step_out_tokens_np == begin_action_token)[0][0]
     except IndexError:
-        return prompt_str, "" 
-    
-    if action_start_idx<=0:
-        return prompt_str, ""
+        return ""
 
-    #the output sequence (step_tokens) directly starts from CoT, bc the prompt now includes the beg_cot_token
+    if action_start_idx<=0:
+        return ""
+
+    # the output sequence (step_tokens) directly starts from CoT, bc the prompt now includes the beg_cot_token
     cot_tokens = step_out_tokens_np[:action_start_idx]
     detokenized_cot = detokenize_lang_fn(tf.convert_to_tensor(cot_tokens, dtype=tf.int32))
     cot_str = tf.strings.reduce_join(detokenized_cot, separator="").numpy().decode("utf-8")
 
-    return prompt_str, cot_str 
+    return cot_str 
 
 def viz_cot(image, lang_str, reasoning_str):
     matches = re.findall(r"gripper <loc(\d{4})><loc(\d{4})>", reasoning_str)
@@ -81,9 +79,9 @@ def viz_cot(image, lang_str, reasoning_str):
     }
 
 
-def get_cot_table_metrics(lang_and_cot_strs):
+def get_cot_table_metrics(lang_strs, cot_strs):
     table = wandb.Table(columns=["GT Language Label", "Predicted CoT"])
-    for lang_str, cot_str in lang_and_cot_strs:
+    for lang_str, cot_str in zip(lang_strs, cot_strs):
         table.add_data(lang_str, cot_str)
     dct = {"CoT Outputs": table}
     return dct
