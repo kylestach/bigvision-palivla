@@ -93,14 +93,17 @@ def plot_obj_plans(image, lang_str, objects_bboxes):
     draw = ImageDraw.Draw(pil_image)
     
     # Overlay object bounding boxes for the current step
-    for obj_name, bboxes in objects_bboxes.items():
-        for (y_min, x_min), (y_max, x_max) in bboxes:
-            draw.rectangle(
-                [(x_min, y_min), (x_max, y_max)],
-                outline=(0, 255, 0),
-                width=2
-            )
-            draw.text((x_min + 5, y_min + 5), obj_name, fill=(255, 255, 255))
+    try:
+        for obj_name, bboxes in objects_bboxes.items():
+            for (y_min, x_min), (y_max, x_max) in bboxes:
+                draw.rectangle(
+                    [(x_min, y_min), (x_max, y_max)],
+                    outline=(0, 255, 0),
+                    width=2
+                )
+                draw.text((x_min + 5, y_min + 5), obj_name, fill=(255, 255, 255))
+    except:
+        draw.text((10, 10), "invalid bbox", fill=(255, 255, 255))
     
     draw.text((10, pil_image.height - 20), lang_str, fill=(255, 255, 255))
     
