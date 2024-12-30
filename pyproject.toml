@@ -16,7 +16,7 @@ dependencies = [
     "matplotlib>=3.9.2",
     "ml-collections>=0.1.1",
     "numpy<2.0.0",
-    "octo@git+https://github.com/nakamotoo/octo.git",
+    "octo",
     "optax>=0.2.3",
     "orbax-checkpoint>=0.7.0",
     "overrides>=7.7.0",
@@ -64,7 +64,9 @@ build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
+    "ipywidgets>=8.1.5",
     "isort>=6.0.0b2",
+    "ruff>=0.8.4",
 ]
 
 [tool.hatch.metadata]
@@ -72,3 +74,4 @@ allow-direct-references = true
 
 [tool.uv.sources]
 big-vision = { workspace = true }
+octo = { path = "octo", editable = true }
