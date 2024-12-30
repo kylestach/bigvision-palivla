@@ -72,6 +72,9 @@ class CriticModelComponents(ModelComponents):
         self.eval_step_fn = make_eval_step_fn(
             self.sharding, **critic_train_step_kwargs, train=False
         )
+        self.predict_fn = self.sharding.mesh.sjit(
+            self.train_state.apply_fn, out_shardings=None
+        )
 
     @classmethod
     def initialize(
@@ -169,9 +172,7 @@ class CriticModelComponents(ModelComponents):
         batch = self.sharding.mesh.local_data_to_global_array(batch)
 
         with self.sharding.mesh.mesh, nn.logical_axis_rules([("act_batch", "fsdp")]):
-            _, critic_value, _ = self.sharding.mesh.sjit(
-                self.train_state.apply_fn, out_shardings=None
-            )(
+            _, critic_value, _ = self.predict_fn(
                 {"params": self.train_state.params},
                 batch["sensors"],
                 batch["sensors_mask"],

@@ -251,14 +251,17 @@ def main(_):
             if (i + 1) % config.viz_interval == 0:
                 for viz_ds_name, trajectories in viz_trajectories.items():
                     for j, trajectory in enumerate(trajectories):
-                        wandb.log(
-                            {
-                                f"critic_visualization_{viz_ds_name}_{j}": wandb.Image(
-                                    visualize_critic(model, trajectory)
-                                )
-                            },
-                            step=i,
-                        )
+                        visualization = visualize_critic(model, trajectory)
+                        if jax.process_index() == 0:
+                            wandb.log(
+                                {
+                                    f"critic_visualization_{viz_ds_name}_{j}": wandb.Image(
+                                        visualization
+                                    )
+                                },
+                                step=i,
+                            )
+
             if (i + 1) % config.eval_interval == 0:
                 eval_batch = next(eval_it)
                 eval_info = model.eval_step(eval_batch)
