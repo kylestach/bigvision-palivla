@@ -6,7 +6,6 @@ import cloudpickle
 import flax.linen as nn
 import jax
 import orbax.checkpoint as ocp
-import tensorflow as tf
 from jax.sharding import PartitionSpec
 from transformers import AutoTokenizer
 import numpy as np
@@ -16,6 +15,7 @@ from palivla.components.sequence_builder import SequenceBuilder
 from palivla.components.train_state import ShardingMetadata, TrainState
 from palivla.spec import ModuleSpec, OptimizerSpec
 from palivla.train_step import step_fn
+from palivla.utils import read_staging_directory, write_staging_directory
 
 
 def make_step_fn(sharding: ShardingMetadata):
@@ -50,6 +50,7 @@ class ModelComponents:
         "rng",
         "step_fn",
         "data_gather_fn",
+        "example_batch",
     ]
 
     def __init__(
@@ -60,6 +61,7 @@ class ModelComponents:
         train_state: TrainState,
         sharding: ShardingMetadata,
         rng: jax.Array,
+        example_batch: Any,
     ):
         self.language_tokenizer = language_tokenizer
         self.action_tokenizer = action_tokenizer
@@ -69,7 +71,7 @@ class ModelComponents:
         self.rng = rng
         self.step_fn = make_step_fn(sharding)
         self.data_gather_fn = make_gather_fn(sharding.mesh.mesh)
-
+        self.example_batch = example_batch
     @classmethod
     def initialize(
         cls,
@@ -97,29 +99,50 @@ class ModelComponents:
                 sharding=sharding_metadata,
                 rng=key,
             ),
+            example_batch=example_batch,
         )
 
-    def save_static(self, path: PathLike):
-        self.language_tokenizer.save_pretrained(path)
+    def save_static(self, path: Any):
+        from tensorflow import io
+
+        io.gfile.makedirs(path)
+
+        # Huggingface can't load from GCS, so we need to stage the tokenizer to a local directory
+        with write_staging_directory(io.gfile.join(path, "language_tokenizer")) as temp_dir:
+            self.language_tokenizer.save_pretrained(temp_dir)
+
         self.action_tokenizer.save(path)
         self.sequence_builder.save(path)
         self.train_state.save_static(path)
-        with tf.io.gfile.GFile(path / "rng.pkl", "wb") as f:
+        with io.gfile.GFile(io.gfile.join(path, "rng.pkl"), "wb") as f:
             cloudpickle.dump(jax.device_get(self.rng), f)
+        with io.gfile.GFile(io.gfile.join(path, "example_batch.pkl"), "wb") as f:
+            cloudpickle.dump(self.example_batch, f)
 
     def save_state(self, step: int, checkpoint_manager: ocp.CheckpointManager):
-        checkpoint_manager.save(step, ocp.args.StandardSave(self.train_state))
+        self.train_state.save_state(step, checkpoint_manager)
 
     @classmethod
     def load_static(cls, path: PathLike, sharding: ShardingMetadata):
-        language_tokenizer = AutoTokenizer.from_pretrained(path)
+        from tensorflow import io
+
+        # Huggingface can't load from GCS, so we need to stage the tokenizer to a local directory
+        with read_staging_directory(io.gfile.join(path, "language_tokenizer")) as temp_dir:
+            language_tokenizer = AutoTokenizer.from_pretrained(temp_dir)
+
         action_tokenizer = ActionTokenizer.load(path)
         sequence_builder = SequenceBuilder.load(path)
-        train_state = TrainState.load_static(
-            path, mesh=sharding.mesh, sharding=sharding.model_sharding_rule
-        )
-        with tf.io.gfile.GFile(path / "rng.pkl", "rb") as f:
+
+        with io.gfile.GFile(io.gfile.join(path, "example_batch.pkl"), "rb") as f:
+            example_batch = cloudpickle.load(f)
+        with io.gfile.GFile(io.gfile.join(path, "rng.pkl"), "rb") as f:
             rng = cloudpickle.load(f)
+
+        train_state = TrainState.load_static(
+            path,
+            sharding=sharding,
+            example_batch=example_batch,
+        )
         return cls(
             language_tokenizer=language_tokenizer,
             action_tokenizer=action_tokenizer,
@@ -127,6 +150,7 @@ class ModelComponents:
             train_state=train_state,
             sharding=sharding,
             rng=rng,
+            example_batch=example_batch,
         )
 
     def load_state(self, step: int, checkpoint_manager: ocp.CheckpointManager):

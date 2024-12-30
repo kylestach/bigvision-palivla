@@ -1,4 +1,5 @@
 from os import PathLike
+from typing import Any
 
 import cloudpickle
 import numpy as np
@@ -13,13 +14,13 @@ class ActionTokenizer:
 
     def detokenize(self, tokens, obs=None): ...
 
-    def save(self, path: PathLike):
-        with tf.io.gfile.GFile(path / "action_tokenizer.pkl", "wb") as f:
+    def save(self, path: Any):
+        with tf.io.gfile.GFile(tf.io.gfile.join(path, "action_tokenizer.pkl"), "wb") as f:
             cloudpickle.dump(self, f)
 
     @classmethod
     def load(cls, path: PathLike):
-        with tf.io.gfile.GFile(path / "action_tokenizer.pkl", "rb") as f:
+        with tf.io.gfile.GFile(tf.io.gfile.join(path, "action_tokenizer.pkl"), "rb") as f:
             return cloudpickle.load(f)
 
 

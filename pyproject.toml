@@ -3,7 +3,7 @@ name = "big-vision"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "big-vision",
     "chex>=0.1.86",
@@ -19,7 +19,6 @@ dependencies = [
     "octo@git+https://github.com/nakamotoo/octo.git",
     "optax>=0.2.3",
     "orbax-checkpoint>=0.7.0",
-    "orbax>=0.1.9",
     "overrides>=7.7.0",
     "pip",
     "scalax>=0.2.4",

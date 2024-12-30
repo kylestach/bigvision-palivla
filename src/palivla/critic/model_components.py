@@ -102,6 +102,7 @@ class CriticModelComponents(ModelComponents):
                 rng=key,
             ),
             critic_train_step_kwargs=critic_train_step_kwargs,
+            example_batch=example_batch,
         )
 
     def prepare_batch_for_train_step(self, batch: dict):

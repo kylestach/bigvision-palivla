@@ -18,12 +18,12 @@ class SequenceBuilder:
     gen_pad_length: int
 
     def save(self, path: PathLike):
-        with tf.io.gfile.GFile(path / "sequence_builder.pkl", "wb") as f:
+        with tf.io.gfile.GFile(tf.io.gfile.join(path, "sequence_builder.pkl"), "wb") as f:
             cloudpickle.dump(self, f)
 
     @classmethod
     def load(cls, path: PathLike):
-        with tf.io.gfile.GFile(path / "sequence_builder.pkl", "rb") as f:
+        with tf.io.gfile.GFile(tf.io.gfile.join(path, "sequence_builder.pkl"), "rb") as f:
             return cloudpickle.load(f)
 
     def prepare_prompt(self, language_instruction):

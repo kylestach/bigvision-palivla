@@ -59,6 +59,9 @@ class CtorSpec(Generic[T]):
     def from_dict(
         cls, data: Dict[str, Any], overrides: Dict[str, Any] | None = None
     ) -> "CtorSpec":
+        if isinstance(data, CtorSpec):
+            return data
+
         if overrides:
             data["config"].update(overrides)
 
