@@ -13,11 +13,19 @@ def get_config():
 
     model_config = get_default_config()
 
-    model_config["num_critic_bins"] = 64
+    model_config["num_critic_bins"] = 128
     model_config["q_min"] = 0.0
     model_config["q_max"] = 1.0
-    model_config["critic_sigma"] = 0.02
+    # set to default value suggested by the paper
+    # https://arxiv.org/pdf/2403.03950.pdf
+    # model_config["critic_sigma"] = 0.01
+    model_config["critic_sigma"] = (
+        0.75
+        * (model_config["q_max"] - model_config["q_min"])
+        / model_config["num_critic_bins"]
+    )
     model_config["discount"] = 0.98
+    model_config["target_ema_rate"] = 0.005
     model_config["target_ema_rate"] = ema_rate
 
     return ConfigDict(
@@ -25,6 +33,7 @@ def get_config():
             # W&B settings
             "wandb_project": "palivla-bridge",
             "wandb_mode": "online",
+            "wandb_experiment_name": "bridge-critic",
             # Tokenizers
             "language_tokenizer": "google/paligemma-3b-pt-224",
             "action_tokenizer": "action_tokenizer.bin(min_action_value=-3, max_action_value=3)",
@@ -39,8 +48,8 @@ def get_config():
                     },
                 )
             ],
-            "resume_checkpoint_dir": None,
-            "resume_checkpoint_step": None,
+            "resume_checkpoint_dir": "",
+            "resume_checkpoint_step": -1,
             # Overfit the dataset (for smoke tests/debugging)
             "overfit_dataset": False,
             # Training settings
@@ -64,10 +73,31 @@ def get_config():
             "optimizer": {
                 "name": "optimizer.default_optimizer",
                 "kwargs": {
-                    "optimizer": "sgd",
+                    "optimizer": "adamw",
                     "num_train_steps": num_train_steps,
-                    "base_learning_rate": 1e-3,
+                    "base_learning_rate": 5e-5,
                     "ema_rate": ema_rate,
+                    "llm_optimizer_kwargs": {
+                        "init_learning_rate": 0,
+                        "learning_rate": 5e-5,
+                        "warmup_steps": 500,
+                        "weight_decay": 5e-6,
+                        "grad_norm_clip": 10.0,
+                    },
+                    "embed_optimizer_kwargs": {
+                        "init_learning_rate": 0,
+                        "learning_rate": 5e-5,
+                        "warmup_steps": 100,
+                        "weight_decay": 0.0,
+                        "grad_norm_clip": 10.0,
+                    },
+                    "img_optimizer_kwargs": {
+                        "init_learning_rate": 0,
+                        "learning_rate": 5e-5,
+                        "warmup_steps": 500,
+                        "weight_decay": 5e-6,
+                        "grad_norm_clip": 10.0,
+                    },
                 },
             },
             # Dataset settings
@@ -112,6 +142,7 @@ def get_config():
             "critic_train_step_kwargs": {
                 "regress_to_mc_returns": False,
                 "train_with_sarsa": False,
+                "zero_out_actions": False,
             },
         }
     )

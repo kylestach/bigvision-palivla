@@ -1,38 +1,34 @@
 import os
+from collections import OrderedDict
+from pathlib import Path
 
 from big_vision.utils import Registry
+from palivla.components.action_tokenizer import ActionTokenizer
 from palivla.components.sequence_builder import SequenceBuilder
 from palivla.components.train_state import ShardingMetadata
-from palivla.components.action_tokenizer import ActionTokenizer
 from palivla.critic.model_components import CriticModelComponents
 from palivla.critic.visualize_critic import visualize_critic
 from palivla.critic.vla_critic import PaliVLACritic
 
-os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 import orbax.checkpoint as ocp
-from transformers import AutoTokenizer
 import tensorflow as tf
 import tqdm
-from absl import app, flags, logging as absl_logging
-from ml_collections import ConfigDict, config_flags
-from scalax.sharding import (
-    MeshShardingHelper,
-    FSDPShardingRule,
-)
-
 import wandb
-import numpy as np
+from absl import app, flags
+from absl import logging as absl_logging
 from flax.core.frozen_dict import freeze
-
+from ml_collections import ConfigDict, config_flags
 import palivla.load_fns
 from palivla.dataset import make_base_dataset, make_trajectory_dataset
 from palivla.optimizer import make_optimizer
 from palivla.spec import ModuleSpec, OptimizerSpec
-from palivla.model_components import ModelComponents
 from palivla.utils import host_broadcast_str
+from scalax.sharding import FSDPShardingRule, MeshShardingHelper
+from transformers import AutoTokenizer
 
 jax.config.update("jax_compilation_cache_dir", "/tmp/jax_cache")
 jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
@@ -51,39 +47,59 @@ def make_sharding(config: ConfigDict):
     return sharding_metadata
 
 
-def create_model(config: ConfigDict, sharding_metadata: ShardingMetadata):
-    example_batch = {
-        "sensors": {
-            "image_primary": jax.ShapeDtypeStruct(
-                shape=(1, 224, 224, 3), dtype=jnp.uint8
-            ),
-            "proprio": jax.ShapeDtypeStruct(shape=(1, 7), dtype=jnp.float32),
-        },
-        "sensors_mask": {
-            "image_primary": jax.ShapeDtypeStruct(
-                shape=(1, 224, 224, 3), dtype=jnp.bool_
-            ),
-            "proprio": jax.ShapeDtypeStruct(shape=(1, 7), dtype=jnp.bool_),
-        },
-        "prompt": {
-            "tokens": jax.ShapeDtypeStruct(shape=(1, 10), dtype=jnp.int32),
-            "mask": jax.ShapeDtypeStruct(shape=(1, 10), dtype=jnp.bool_),
-            "mask_ar": jax.ShapeDtypeStruct(shape=(1, 10), dtype=jnp.bool_),
-            "mask_loss": jax.ShapeDtypeStruct(shape=(1, 10), dtype=jnp.float32),
-        },
-        "gen": {
-            "tokens": jax.ShapeDtypeStruct(shape=(1, 10), dtype=jnp.int32),
-            "mask": jax.ShapeDtypeStruct(shape=(1, 10), dtype=jnp.bool_),
-            "mask_ar": jax.ShapeDtypeStruct(shape=(1, 10), dtype=jnp.bool_),
-            "mask_loss": jax.ShapeDtypeStruct(shape=(1, 10), dtype=jnp.float32),
-        },
-        "actions": jax.ShapeDtypeStruct(shape=(1, 1, 7), dtype=jnp.float32),
-        "next_actions": jax.ShapeDtypeStruct(shape=(1, 1, 7), dtype=jnp.float32),
-        "rewards": jax.ShapeDtypeStruct(shape=(1,), dtype=jnp.float32),
-        "terminals": jax.ShapeDtypeStruct(shape=(1,), dtype=jnp.bool_),
-        "td_mask": jax.ShapeDtypeStruct(shape=(1,), dtype=jnp.bool_),
-        "mc_returns": jax.ShapeDtypeStruct(shape=(1,), dtype=jnp.float32),
+def get_batch_info(batch: dict):
+    return {
+        "rewards_mean": np.mean(batch["reward"]),
+        "rewards_std": np.std(batch["reward"]),
+        "rewards_min": np.min(batch["reward"]),
+        "rewards_max": np.max(batch["reward"]),
+        "actions_mean": np.mean(batch["action"]),
+        "actions_std": np.std(batch["action"]),
+        "actions_min": np.min(batch["action"]),
+        "actions_max": np.max(batch["action"]),
+        "next_actions_mean": np.mean(batch["next_action"]),
+        "next_actions_std": np.std(batch["next_action"]),
+        "next_actions_min": np.min(batch["next_action"]),
+        "next_actions_max": np.max(batch["next_action"]),
+        "td_mask_mean": np.mean(batch["td_mask"]),
+        "td_mask_std": np.std(batch["td_mask"]),
+        "td_mask_min": np.min(batch["td_mask"]),
+        "td_mask_max": np.max(batch["td_mask"]),
+        "mc_returns_mean": np.mean(batch["mc_return"]),
+        "mc_returns_std": np.std(batch["mc_return"]),
+        "mc_returns_min": np.min(batch["mc_return"]),
+        "mc_returns_max": np.max(batch["mc_return"]),
     }
+
+
+def get_example_batch():
+    return OrderedDict(
+        {
+            "sensors": {
+                "image_primary": jax.ShapeDtypeStruct(
+                    shape=(1, 224, 224, 3), dtype=jnp.uint8
+                ),
+                "proprio": jax.ShapeDtypeStruct(shape=(1, 7), dtype=jnp.float32),
+            },
+            "sensors_mask": {
+                "image_primary": jax.ShapeDtypeStruct(
+                    shape=(1, 224, 224, 3), dtype=jnp.bool_
+                ),
+                "proprio": jax.ShapeDtypeStruct(shape=(1, 7), dtype=jnp.bool_),
+            },
+            "prompt": {
+                "tokens": jax.ShapeDtypeStruct(shape=(1, 10), dtype=jnp.int32),
+                "mask": jax.ShapeDtypeStruct(shape=(1, 10), dtype=jnp.bool_),
+                "mask_ar": jax.ShapeDtypeStruct(shape=(1, 10), dtype=jnp.bool_),
+                "mask_loss": jax.ShapeDtypeStruct(shape=(1, 10), dtype=jnp.float32),
+            },
+            "actions": jax.ShapeDtypeStruct(shape=(1, 1, 7), dtype=jnp.float32),
+        }
+    )
+
+
+def create_model(config: ConfigDict, sharding_metadata: ShardingMetadata):
+    example_batch = get_example_batch()
 
     language_tokenizer = AutoTokenizer.from_pretrained(config.language_tokenizer)
     action_tokenizer: ActionTokenizer = Registry.lookup(config.action_tokenizer)()
@@ -141,7 +157,7 @@ def main(_):
 
     if config.resume_checkpoint_dir is not None:
         # Load the model from a checkpoint
-        model = ModelComponents.load_static(
+        model = CriticModelComponents.load_static(
             config.resume_checkpoint_dir, sharding_metadata
         )
         restore_manager = ocp.CheckpointManager(
@@ -198,6 +214,7 @@ def main(_):
             "project": config.wandb_project,
             "tags": [],
             "mode": config.wandb_mode,
+            "name": config.wandb_experiment_name,
         }
 
         wandb.init(**wandb_kwargs)
@@ -217,7 +234,9 @@ def main(_):
             options=ocp.CheckpointManagerOptions(max_to_keep=config.max_to_keep),
         )
 
-    wandb_logs = []
+        model.save_static(Path(tf.io.gfile.join(checkpoint_save_path)))
+
+    train_infos = []
 
     # Main training loop
     start_step = model.train_state.step.item()
@@ -231,43 +250,48 @@ def main(_):
         for i in pbar:
             if not config.overfit_dataset:
                 batch = next(train_it)
-            info = model.train_step(batch)
+            train_info = model.train_step(batch)
 
-            info = jax.device_get(info)
-            wandb_logs.append(info)
+            train_info = jax.device_get(train_info)
+            train_infos.append(train_info)
             pbar.set_postfix(
-                loss=f"{info['loss']:.2f}",
-                q_value=f"{info['q_value']:.2f}",
+                loss=f"{train_info['loss']:.2f}",
+                q_value=f"{train_info['q_value']:.2f}",
             )
 
             if (i + 1) % config.log_interval == 0:
-                avg_info = jax.tree.map(
-                    lambda *xs: np.mean(np.stack(xs), axis=0), *wandb_logs
+                avg_train_info = jax.tree.map(
+                    lambda *xs: np.mean(np.stack(xs), axis=0), *train_infos
                 )
                 if jax.process_index() == 0:
-                    wandb.log({"train": avg_info}, step=i)
-                wandb_logs = []
+                    wandb.log(
+                        {
+                            "training": avg_train_info,
+                            "batch_info": get_batch_info(batch),
+                        },
+                        step=i,
+                    )
+                train_infos = []
 
             if (i + 1) % config.viz_interval == 0:
                 for viz_ds_name, trajectories in viz_trajectories.items():
                     for j, trajectory in enumerate(trajectories):
-                        visualization = visualize_critic(model, trajectory)
+                        image = visualize_critic(model, trajectory)
                         if jax.process_index() == 0:
                             wandb.log(
                                 {
                                     f"critic_visualization_{viz_ds_name}_{j}": wandb.Image(
-                                        visualization
+                                        image
                                     )
                                 },
                                 step=i,
                             )
-
             if (i + 1) % config.eval_interval == 0:
                 eval_batch = next(eval_it)
                 eval_info = model.eval_step(eval_batch)
                 if jax.process_index() == 0:
                     wandb.log(
-                        {"eval": eval_info},
+                        {"validation": eval_info},
                         commit=False,
                         step=i,
                     )

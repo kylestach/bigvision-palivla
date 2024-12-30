@@ -29,10 +29,14 @@ def loss_fn(
     train: bool,
     regress_to_mc_returns: bool = False,
     train_with_sarsa: bool = False,
+    zero_out_actions: bool = False,
     model: PaliVLACritic,
     ema_params: Params,
 ) -> Tuple[jnp.ndarray, Dict[str, Any]]:
     rng, target_key, critic_key = jax.random.split(rng, 3)
+    if zero_out_actions:
+        batch["action"] = jnp.zeros_like(batch["action"])
+        batch["next_action"] = jnp.zeros_like(batch["next_action"])
     if regress_to_mc_returns:
         target_value = batch["mc_return"]
     else:
@@ -61,8 +65,8 @@ def loss_fn(
             next_target_value = jnp.max(next_target_value, axis=-1)
 
         chex.assert_shape(next_target_value, (batch["rewards"].shape[0],))
-        target_value = (
-            batch["rewards"] + model.discount * next_target_value * (batch["td_mask"])
+        target_value = batch["rewards"] + model.discount * next_target_value * (
+            batch["td_mask"]
         )
 
     chex.assert_shape(target_value, (batch["rewards"].shape[0],))
@@ -102,6 +106,7 @@ def loss_fn(
         "q_value": jnp.mean(critic_value),
         "q_mse": jnp.mean(jnp.square(critic_value - target_value)),
         "q_std": jnp.mean(critic_std),
+        "q - mc": jnp.mean(critic_value - batch["mc_return"]),
     }
 
 
@@ -112,6 +117,7 @@ def train_step(
     train: bool,
     regress_to_mc_returns: bool = False,
     train_with_sarsa: bool = False,
+    zero_out_actions: bool = False,
 ) -> Tuple[TrainState, Dict[str, Any]]:
     grad_fn = jax.grad(
         partial(
@@ -121,6 +127,7 @@ def train_step(
             ema_params=train_state.opt_state["ema"],
             regress_to_mc_returns=regress_to_mc_returns,
             train_with_sarsa=train_with_sarsa,
+            zero_out_actions=zero_out_actions,
         ),
         has_aux=True,
     )
