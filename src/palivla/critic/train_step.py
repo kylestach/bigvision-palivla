@@ -34,34 +34,32 @@ def loss_fn(
     ema_params: Params,
 ) -> Tuple[jnp.ndarray, Dict[str, Any]]:
     rng, target_key, critic_key = jax.random.split(rng, 3)
-    if zero_out_actions:
-        batch["action"] = jnp.zeros_like(batch["action"])
-        batch["next_action"] = jnp.zeros_like(batch["next_action"])
+
+    action = batch["action"]
+
     if regress_to_mc_returns:
         target_value = batch["mc_return"]
     else:
         if train_with_sarsa:
-            _, next_target_value, _ = model.apply(
-                {"params": ema_params},
-                batch["next_sensors"],
-                batch["next_sensors_mask"],
-                batch["next_prompt"],
-                batch["next_action"],
-                train=train,
-                rngs={"dropout": target_key},
-            )
+            next_action = batch["next_action"]
+        elif zero_out_actions:
+            next_action = jnp.zeros_like(batch["next_action"])
+            action = jnp.zeros_like(action)
         else:
-            _, next_target_value, _ = model.apply(
-                {"params": ema_params},
-                batch["next_sensors"],
-                batch["next_sensors_mask"],
-                batch["next_prompt"],
-                batch["counterfactual_next_actions"],
-                train=train,
-                rngs={"dropout": target_key},
-            )
+            next_action = batch["counterfactual_next_actions"]
 
-            # Maximize over next action options
+        _, next_target_value, _ = model.apply(
+            {"params": ema_params},
+            batch["next_sensors"],
+            batch["next_sensors_mask"],
+            batch["next_prompt"],
+            next_action,
+            train=train,
+            rngs={"dropout": target_key},
+        )
+
+        # Maximize over next action options
+        if next_target_value.ndim == 3:
             next_target_value = jnp.max(next_target_value, axis=-1)
 
         chex.assert_shape(next_target_value, (batch["rewards"].shape[0],))
@@ -84,7 +82,7 @@ def loss_fn(
         batch["sensors"],
         batch["sensors_mask"],
         batch["prompt"],
-        batch["action"],
+        action,
         train=train,
         rngs={"dropout": critic_key},
     )
