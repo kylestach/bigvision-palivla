@@ -39,7 +39,7 @@ def initialize_train_state(
     model = model_spec.instantiate()
     tx = optimizer_spec.instantiate()
 
-    def init_train_state(example_batch: Any):
+    def init_train_state():
         params = model.lazy_init(
             rng,
             *example_batch,
@@ -55,12 +55,10 @@ def initialize_train_state(
             params=params,
         )
 
-    _init_train_state = sharding.mesh.sjit(
+    return sharding.mesh.sjit(
         init_train_state,
         out_shardings=sharding.model_sharding_rule,
-    )
-    # Add the example batch in at the end so it doesn't get treated as a
-    return _init_train_state(example_batch)
+    )()
 
 
 class TrainState(FlaxTrainState):
