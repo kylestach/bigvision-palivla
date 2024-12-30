@@ -65,6 +65,19 @@ def gcs_recursive_copy(src: str, dst: str):
             io.gfile.copy(src_path, dst_path, overwrite=True)
 
 
+def flatten_wandb_dict(nested_dict: dict, prefix: str = "") -> dict:
+    """
+    Flatten a nested dictionary for logging to Weights & Biases.
+    """
+    flat_dict = {}
+    for key, value in nested_dict.items():
+        if isinstance(value, dict):
+            flat_dict.update(flatten_wandb_dict(value, f"{prefix}/{key}"))
+        else:
+            flat_dict[f"{prefix}/{key}"] = value
+    return flat_dict
+
+
 @contextmanager
 def write_staging_directory(target_dir: str):
     """Creates a temporary staging directory and copies its contents to target_dir on exit.

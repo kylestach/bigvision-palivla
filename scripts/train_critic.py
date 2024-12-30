@@ -26,7 +26,7 @@ import palivla.load_fns
 from palivla.dataset import make_base_dataset, make_trajectory_dataset
 from palivla.optimizer import make_optimizer
 from palivla.spec import ModuleSpec, OptimizerSpec
-from palivla.utils import host_broadcast_str
+from palivla.utils import flatten_wandb_dict, host_broadcast_str
 from scalax.sharding import FSDPShardingRule, MeshShardingHelper
 from transformers import AutoTokenizer
 
@@ -203,6 +203,15 @@ def main(_):
         train_ds.batch(per_host_train_batch_size).iterator(),
     )
 
+    if config.overfit_dataset:
+
+        def _make_overfit_it(it):
+            overfit_batch = next(it)
+            while True:
+                yield overfit_batch
+
+        train_it = _make_overfit_it(train_it)
+
     eval_it = map(
         make_validation_batch,
         validation_ds.batch(per_host_eval_batch_size).iterator(),
@@ -241,17 +250,14 @@ def main(_):
     # Main training loop
     start_step = model.train_state.step.item()
 
-    if config.overfit_dataset:
-        batch = next(train_it)
-
     with tqdm.trange(
         start_step, config.num_steps, desc="Training", dynamic_ncols=True
     ) as pbar:
         for i in pbar:
-            if not config.overfit_dataset:
-                batch = next(train_it)
-            train_info = model.train_step(batch)
+            batch = next(train_it)
 
+            # Train step
+            train_info = model.train_step(batch)
             train_info = jax.device_get(train_info)
             train_infos.append(train_info)
             pbar.set_postfix(
@@ -259,46 +265,53 @@ def main(_):
                 q_value=f"{train_info['q_value']:.2f}",
             )
 
+            # Main logging
             if (i + 1) % config.log_interval == 0:
                 avg_train_info = jax.tree.map(
                     lambda *xs: np.mean(np.stack(xs), axis=0), *train_infos
                 )
                 if jax.process_index() == 0:
                     wandb.log(
-                        {
-                            "training": avg_train_info,
-                            "batch_info": get_batch_info(batch),
-                        },
+                        flatten_wandb_dict(
+                            {
+                                "training": avg_train_info,
+                                "batch_info": get_batch_info(batch),
+                            }
+                        ),
                         step=i,
                     )
                 train_infos = []
 
+            # Visualizations
             if (i + 1) % config.viz_interval == 0:
                 for viz_ds_name, trajectories in viz_trajectories.items():
+                    visualizations = {}
                     for j, trajectory in enumerate(trajectories):
                         image = visualize_critic(model, trajectory)
-                        if jax.process_index() == 0:
-                            wandb.log(
-                                {
-                                    f"critic_visualization_{viz_ds_name}_{j}": wandb.Image(
-                                        image
-                                    )
-                                },
-                                step=i,
-                            )
+                        visualizations[f"{viz_ds_name}_{j}"] = wandb.Image(image)
+                    if jax.process_index() == 0:
+                        wandb.log(
+                            flatten_wandb_dict({"visualizations": visualizations}),
+                            commit=False,
+                            step=i + 1,
+                        )
+
+            # Validation
             if (i + 1) % config.eval_interval == 0:
                 eval_batch = next(eval_it)
                 eval_info = model.eval_step(eval_batch)
                 if jax.process_index() == 0:
                     wandb.log(
-                        {"validation": eval_info},
+                        flatten_wandb_dict({"validation": eval_info}),
                         commit=False,
                         step=i,
                     )
 
+            # Checkpointing
             if (i + 1) % config.save_interval == 0:
                 if config.save_path is not None:
                     checkpoint_save_manager.save(i + 1, args=model.save_args())
+
     if config.save_path is not None:
         checkpoint_save_manager.wait_until_finished()
 
