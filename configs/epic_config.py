@@ -66,7 +66,7 @@ def get_config():
                     "data_dir": "gs://oier-v4-bucket",
                     "load_camera_views": ["primary"],
                     "load_depth": False,
-                    "load_proprio": True,
+                    "load_proprio": False,
                     "load_language": True,
                     "force_recompute_dataset_statistics": False,
                     "action_proprio_normalization_type": NormalizationType.NORMAL,
