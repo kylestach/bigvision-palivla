@@ -96,7 +96,7 @@ class Tokenizer:
                 pad_token=language_tokenizer.string_to_id("<pad>").numpy().item(),
                 begin_of_action_token=language_tokenizer.string_to_id("\n").numpy().item(),
                 begin_of_cot_token=language_tokenizer.string_to_id("%").numpy().item(), # ria todo: fix to make this more interpretable
-                max_pad_length=300,
+                max_pad_length=500,
                 min_action_value=getattr(action_tokenizer, "min_action_value", None),
                 max_action_value=getattr(action_tokenizer, "max_action_value", None),
                 prompt_autoregressive=prompt_autoregressive,
@@ -276,7 +276,7 @@ class Tokenizer:
             tokens["reasonings"] = cot_tokens[: self.config.max_pad_length-10] # make sure there's enough space for actions
 
         tokens, mask_ar, mask_loss = self.compose_token_structure(tokens)
-
+        
         prepared_tokens = {
             "tokens": tokens,
             "mask_ar": mask_ar,
@@ -284,6 +284,18 @@ class Tokenizer:
             "mask_input": tokens != self.config.pad_token,
         }
 
+        action_start_idx = tf.argmax(tokens == self.config.begin_of_action_token, axis=-1) + 1
+        
+        if cot_tokens is not None:
+            gen_start_idx = tf.argmax(tokens==self.config.begin_of_cot_token, axis=-1) + 1
+        else:
+            gen_start_idx = tf.argmax(tokens==self.config.begin_of_action_token, axis=-1) + 1
+
+        # prepared_tokens.pop('mask_loss')
+        prepared_tokens = prepared_tokens | {
+            "action_start_idx": action_start_idx,
+            "gen_start_idx": gen_start_idx,
+        }
         return prepared_tokens
 
     

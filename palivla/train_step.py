@@ -41,6 +41,9 @@ def get_action_tokens(
     )
 
     action_token_starts = jnp.argmax(tokens == begin_of_action_token, axis=-1) + 1
+    # jax.debug.print("all tokens {}", tokens)
+    # jax.debug.print("any tokens = begin of action token? {}", jnp.any(tokens==begin_of_action_token, axis=-1))
+    # jax.debug.print("action token starts {}", action_token_starts)
     pred_tokens = jnp.argmax(pred_logits, axis=-1)
     pred_action_tokens = _get_action_tokens(pred_tokens, action_token_starts)
     pred_action_logits = jax.vmap(_get_action_tokens, in_axes=(-1, None), out_axes=-1)(
@@ -86,6 +89,10 @@ def compute_action_metrics(
 
     error = decoded_actions - decoded_actions_gt
     tokenization_error = gt_actions - decoded_actions_gt
+
+    # jax.debug.print("gt actions {}", gt_actions)
+    # jax.debug.print("gt action TOKENS {}", gt_action_tokens)
+    # jax.debug.print("decoded gt actions {}.", decoded_actions_gt) # this is nan bc the above is not 25000+
 
     if tokenizer_config.min_action_value is not None:
         tokenization_error = jnp.clip(

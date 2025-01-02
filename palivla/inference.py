@@ -104,9 +104,9 @@ def main(_):
             "task": {"language_instruction": instructions},
         }
         batch = tokenizer.tokenize_language_instruction(batch)
-        batch = tokenizer.tokenize_cot(batch)
+        # batch = tokenizer.tokenize_cot(batch)
         batch = prepare_image(batch)
-        batch = tokenizer.prepare_tokens_for_generation(batch)
+        batch = tokenizer.prepare_tokens_for_generation(batch, training=False)
         batch = {
             k: v.numpy() if isinstance(v, tf.Tensor) else v for k, v in batch.items()
         }

@@ -24,7 +24,7 @@ def get_config():
             "model_path": "models/paligemma",
             "save_path": 'gs://multi-robot-bucket2/runs/vla',
             "batch_size": 16,
-            "eval_batch_size": 10,
+            "eval_batch_size": 16,
             "num_steps": num_train_steps,
             "eval_interval": 100,
             "save_interval": 1000,
@@ -36,7 +36,7 @@ def get_config():
             "model_config": model_config,
             "dataset_kwargs": {
                 "oxe_kwargs": {
-                    "data_mix": "bridge_fractal",
+                    "data_mix": "bridge",
                     "data_dir": "gs://rail-orca-central2/resize_256_256/",
                     "load_camera_views": ["primary"],
                     "load_depth": False,
@@ -62,7 +62,7 @@ def get_config():
                 "balance_weights": True,
                 "shuffle_buffer_size": 50000,
                 "traj_transform_threads": 16,
-                "traj_read_threads": 2, # need to fix to make this = # datasets in mix. VERY IMPORTANT !
+                "traj_read_threads": 1, # need to fix to make this = # datasets in mix. VERY IMPORTANT !
             },
             "extra_dataset_transform_kwargs": {
                 "multimodal_rephrasings": False,

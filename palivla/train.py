@@ -132,7 +132,7 @@ def main(_):
                 action_start_idx=batch.get("action_start_idx", None),
             )
         )
-
+    
     train_it = map(
         make_training_batch,
         transform_dataset(
@@ -142,10 +142,14 @@ def main(_):
             use_cot=model.config['use_cot'],
             **config.extra_dataset_transform_kwargs
         )
+        .take(300)
+        .cache()
+        .repeat()
         .batch(per_host_train_batch_size)
         .iterator(),
     )
 
+    
 
     # gen_eval_it = map(
     #     make_training_batch,
@@ -160,18 +164,19 @@ def main(_):
     # )
 
     
-    gen_train_it = map(
-        make_training_batch,
-        transform_dataset(
-            train_ds,
-            model.tokenizer,
-            use_cot = model.config['use_cot'],
-            generation=True,
-            **config.extra_dataset_transform_kwargs
-        )
-        .batch(per_host_eval_batch_size)
-        .iterator(),
-    )
+    # gen_train_it = map(
+    #     make_training_batch,
+    #     transform_dataset(
+    #         train_ds,
+    #         model.tokenizer,
+    #         use_cot = model.config['use_cot'],
+    #         generation=True,
+    #         **config.extra_dataset_transform_kwargs
+    #     )
+    #     .batch(per_host_eval_batch_size)
+    #     .iterator(),
+    # )
+
 
     # W&B setup
     if jax.process_index() == 0:
@@ -226,7 +231,7 @@ def main(_):
                 #     eval_batch, "eval/gen_", include_regular_stats=False
                 # )
 
-                train_batch_for_eval = next(gen_train_it)
+                train_batch_for_eval = next(train_it)
                 train_info = model.eval_step(
                     train_batch_for_eval, 
                     "train/gen_", 
