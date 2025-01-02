@@ -96,7 +96,7 @@ class Tokenizer:
                 pad_token=language_tokenizer.string_to_id("<pad>").numpy().item(),
                 begin_of_action_token=language_tokenizer.string_to_id("\n").numpy().item(),
                 begin_of_cot_token=language_tokenizer.string_to_id("%").numpy().item(), # ria todo: fix to make this more interpretable
-                max_pad_length=300,
+                max_pad_length=500,
                 min_action_value=getattr(action_tokenizer, "min_action_value", None),
                 max_action_value=getattr(action_tokenizer, "max_action_value", None),
                 prompt_autoregressive=prompt_autoregressive,
