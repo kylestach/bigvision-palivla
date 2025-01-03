@@ -104,7 +104,7 @@ def compute_gen_stats(
         extract_action_tokens_vmap = jax.vmap(extract_action_tokens, in_axes=(0, None)) # only map over batch argument
         out_action_tokens = extract_action_tokens_vmap(out_tokens, tokenizer_config.begin_of_action_token) # check that this actually contains actions
     else:
-        out_action_tokens = out_tokens # all generated tokens are action tokens if we don't use chain of thought
+        out_action_tokens = out_tokens[:, :7] # all generated tokens are action tokens if we don't use chain of thought
 
     action_metrics = mesh.sjit(
         _compute_action_metrics_shim,

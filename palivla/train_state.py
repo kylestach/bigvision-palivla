@@ -372,7 +372,8 @@ class PaliVLATrainState:
                 action_tokenizer=action_tokenizer_state.model,
                 language_tokenizer=language_tokenizer,
                 prompt_autoregressive=config["prompt_autoregressive"],
-                use_cot=config["use_cot"], # refers to model_config (ria todo: fix, make this cleaner),
+                use_cot=config["use_cot"],
+                max_pad_length=config["max_pad_length"] # refers to model_config (ria todo: fix, make this cleaner),
             ),
         )
 
@@ -494,6 +495,7 @@ class PaliVLATrainState:
                 language_tokenizer,
                 config["prompt_autoregressive"],
                 use_cot=config["use_cot"],
+                max_pad_length=config["max_pad_length"]
             ),
             mesh=mesh,
             data_sharding=data_sharding,

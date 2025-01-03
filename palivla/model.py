@@ -175,11 +175,14 @@ def get_default_config():
         "modality_mappings": {"image_primary": "img", "text": "llm"},
         "prompt_autoregressive": False,
         "target_key_order": ("image_primary",),
+        "use_cot": False,
+        "max_pad_length": 60,
     }
 
 def get_cot_config(): 
     dct = get_default_config()
     dct['use_cot'] = True
+    dct['max_pad_length'] = 500
     return dct
 
 class PaliVLAModel(nn.Module):
@@ -197,6 +200,7 @@ class PaliVLAModel(nn.Module):
     prompt_autoregressive: bool
     target_key_order: Sequence[str]
     use_cot: bool
+    max_pad_length: int
 
     def setup(self):
         self.llm: GemmaModel = self.llm_spec.instantiate(name="llm")

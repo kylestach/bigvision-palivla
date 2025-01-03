@@ -85,7 +85,9 @@ class Tokenizer:
                    action_tokenizer: ActionTokenizer, 
                    language_tokenizer: SentencepieceTokenizer, 
                    prompt_autoregressive: bool = False, 
-                   use_cot:bool=False,):
+                   use_cot: bool = False,
+                   max_pad_length: int = 60,
+                   ):
             return cls(
                 action_vocab_size=action_tokenizer.vocab_size,
                 action_vocab_offset=256000,
@@ -96,7 +98,7 @@ class Tokenizer:
                 pad_token=language_tokenizer.string_to_id("<pad>").numpy().item(),
                 begin_of_action_token=language_tokenizer.string_to_id("\n").numpy().item(),
                 begin_of_cot_token=language_tokenizer.string_to_id("%").numpy().item(), # ria todo: fix to make this more interpretable
-                max_pad_length=500,
+                max_pad_length=max_pad_length,
                 min_action_value=getattr(action_tokenizer, "min_action_value", None),
                 max_action_value=getattr(action_tokenizer, "max_action_value", None),
                 prompt_autoregressive=prompt_autoregressive,
