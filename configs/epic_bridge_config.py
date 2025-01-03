@@ -63,7 +63,7 @@ def get_config():
             "dataset_kwargs": {
                 "oxe_kwargs": {
                     "data_mix": "hand_epic_bridge",
-                    "data_dir": "gs://oier-v4-bucket",
+                    "data_dir": "gs://rail-orca-central2/resize_256_256",
                     "load_camera_views": ["primary"],
                     "load_depth": False,
                     "load_proprio": False,
