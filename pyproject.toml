@@ -32,6 +32,7 @@ dependencies = [
     "huggingface-hub>=0.27.0",
     "transformers>=4.47.1",
     "tensorflow-metadata==1.16.1",
+	"ipdb",
 ]
 
 [project.optional-dependencies]
@@ -42,6 +43,7 @@ tpu = [
 gpu = [
     "jax[cuda12]==0.4.34"
 ]
+openvla = [	"openvla", "flash-attn==2.7.2.post1", "torch" ]
 
 [tool.uv]
 find-links = ["https://storage.googleapis.com/jax-releases/libtpu_releases.html"]
@@ -56,6 +58,11 @@ override-dependencies = [
     # Always use tf-nightly and tfds-nightly instead of tensorflow and tensorflow_datasets
     "tensorflow ; sys_platform == 'never'",
     "tensorflow_datasets ; sys_platform == 'never'",
+	"transformers>=4.47.1",
+	"dlimp@git+https://github.com/kvablack/dlimp.git",
+	"tokenizers>=0.21",
+	"torch",
+	"torchvision==0.20",
 ]
 
 [build-system]
@@ -75,3 +82,4 @@ allow-direct-references = true
 [tool.uv.sources]
 big-vision = { workspace = true }
 octo = { path = "octo", editable = true }
+openvla = { path = "openvla", editable = true }

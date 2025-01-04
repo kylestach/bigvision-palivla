@@ -51,6 +51,7 @@ def make_base_single_dataset(
     frame_transform_kwargs: dict,
     traj_transform_kwargs: dict,
     batch_size: Optional[int] = None,
+    **kwargs,
 ) -> dlimp.DLataset:
     dataset = make_single_dataset(
         make_oxe_dataset_kwargs(
