@@ -20,21 +20,18 @@ Modified from PaliGemma in big_vision: https://github.com/google-research/big_vi
 
 import collections
 import functools
-from typing import Sequence
 
-import jax.experimental
-import jax.experimental.multihost_utils
-
-from big_vision.pp import registry
-import big_vision.utils as u
 import einops
 import jax
+import jax.experimental
+import jax.experimental.multihost_utils
 import jax.numpy as jnp
 import numpy as np
 
-from palivla.model import PaliVLAModel
-from palivla.palivla_types import Data, Params, Variables
-
+import big_vision.utils as u
+from big_vision.pp import registry
+from palivla.components.model import PaliVLAModel
+from palivla.typing import Data, Params, Variables
 
 P = jax.sharding.PartitionSpec
 
@@ -84,40 +81,28 @@ def _image_avg_repr(
 def _decode_with_logp(
     params,
     data: Data,
-    data_masks: Data,
-    text_ar_mask: jnp.ndarray,
     *,
-    target_key_order: Sequence[str] | None = None,
     model: PaliVLAModel,
-    devices: jnp.ndarray,
+    mesh: jax.sharding.Mesh,
+    out_sharding: P,
     max_decode_len: int,
     eos_token: int,
     best_of_n: int = 1,
     sampler: str = "greedy",
-    replicate_out: bool = False,
-    eos_look_behind: int = 0
+    eos_look_behind: int = 0,
 ):
     """Sample token continuations to the input sequences."""
-    mesh = jax.sharding.Mesh(devices, ("devices",))
     replicate_sharding = jax.sharding.NamedSharding(mesh, P())
-    out_sharding = jax.sharding.NamedSharding(
-        mesh, P() if replicate_out else P("devices")
-    )
-
-    if target_key_order is not None:
-        target_key_order = tuple(target_key_order)
+    out_sharding = jax.sharding.NamedSharding(mesh, out_sharding)
 
     # Prefill the model cache and generate logits for first token.
     logits, cache = jax.jit(
         _prefill_cache,
         out_shardings=out_sharding,
-        static_argnames=("model", "max_decode_len", "target_key_order"),
+        static_argnames=("model", "max_decode_len"),
     )(
         params,
         data,
-        data_masks,
-        text_ar_mask,
-        target_key_order=target_key_order,
         model=model,
         max_decode_len=max_decode_len,
     )
@@ -126,7 +111,7 @@ def _decode_with_logp(
     if "_mask" in data:
         mask = data["_mask"]
     else:
-        mask = jnp.ones_like(data["text"][:, 0], dtype=jnp.bool_)
+        mask = jnp.ones_like(data["prompt"]["tokens"][:, 0], dtype=jnp.bool_)
 
     # Repeat example in case we are picking the best of n.
     logits, cache, mask = jax.jit(_bon_repeat, static_argnames=("n",))(
@@ -178,8 +163,8 @@ def _decode_with_logp(
     return tokens, logp
 
 
-def _decode(params, batch, masks, text_ar_mask, **kwargs):
-    tokens, _ = _decode_with_logp(params, batch, masks, text_ar_mask, **kwargs)
+def _decode(params, data, **kwargs):
+    tokens, _ = _decode_with_logp(params, data, **kwargs)
     return tokens
 
 
@@ -258,28 +243,25 @@ def _put_along_last_axis(arr, indices, values):
 def _prefill_cache(
     params: Params,
     data: Data,
-    masks: Data,
-    mask_ar: jnp.ndarray,
     *,
     model: PaliVLAModel,
     max_decode_len: int,
-    target_key_order: Sequence[str] | None = None
 ):
     """Initialize the model cache for decoding with the prompts."""
     variables = {"params": params}
-    x, packed_masks, packed_ar, _, _ = model.apply(
+    x, mask, mask_ar, _, _ = model.apply(
         variables,
-        data=data,
-        masks=masks,
-        text_ar_mask=mask_ar,
-        target_key_order=target_key_order,
-        method=model.make_model_inputs,
+        data["sensors"],
+        data["sensors_mask"],
+        data["prompt"],
+        None,
+        method=model.embed_sensors_and_text,
     )
     last_logits, variables = model.apply(
         variables,
         x,
-        packed_masks,
-        packed_ar,
+        mask,
+        mask_ar,
         cache_size=x.shape[1] + max_decode_len,
         method=model.prefill_cache,
         mutable=("cache",),
@@ -319,7 +301,9 @@ def _sample_logits(logits: jnp.ndarray, sampler: str):
 
     return sampled_tokens, sampled_logp
 
+
 registry.Registry.global_registry().clear()
+
 
 @registry.Registry.register("palivla_sampler.greedy")
 def _greedy_sampling(*, logits: jnp.ndarray, rng: jnp.ndarray):
@@ -348,14 +332,15 @@ def _nucleus_sampling(
 
 def _beam_decode(
     params: Params,
-    batch: Data,
+    data: Data,
     *,
+    batch_valid_mask: jnp.ndarray | None,
     model,
     devices,
     max_decode_len,
     eos_token,
     beam_size,
-    replicate_out=False
+    replicate_out=False,
 ):
     """Beam search (greedy/top-k exploration)."""
     mesh = jax.sharding.Mesh(devices, ("devices",))
@@ -371,18 +356,16 @@ def _beam_decode(
         static_argnames=("model", "max_decode_len"),
     )(
         params,
-        {
-            "image": batch["image"],
-            "text": batch["text"],
-            "mask_input": batch["mask_input"],
-            "mask_ar": batch["mask_ar"],
-        },
+        data,
         model=model,
         max_decode_len=max_decode_len,
     )
 
     # Mask indicating real examples. False if example is used to pad the batch.
-    mask = batch["_mask"]
+    if batch_valid_mask is not None:
+        mask = batch_valid_mask
+    else:
+        mask = jnp.ones_like(data["text"][:, 0], dtype=jnp.bool_)
 
     beam_sample_output = jax.jit(
         _beam_sample_output,

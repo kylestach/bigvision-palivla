@@ -2,14 +2,11 @@ import importlib
 import json
 from typing import Any, Callable, Dict, Generic, Mapping, TypeVar
 
+import jax
 import optax
 from flax import linen as nn
 from flax import struct
 from flax.core.frozen_dict import FrozenDict, freeze, unfreeze
-import jax
-import tensorflow as tf
-import orbax.checkpoint as ocp
-from scalax.sharding import MeshShardingHelper, PartitionSpec
 
 from palivla.utils import freeze_structure
 
@@ -26,7 +23,9 @@ class CtorSpec(Generic[T]):
         return isinstance(data, Mapping) and "__ctor" in data and "config" in data
 
     @classmethod
-    def create(cls, ctor: Callable[..., T] | str, config: Dict[str, Any]) -> "CtorSpec[T]":
+    def create(
+        cls, ctor: Callable[..., T] | str, config: Dict[str, Any]
+    ) -> "CtorSpec[T]":
         config = jax.tree.map(
             lambda x: CtorSpec.from_dict(x) if CtorSpec.is_ctor_spec_dict(x) else x,
             config,
@@ -60,6 +59,9 @@ class CtorSpec(Generic[T]):
     def from_dict(
         cls, data: Dict[str, Any], overrides: Dict[str, Any] | None = None
     ) -> "CtorSpec":
+        if isinstance(data, CtorSpec):
+            return data
+
         if overrides:
             data["config"].update(overrides)
 
@@ -78,35 +80,3 @@ class CtorSpec(Generic[T]):
 
 OptimizerSpec = CtorSpec[optax.GradientTransformation]
 ModuleSpec = CtorSpec[nn.Module]
-
-
-def restore_gluon_module(
-    path: str,
-    mesh: MeshShardingHelper,
-    step: int | None = None,
-    extra_kwargs: Dict[str, Any] = {},
-):
-    with tf.io.gfile.GFile(tf.io.gfile.join(path, "module_spec.json"), "r") as f:
-        module_spec = ModuleSpec.from_json(f.read())
-
-    module_spec.config.update(extra_kwargs)
-
-    params_manager = ocp.CheckpointManager(
-        directory=tf.io.gfile.join(path, "checkpoints"),
-        item_handlers={"default": ocp.StandardCheckpointHandler()},
-    )
-
-    if step is None:
-        step = params_manager.latest_step()
-
-    params_metadata = params_manager.item_metadata(step)["default"]
-    sharding = jax.sharding.NamedSharding(mesh, PartitionSpec())
-    abstract_params = jax.tree.map(
-        lambda x: jax.ShapeDtypeStruct(x.shape, x.dtype, sharding=sharding),
-        params_metadata,
-    )
-    params = params_manager.restore(
-        step,
-        args=ocp.args.Composite(default=ocp.args.StandardRestore(abstract_params)),
-    )["default"]["params"]
-    return module_spec, params

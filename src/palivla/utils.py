@@ -1,6 +1,9 @@
+import tempfile
+from contextlib import contextmanager
+
 import jax
-from jax.experimental import multihost_utils
 import numpy as np
+from jax.experimental import multihost_utils
 
 
 def freeze_structure(structure):
@@ -46,3 +49,66 @@ def host_broadcast_str(x: str | None) -> str:
 
     return decoded.rstrip()
 
+
+def gcs_recursive_copy(src: str, dst: str):
+    from tensorflow import io as io
+
+    io.gfile.makedirs(dst)
+    for item in io.gfile.listdir(src):
+        src_path = io.gfile.join(src, item)
+        dst_path = io.gfile.join(dst, item)
+        if io.gfile.isdir(src_path):
+            gcs_recursive_copy(src_path, dst_path)
+        else:
+            io.gfile.copy(src_path, dst_path, overwrite=True)
+
+
+def flatten_wandb_dict(nested_dict: dict, prefix: str = "") -> dict:
+    """
+    Flatten a nested dictionary for logging to Weights & Biases.
+    """
+    flat_dict = {}
+    for key, value in nested_dict.items():
+        if isinstance(value, dict):
+            flat_dict.update(flatten_wandb_dict(value, f"{prefix}{key}/"))
+        else:
+            flat_dict[f"{prefix}{key}"] = value
+    return flat_dict
+
+
+@contextmanager
+def write_staging_directory(target_dir: str):
+    """Creates a temporary staging directory and copies its contents to target_dir on exit.
+    
+    Args:
+        target_dir: Directory to copy staged files to (can be local or GCS path)
+    
+    Yields:
+        Path to temporary staging directory
+    """
+    from tensorflow import io as io
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        yield temp_dir
+
+        # Create target dir if it doesn't exist
+        io.gfile.makedirs(target_dir)
+
+        gcs_recursive_copy(temp_dir, target_dir)
+
+@contextmanager
+def read_staging_directory(target_dir: str):
+    """Stages a directory from GCS to a temporary directory. The temporary directory is deleted on exit.
+
+    Args:
+        target_dir: Directory to stage from (can be local or GCS path)
+    
+    Yields:
+        Path to temporary staging directory
+    """
+    from tensorflow import io as io
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        gcs_recursive_copy(target_dir, temp_dir)
+
+        yield temp_dir

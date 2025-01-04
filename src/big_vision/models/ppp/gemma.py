@@ -46,6 +46,22 @@ import orbax.checkpoint
 
 def get_config(variant):
   """Returns config for specified gemma variant."""
+  if variant == "smoke_test":
+    return ml_collections.ConfigDict(
+        dict(
+            variant=variant,
+            width=256,
+            depth=4,
+            mlp_dim=256,
+            num_heads=4,
+            num_kv_heads=4,
+            head_dim=64,
+            norm_eps=1e-6,
+            vocab_size=1024,
+            scan=True,
+            remat_policy="nothing_saveable",
+        )
+    )
   if variant == "gemma_2b":
     return ml_collections.ConfigDict(
         dict(

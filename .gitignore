@@ -10,3 +10,5 @@ wandb/
 /trained_tokenizers
 /models
 /checkpoints
+/uv.lock
+/build/
