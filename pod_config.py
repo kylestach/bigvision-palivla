@@ -48,8 +48,6 @@ DEFAULT_TRAIN_ARGS = {
     "save_interval": 1000,
     "data_axis_size": 1,
     "fsdp_axis_size": -1,
-    "paligemma_weights_path": "models/paligemma-3b-pt-224.f16.npz",
-    "language_tokenizer_path": "models/paligemma_tokenizer.model",
 }
 
 
@@ -70,7 +68,10 @@ TPU_POD_TYPES = {
     "kyle-pod-256": "eu-v5-256",
     "homer-pod-64": "eu-v5-64",
     "homer-pod-128": "eu-v5-128",
+    "dibya-pod-64-1": "eu-v5-64",
+    "dibya-pod-64-2": "eu-v5-64",
     "v4-vm-*": "us-v4-8",
+    "v4-pod-16": "us-v4-16",
 }
 
 def parse_args(args_str):
@@ -90,7 +91,7 @@ for config_re, maybe_pod_type in TPU_POD_TYPES.items():
 config = TPU_POD_CONFIGS[pod_type]
 
 train_args = os.environ.get("TRAIN_ARGS")
-config_file = os.environ.get("CONFIG_FILE", "config/bridge_critic_config.py")
+config_file = os.environ.get("CONFIG_FILE", "configs/bridge_critic_config.py")
 train_args = DEFAULT_TRAIN_ARGS | config["train_args"] | parse_args(train_args)
 train_args_str = " \\\n\t".join([f"--config.{k} {v}" for k, v in train_args.items()])
 train_script = os.environ.get("TRAIN_SCRIPT", "scripts/train_critic.py")
@@ -101,9 +102,12 @@ launch_script = f"""
 {config["setup_script"]}
 cd {config["src_dir"]}
 
-uv run --extra tpu python {train_script} --config {config_file} \
-    {train_args_str}
+source .venv/bin/activate
+python {train_script} --config {config_file} \
+    {train_args_str} \
+    --platform tpu
 
+bash
 read -p "Press any key to continue..."
 """
 

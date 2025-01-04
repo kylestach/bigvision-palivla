@@ -7,6 +7,7 @@ placeholder(int)._value
 
 
 def get_config(variant_config: str | None = None):
+    data_dir = FieldReference("/data/rlds/", str)
     num_train_steps = FieldReference(100000, int)
 
     model_config = get_default_config()
@@ -34,9 +35,13 @@ def get_config(variant_config: str | None = None):
 
     return ConfigDict(
         {
+            # Shared field references
+            "data_dir": data_dir,
+
             # W&B settings
             "wandb_project": "palivla-critic-debug",
             "wandb_mode": "disabled",
+            "wandb_experiment_name": "critic-smoke-test",
             # Tokenizers
             "language_tokenizer": "google/paligemma-3b-pt-224",
             "action_tokenizer": "action_tokenizer.bin(min_action_value=-3, max_action_value=3)",
@@ -78,7 +83,7 @@ def get_config(variant_config: str | None = None):
             "dataset_kwargs": {
                 "oxe_kwargs": {
                     "data_mix": "bridge",
-                    "data_dir": "/data/rlds/",
+                    "data_dir": data_dir,
                     "load_camera_views": ["primary"],
                     "load_depth": False,
                     "load_proprio": True,
@@ -102,7 +107,7 @@ def get_config(variant_config: str | None = None):
             "viz_traj_datasets": {
                 "bridge": {
                     "name": "bridge_dataset",
-                    "data_dir": "/data/rlds/",
+                    "data_dir": data_dir,
                     "load_camera_views": ["primary"],
                     "load_depth": False,
                     "load_proprio": True,

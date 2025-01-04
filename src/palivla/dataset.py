@@ -17,10 +17,12 @@ def make_base_dataset(
     balance_weights: bool,
     traj_transform_threads: int,
     traj_read_threads: int,
+    **kwargs,
 ) -> dlimp.DLataset:
     dataset_kwargs_list, sample_weights = make_oxe_dataset_kwargs_and_weights(
         **oxe_kwargs
     )
+
     dataset = make_interleaved_dataset(
         dataset_kwargs_list,
         sample_weights,
@@ -32,6 +34,7 @@ def make_base_dataset(
         balance_weights=balance_weights,
         traj_transform_threads=traj_transform_threads,
         traj_read_threads=traj_read_threads,
+        **kwargs,
     )
 
     return dataset
@@ -51,6 +54,7 @@ def make_base_single_dataset(
     frame_transform_kwargs: dict,
     traj_transform_kwargs: dict,
     batch_size: Optional[int] = None,
+    **kwargs,
 ) -> dlimp.DLataset:
     dataset = make_single_dataset(
         make_oxe_dataset_kwargs(
@@ -62,6 +66,7 @@ def make_base_single_dataset(
             load_language,
             force_recompute_dataset_statistics,
             action_proprio_normalization_type,
+            **kwargs,
         ),
         train=train,
         frame_transform_kwargs=frame_transform_kwargs,
@@ -85,6 +90,7 @@ def make_trajectory_dataset(
     action_proprio_normalization_type: NormalizationType,
     force_recompute_dataset_statistics: bool,
     train: bool,
+    **kwargs,
 ):
     import tensorflow as tf
 
@@ -105,6 +111,7 @@ def make_trajectory_dataset(
         load_language,
         force_recompute_dataset_statistics,
         action_proprio_normalization_type,
+        **kwargs,
     )
     dataset_kwargs["num_parallel_reads"] = None
     dataset_kwargs["num_parallel_calls"] = None

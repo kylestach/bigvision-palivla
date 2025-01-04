@@ -173,10 +173,16 @@ def main(_):
 
     # Make the basic dataset
     # We have to do this first, since we need to know how the dataset is set up before we can construct the model
-    train_ds = make_base_dataset(**config.dataset_kwargs.to_dict(), train=True)
+    train_ds = make_base_dataset(
+        **config.dataset_kwargs.to_dict(),
+        train=True,
+    )
 
     viz_datasets = {
-        k: make_trajectory_dataset(**viz_dataset_kwargs.to_dict(), train=False)
+        k: make_trajectory_dataset(
+            **viz_dataset_kwargs.to_dict(),
+            train=False,
+        )
         for k, viz_dataset_kwargs in config.viz_traj_datasets.items()
     }
     viz_dataset_iters = {k: v.iterator() for k, v in viz_datasets.items()}

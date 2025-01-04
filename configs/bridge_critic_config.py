@@ -10,6 +10,7 @@ def get_config():
     num_train_steps = FieldReference(100000, int)
     data_dir = FieldReference("/data/rlds/", str)
     ema_rate = FieldReference(0.005, float)
+    discount = FieldReference(0.98, float)
 
     model_config = get_default_config()
 
@@ -24,12 +25,15 @@ def get_config():
         * (model_config["q_max"] - model_config["q_min"])
         / model_config["num_critic_bins"]
     )
-    model_config["discount"] = 0.98
+    model_config["discount"] = discount
     model_config["target_ema_rate"] = 0.005
     model_config["target_ema_rate"] = ema_rate
 
     return ConfigDict(
         {
+            # Shared field references
+            "data_dir": data_dir,
+
             # W&B settings
             "wandb_project": "palivla-bridge",
             "wandb_mode": "online",
@@ -48,8 +52,8 @@ def get_config():
                     },
                 )
             ],
-            "resume_checkpoint_dir": "",
-            "resume_checkpoint_step": -1,
+            "resume_checkpoint_dir": placeholder(str),
+            "resume_checkpoint_step": placeholder(int),
             # Overfit the dataset (for smoke tests/debugging)
             "overfit_dataset": False,
             # Training settings
@@ -124,6 +128,7 @@ def get_config():
                 "shuffle_buffer_size": 50000,
                 "traj_transform_threads": 16,
                 "traj_read_threads": 16,
+                "mc_discount": discount,
             },
             "viz_traj_datasets": {
                 "bridge": {
@@ -135,7 +140,8 @@ def get_config():
                     "load_language": True,
                     "force_recompute_dataset_statistics": False,
                     "action_proprio_normalization_type": NormalizationType.NORMAL,
-                }
+                    "mc_discount": discount,
+                },
             },
             # Critic training kwargs
             "viz_num_trajectories": 4,
