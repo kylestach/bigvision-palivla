@@ -124,6 +124,7 @@ def get_config():
                 "shuffle_buffer_size": 50000,
                 "traj_transform_threads": 16,
                 "traj_read_threads": 16,
+                "parl_action_cache_glob_pattern": "./bridge_openvla_cached_actions/*.pkl",
             },
             "viz_traj_datasets": {
                 "bridge": {

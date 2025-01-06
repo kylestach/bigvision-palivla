@@ -82,4 +82,4 @@ allow-direct-references = true
 [tool.uv.sources]
 big-vision = { workspace = true }
 octo = { path = "octo", editable = true }
-openvla = { path = "openvla", editable = true }
+openvla = { path = "openvla", editable = true, extra="openvla" }

@@ -114,9 +114,6 @@ class CriticModelComponents(ModelComponents):
             batch, self.language_tokenizer, self.action_tokenizer
         )
 
-        # TODO: load counterfactual_next_actions
-        batch["counterfactual_next_actions"] = np.zeros_like(batch["action"])
-
         # Shard the batch to devices
         batch = {
             "sensors": batch["observation"],
@@ -127,9 +124,7 @@ class CriticModelComponents(ModelComponents):
             "next_prompt": sequences["prompt"],
             "action": batch["action"][:, -1, -1, :],
             "next_action": batch["next_action"][:, -1, -1, :],
-            "counterfactual_next_actions": batch["counterfactual_next_actions"][
-                :, -1, :, :
-            ],
+            "counterfactual_next_actions": batch["counterfactual_next_actions"],
             "rewards": batch["reward"],
             "td_mask": batch["td_mask"],
             "mc_return": batch["mc_return"],

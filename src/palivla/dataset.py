@@ -17,6 +17,7 @@ def make_base_dataset(
     balance_weights: bool,
     traj_transform_threads: int,
     traj_read_threads: int,
+    parl_action_cache_glob_pattern: Optional[str] = None,
 ) -> dlimp.DLataset:
     dataset_kwargs_list, sample_weights = make_oxe_dataset_kwargs_and_weights(
         **oxe_kwargs
@@ -32,6 +33,7 @@ def make_base_dataset(
         balance_weights=balance_weights,
         traj_transform_threads=traj_transform_threads,
         traj_read_threads=traj_read_threads,
+        parl_action_cache_glob_pattern=parl_action_cache_glob_pattern,
     )
 
     return dataset

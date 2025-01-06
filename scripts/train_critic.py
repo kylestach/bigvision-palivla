@@ -155,7 +155,7 @@ def main(_):
 
     sharding_metadata = make_sharding(config)
 
-    if config.resume_checkpoint_dir is not None:
+    if config.resume_checkpoint_dir != "":
         # Load the model from a checkpoint
         model = CriticModelComponents.load_static(
             config.resume_checkpoint_dir, sharding_metadata
