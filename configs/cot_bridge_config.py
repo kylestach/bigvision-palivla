@@ -3,7 +3,7 @@ from ml_collections.config_dict import placeholder
 from palivla.base_config import get_config as get_base_config
 
 def get_config(variant_config: str = "default"):
-    config = get_base_config(variant_config).to_dict()
+    config = get_base_config(variant_config)
     config["sequence_builder"] = "sequence_builder.cot(prompt_pad_length=50, gen_pad_length=110)"
 
     config["cot_path"] = FieldReference(None, str)
@@ -21,5 +21,7 @@ def get_config(variant_config: str = "default"):
                 "visualization": "viz.sanity_print",
             }
         }
+    else:
+        config["wandb_project"] = "palivla-cot"
 
     return ConfigDict(config)
