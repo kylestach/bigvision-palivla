@@ -59,8 +59,15 @@ def loss_fn(
         )
 
         # Maximize over next action options
-        if next_target_value.ndim == 3:
-            next_target_value = jnp.max(next_target_value, axis=-1)
+        if next_target_value.ndim == 2:
+            chex.assert_shape(
+                next_target_value,
+                (
+                    batch["rewards"].shape[0],
+                    batch["counterfactual_next_actions"].shape[1],
+                ),
+            )
+            next_target_value = jnp.max(next_target_value, axis=1)
 
         chex.assert_shape(next_target_value, (batch["rewards"].shape[0],))
         target_value = batch["rewards"] + model.discount * next_target_value * (

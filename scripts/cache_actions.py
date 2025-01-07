@@ -158,7 +158,7 @@ def main(_):
                 frame_key = trajectory["frame_key"][i].decode("utf-8")
                 if frame_key not in frame_key_to_actions:
                     frame_key_to_actions[frame_key] = get_actions(
-                        jax.tree.map(lambda x: x[0], trajectory["observation"]),
+                        jax.tree.map(lambda x: x[i], trajectory["next_observation"]),
                         language_instruction,
                     )
 

@@ -37,14 +37,15 @@ def get_config(variant_config: str | None = None):
             # W&B settings
             "wandb_project": "palivla-critic-debug",
             "wandb_mode": "disabled",
+            "wandb_experiment_name": "debug-critic",
             # Tokenizers
             "language_tokenizer": "google/paligemma-3b-pt-224",
             "action_tokenizer": "action_tokenizer.bin(min_action_value=-3, max_action_value=3)",
             "sequence_builder": "sequence_builder.default(prompt_pad_length=50, gen_pad_length=10)",
             # Initialization
             "load_fns": [],
-            "resume_checkpoint_dir": None,
-            "resume_checkpoint_step": None,
+            "resume_checkpoint_dir": "",
+            "resume_checkpoint_step": -1,
             # Overfit the dataset (for smoke tests/debugging)
             "overfit_dataset": True,
             # Training settings
@@ -115,6 +116,6 @@ def get_config(variant_config: str | None = None):
             "critic_train_step_kwargs": {
                 "regress_to_mc_returns": True,
                 "train_with_sarsa": False,
-            }
+            },
         }
     )
