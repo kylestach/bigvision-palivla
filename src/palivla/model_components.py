@@ -206,7 +206,7 @@ class ModelComponents:
             begin_is_prompt=begin_is_prompt,
         )
 
-    def predict_tokens(self, batch, sequences: Any | None, *, use_ema_params: bool = False):
+    def predict_tokens(self, batch, sequences: Any | None, *, use_ema_params: bool = False, replicate_out: bool = False):
         if sequences is None:
             sequences = self.build_sequence(batch, begin_is_prompt=True)
 
@@ -231,7 +231,7 @@ class ModelComponents:
                 inputs,
                 model=self.train_state.model,
                 mesh=self.sharding.mesh.mesh,
-                out_sharding=PartitionSpec("fsdp"),
+                out_sharding=PartitionSpec() if replicate_out else PartitionSpec("fsdp"),
                 max_decode_len=self.sequence_builder.max_decode_length,
                 eos_token=self.language_tokenizer.eos_token_id,
             )
@@ -245,9 +245,10 @@ class ModelComponents:
         *,
         use_ema_params: bool = False,
         return_tokens: bool = False,
+        replicate_out: bool = False,
     ):
         sequences = self.build_sequence(batch, begin_is_prompt=True)
-        tokens = self.predict_tokens(batch, sequences, use_ema_params=use_ema_params)
+        tokens = self.predict_tokens(batch, sequences, use_ema_params=use_ema_params, replicate_out=replicate_out)
 
         actions, actions_mask = self.sequence_builder.batch_get_actions(
             tokens,

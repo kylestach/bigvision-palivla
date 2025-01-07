@@ -20,7 +20,7 @@ def sanity_print(model: ModelComponents, trajectory: Any):
 
     # Predict chain-of-thought
     sequences = model.build_sequence(first_frame, begin_is_prompt=True)
-    predicted_tokens = model.predict_tokens(first_frame, sequences, use_ema_params=True)
+    predicted_tokens = model.predict_tokens(first_frame, sequences, use_ema_params=True, replicate_out=True)
 
     # Decode the tokens
     predicted_text_tokens = [model.language_tokenizer.decode(tok) for tok in predicted_tokens[0]]

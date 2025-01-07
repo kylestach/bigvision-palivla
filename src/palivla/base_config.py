@@ -6,7 +6,7 @@ from palivla.components.model import get_default_config
 
 def get_config(variant_config: str):
     num_train_steps = FieldReference(100000, int)
-    data_dir = "/data/rlds/"
+    data_dir = FieldReference("/data/rlds/", str)
 
     model_config = get_default_config()
 
@@ -65,7 +65,7 @@ def get_config(variant_config: str):
         "dataset_kwargs": {
             "oxe_kwargs": {
                 "data_mix": "bridge",
-                "data_dir": "/data/rlds/",
+                "data_dir": data_dir,
                 "load_camera_views": ["primary"],
                 "load_depth": False,
                 "load_proprio": True,
@@ -117,7 +117,5 @@ def get_config(variant_config: str):
         model_config["llm_spec"]["config"]["variant"] = "smoke_test"
         model_config["img_spec"]["config"]["variant"] = "S/14"
 
-    return ConfigDict(
-        config,
-    )
+    return config
 
