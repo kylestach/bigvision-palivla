@@ -17,6 +17,10 @@ class SequenceBuilder:
     prompt_pad_length: int
     gen_pad_length: int
 
+    @property
+    def max_decode_length(self):
+        return self.gen_pad_length
+
     def save(self, path: PathLike):
         with tf.io.gfile.GFile(tf.io.gfile.join(path, "sequence_builder.pkl"), "wb") as f:
             cloudpickle.dump(self, f)
@@ -27,7 +31,12 @@ class SequenceBuilder:
             return cloudpickle.load(f)
 
     def prepare_prompt(self, language_instruction):
-        return "<bos>" + str(language_instruction)
+        if isinstance(language_instruction, bytes):
+            language_instruction = language_instruction.decode()
+        
+        assert isinstance(language_instruction, str)
+
+        return "<bos>" + language_instruction
 
     def prepare_gen(self, action_tokens):
         return "".join([f"<act{i}>" for i in action_tokens]) + "<eos>"
@@ -37,13 +46,13 @@ class SequenceBuilder:
         batch,
         language_tokenizer: AutoTokenizer,
         action_tokenizer: ActionTokenizer,
-        boa_is_prompt: bool = False,
+        begin_is_prompt: bool = False,
         include_action_tokens: bool = True,
     ):
         boa_id = language_tokenizer.encode("<begin_of_action>")[0]
 
-        boa_prompt = "<begin_of_action>" if boa_is_prompt else ""
-        boa_gen = "" if boa_is_prompt else "<begin_of_action>"
+        boa_prompt = "<begin_of_action>" if begin_is_prompt else ""
+        boa_gen = "" if begin_is_prompt else "<begin_of_action>"
         prompt = [
             self.prepare_prompt(instruction) + boa_prompt
             for instruction in batch["task"]["language_instruction"]
@@ -52,9 +61,13 @@ class SequenceBuilder:
         prompt_tokens = language_tokenizer.batch_encode_plus(prompt)["input_ids"]
 
         if include_action_tokens:
+            action = batch["action"]
+            if action.ndim == 4:
+                action = action[..., -1, :, :]
+
             action_tokens = [
                 boa_gen + self.prepare_gen(t)
-                for t in action_tokenizer.tokenize(batch["action"][..., -1, :, :])
+                for t in action_tokenizer.tokenize(action)
             ]
             action_tokens = language_tokenizer.batch_encode_plus(action_tokens)[
                 "input_ids"
@@ -62,51 +75,27 @@ class SequenceBuilder:
         else:
             action_tokens = [[] for _ in range(len(prompt_tokens))]
 
-        def _pad(data, pad_length, pad_value=0):
+        return {
+            "prompt": self.pad_and_format_token_group(prompt_tokens, self.prompt_pad_length, is_gen=[tok == boa_id for tok in prompt_tokens], is_loss=False),
+            "gen": self.pad_and_format_token_group(action_tokens, self.gen_pad_length, is_gen=True, is_loss=True),
+        }
+   
+    @staticmethod
+    def pad_and_format_token_group(tokens, pad_length, is_gen: bool | np.ndarray, is_loss: bool | np.ndarray):
+        def _pad(data, pad_length, pad_value=0, data_len=None):
+            if isinstance(data, bool):
+                data = np.full(data_len, data)
+
             num_pad_tokens = max(0, pad_length - len(data))
             return np.pad(
                 data, (0, num_pad_tokens), mode="constant", constant_values=pad_value
             )[:pad_length]
 
-        batch_size = len(prompt_tokens)
-
         return {
-            "prompt": {
-                "tokens": np.stack(
-                    [_pad(tok, self.prompt_pad_length) for tok in prompt_tokens]
-                ),
-                "mask": np.stack(
-                    [
-                        _pad(np.ones_like(tok, dtype=bool), self.prompt_pad_length)
-                        for tok in prompt_tokens
-                    ]
-                ),
-                "mask_ar": np.stack(
-                    [
-                        _pad(np.equal(tok, boa_id), self.prompt_pad_length)
-                        for tok in prompt_tokens
-                    ]
-                ),
-                "mask_loss": np.zeros((batch_size, self.prompt_pad_length), dtype=bool),
-            },
-            "gen": {
-                "tokens": np.stack(
-                    [_pad(tok, self.gen_pad_length) for tok in action_tokens]
-                ),
-                "mask": np.stack(
-                    [
-                        _pad(np.ones_like(tok, dtype=bool), self.gen_pad_length)
-                        for tok in action_tokens
-                    ]
-                ),
-                "mask_ar": np.ones((batch_size, self.gen_pad_length), dtype=bool),
-                "mask_loss": np.stack(
-                    [
-                        _pad(np.ones(len(tok), dtype=bool), self.gen_pad_length)
-                        for tok in action_tokens
-                    ]
-                ),
-            },
+            "tokens": np.stack([_pad(tok, pad_length) for tok in tokens]),
+            "mask": np.stack([_pad(np.ones_like(tok, dtype=bool), pad_length) for tok in tokens]),
+            "mask_ar": np.stack([_pad(is_gen, pad_length, data_len=len(tok)) for tok in tokens]),
+            "mask_loss": np.stack([_pad(is_loss, pad_length, data_len=len(tok)) for tok in tokens]),
         }
 
     def get_actions(
@@ -115,7 +104,7 @@ class SequenceBuilder:
         language_tokenizer: AutoTokenizer,
         action_tokenizer: ActionTokenizer,
         *,
-        boa_is_prompt: bool = False,
+        begin_is_prompt: bool = False,
         action_dim: int | None,
         boa_id: int | None = None,
         eos_id: int | None = None,
@@ -126,7 +115,7 @@ class SequenceBuilder:
         act0_id = act0_id or language_tokenizer.encode("<act0>")[0]
 
         # Find the beginning of the action
-        if boa_is_prompt:
+        if begin_is_prompt:
             start_idx = 0
         else:
             try:
@@ -153,7 +142,7 @@ class SequenceBuilder:
         language_tokenizer: AutoTokenizer,
         action_tokenizer: ActionTokenizer,
         *,
-        boa_is_prompt: bool = False,
+        begin_is_prompt: bool = False,
         action_dim: int,
     ):
         boa_id = language_tokenizer.encode("<begin_of_action>")[0]
@@ -165,7 +154,7 @@ class SequenceBuilder:
                 tokens[i],
                 language_tokenizer,
                 action_tokenizer,
-                boa_is_prompt=boa_is_prompt,
+                begin_is_prompt=begin_is_prompt,
                 boa_id=boa_id,
                 eos_id=eos_id,
                 act0_id=act0_id,
@@ -179,8 +168,9 @@ class SequenceBuilder:
         for action in actions:
             if action is not None:
                 action_horizon = max(action_horizon, action.shape[0])
-                action_dim = action.shape[1]
-                break
+                if action_dim is None:
+                    action_dim = action.shape[1]
+                assert action_dim == action.shape[1]
 
         actions_mask = np.array([action is not None for action in actions])
         actions = np.stack(

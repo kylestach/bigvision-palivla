@@ -158,9 +158,7 @@ class ModelComponents:
 
     def train_step(self, batch: Any):
         # Tokenize the batch and build sequences
-        sequences = self.sequence_builder.build_sequence(
-            batch, self.language_tokenizer, self.action_tokenizer
-        )
+        sequences = self.build_sequence(batch, begin_is_prompt=False)
 
         # Shard the batch to devices
         batch = {
@@ -183,7 +181,7 @@ class ModelComponents:
         gt_actions = batch["action"][:, -1, :, :]
 
         predicted_actions, actions_mask, tokens = self.predict(
-            batch, action_dim=gt_actions.shape[-1], return_tokens=True
+            batch, action_dim=gt_actions.shape[-1], return_tokens=True,
         )
 
         predicted_actions = np.nan_to_num(predicted_actions)
@@ -200,21 +198,17 @@ class ModelComponents:
             / tokens["mask"].mean(),
         }
 
-    def predict(
-        self,
-        batch,
-        action_dim: int,
-        *,
-        use_ema_params: bool = False,
-        return_tokens: bool = False,
-    ):
-        # Tokenize the batch and build sequences
-        sequences = self.sequence_builder.build_sequence(
+    def build_sequence(self, batch: Any, begin_is_prompt: bool = True):
+        return self.sequence_builder.build_sequence(
             batch,
             self.language_tokenizer,
             self.action_tokenizer,
-            boa_is_prompt=True,
+            begin_is_prompt=begin_is_prompt,
         )
+
+    def predict_tokens(self, batch, sequences: Any | None, *, use_ema_params: bool = False):
+        if sequences is None:
+            sequences = self.build_sequence(batch, begin_is_prompt=True)
 
         # Shard the batch to devices
         inputs = {
@@ -223,6 +217,7 @@ class ModelComponents:
             "prompt": sequences["prompt"],
             "gen": sequences["gen"],
         }
+
         inputs = self.sharding.mesh.local_data_to_global_array(inputs)
 
         # Run the train step
@@ -237,28 +232,40 @@ class ModelComponents:
                 model=self.train_state.model,
                 mesh=self.sharding.mesh.mesh,
                 out_sharding=PartitionSpec("fsdp"),
-                max_decode_len=10,
+                max_decode_len=self.sequence_builder.max_decode_length,
                 eos_token=self.language_tokenizer.eos_token_id,
             )
-            tokens = self.data_gather_fn(tokens)
 
-            actions, actions_mask = self.sequence_builder.batch_get_actions(
-                tokens,
-                self.language_tokenizer,
-                self.action_tokenizer,
-                boa_is_prompt=True,
-                action_dim=action_dim,
+        return self.data_gather_fn(tokens)
+
+    def predict(
+        self,
+        batch,
+        action_dim: int,
+        *,
+        use_ema_params: bool = False,
+        return_tokens: bool = False,
+    ):
+        sequences = self.build_sequence(batch, begin_is_prompt=True)
+        tokens = self.predict_tokens(batch, sequences, use_ema_params=use_ema_params)
+
+        actions, actions_mask = self.sequence_builder.batch_get_actions(
+            tokens,
+            self.language_tokenizer,
+            self.action_tokenizer,
+            begin_is_prompt=True,
+            action_dim=action_dim,
+        )
+
+        if return_tokens:
+            return (
+                actions,
+                actions_mask,
+                {
+                    "predicted": tokens,
+                    "target": sequences["gen"]["tokens"],
+                    "mask": sequences["gen"]["mask"],
+                },
             )
-
-            if return_tokens:
-                return (
-                    actions,
-                    actions_mask,
-                    {
-                        "predicted": tokens,
-                        "target": sequences["gen"]["tokens"],
-                        "mask": sequences["gen"]["mask"],
-                    },
-                )
-            else:
-                return actions, actions_mask
+        else:
+            return actions, actions_mask

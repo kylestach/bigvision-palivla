@@ -21,13 +21,15 @@ from ml_collections import ConfigDict, config_flags
 from scalax.sharding import FSDPShardingRule, MeshShardingHelper
 from transformers import AutoTokenizer
 
-import wandb
 import palivla.load_fns
-from palivla.dataset import make_base_dataset
+import palivla.visualizations
+
+import wandb
+from palivla.dataset import make_base_dataset, make_trajectory_dataset
 from palivla.model_components import ModelComponents
 from palivla.optimizer import make_optimizer
 from palivla.spec import ModuleSpec, OptimizerSpec
-from palivla.utils import host_broadcast_str
+from palivla.utils import flatten_wandb_dict, host_broadcast_str
 
 jax.config.update("jax_compilation_cache_dir", "/tmp/jax_cache")
 jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
@@ -80,6 +82,7 @@ def create_model(config: ConfigDict, sharding_metadata: ShardingMetadata):
 
     extra_tokens = [
         "<begin_of_action>",
+        "<begin_of_reasoning>",
     ] + [f"<act{i}>" for i in range(action_tokenizer.vocab_size)]
     language_tokenizer.add_tokens(extra_tokens)
     language_tokenizer.add_bos_token = False
@@ -153,6 +156,33 @@ def main(_):
         train_ds.batch(per_host_train_batch_size).iterator(),
     )
 
+    # Visualizations
+    viz_datasets = {
+        k: make_trajectory_dataset(
+            **viz_dataset_kwargs.to_dict(),
+            train=False,
+        )
+        for k, viz_dataset_kwargs in config.visualization_datasets.items()
+    }
+    viz_dataset_iters = {k: v.iterator() for k, v in viz_datasets.items()}
+
+    viz_trajectories = {
+        k: [next(v_iter) for _ in range(config.viz_trajectories_per_dataset)]
+        for k, v_iter in viz_dataset_iters.items()
+    }
+
+    visualization_callbacks = {}
+    for visualization_name, visualization_config in config.visualizations.items():
+        viz_callback = Registry.lookup(visualization_config.visualization)
+        def _viz_fn():
+            nonlocal model, viz_trajectories
+            visualizations = {}
+            for viz_num, trajectory in enumerate(viz_trajectories[visualization_config.dataset]):
+                visualizations[f"{visualization_name}_{viz_num}"] = viz_callback(model, trajectory)
+            return visualizations
+
+        visualization_callbacks[visualization_name] = _viz_fn
+
     # W&B setup
     if jax.process_index() == 0:
         wandb_kwargs = {
@@ -185,6 +215,11 @@ def main(_):
 
     if config.overfit_dataset:
         batch = next(train_it)
+        viz_trajectories["overfit"] = [
+            jax.tree.map(lambda x: x[:1], batch)
+        ]
+        viz_trajectories["overfit"][0]["action"] = viz_trajectories["overfit"][0]["action"][:, 0, 0, :]
+        viz_trajectories["overfit"][0]["observation"] = jax.tree.map(lambda x: x[0], viz_trajectories["overfit"][0]["observation"])
 
     with tqdm.trange(
         start_step, config.num_steps, desc="Training", dynamic_ncols=True
@@ -200,30 +235,34 @@ def main(_):
                 loss=f"{info['loss']:.4f}",
             )
 
-            if (i + 1) % config.eval_interval == 0:
-                eval_info = model.eval_step(batch)
-                if jax.process_index() == 0:
-                    wandb.log(eval_info, step=i + 1, commit=False)
-
             if (i + 1) % config.log_interval == 0:
                 avg_info = jax.tree.map(
                     lambda *xs: np.mean(np.stack(xs), axis=0), *wandb_logs
                 )
                 if jax.process_index() == 0:
-                    wandb.log(avg_info, step=i + 1)
+                    wandb.log(flatten_wandb_dict({"train": avg_info}), step=i + 1, commit=False)
                 wandb_logs = []
 
             if (i + 1) % config.save_interval == 0:
                 if config.save_path is not None:
                     checkpoint_save_manager.save(i + 1, args=model.save_args())
 
-    if config.save_path is not None:
+            if (i + 1) % config.viz_interval == 0:
+                visualizations = flatten_wandb_dict({"viz": {k: v() for k, v in visualization_callbacks.items()}})
+                if jax.process_index() == 0:
+                    wandb.log(flatten_wandb_dict({"viz": visualizations}), step=i + 1, commit=False)
+
+            if (i + 1) % config.eval_interval == 0:
+                eval_info = model.eval_step(batch)
+                if jax.process_index() == 0:
+                    wandb.log(flatten_wandb_dict({"eval": eval_info}), step=i + 1, commit=True)
+
         checkpoint_save_manager.wait_until_finished()
 
 
 if __name__ == "__main__":
     config_flags.DEFINE_config_file(
-        "config", "configs/smoke_test.py", "Path to the config file."
+        "config", "configs/cot_bridge_config.py:smoke_test", "Path to the config file."
     )
     flags.DEFINE_string("platform", "gpu", "Platform to run on.")
     app.run(main)
