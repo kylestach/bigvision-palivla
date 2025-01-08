@@ -4,7 +4,7 @@ from palivla.base_config import get_config as get_base_config
 
 def get_config(variant_config: str = "default"):
     config = get_base_config(variant_config)
-    config["sequence_builder"] = "sequence_builder.cot(prompt_pad_length=50, gen_pad_length=110)"
+    config["sequence_builder"] = "sequence_builder.cot(prompt_pad_length=50, gen_pad_length=150)"
 
     config["cot_path"] = FieldReference(None, str)
 
