@@ -13,7 +13,7 @@ parser.add_argument("--id", type=int, default=0)
 parser.add_argument("--dataset", type=str, default="hand_epic_dataset")
 args = parser.parse_args()
 
-FINAL_JSON = f"/scratch/partial_datasets/oiermees/{args.dataset}/jsons/batch{args.id}.json"
+FINAL_JSON = f"/scratch/partial_datasets/oiermees/generated_ecot/{args.dataset}/jsons/batch{args.id}.json"
 
 
 tf.config.set_visible_devices(
