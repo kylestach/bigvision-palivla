@@ -4,11 +4,9 @@ This is a framework for training multimodal vision-language-action (VLA) model f
 ## Installation
 We develop with `uv`, but other environment managers should work fine. To install the dependencies, run:
 ```bash
-uv init --python=python3.10
+uv venv
 uv sync
 ```
-
-We require some extra packages, namely [`dlimp`](https://github.com/kvablack/dlimp) and [`octo`](https://github.com/octo-models/octo) for dataloading. To install them, clone them locally. You will have to install `dlimp` without its dependencies, as its specified tensorflow version has some mutual incompatibilities with other packages we use.
 
 ## Training
 To train a model, run:
