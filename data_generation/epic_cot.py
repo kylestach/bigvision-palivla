@@ -2,6 +2,7 @@ import tensorflow as tf
 import numpy as np
 import argparse
 import json
+import os
 
 from octo.data.oxe import make_oxe_dataset_kwargs
 from octo.data.dataset import make_single_dataset
