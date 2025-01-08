@@ -9,7 +9,7 @@ from octo.data.dataset import make_single_dataset
 TRAJS_TO_PROCESS = 5200
 WRITE_INTERVAL=25
 parser = argparse.ArgumentParser()
-parser.add_argument("--id", type=int, default=1)
+parser.add_argument("--id", type=int, default=0)
 parser.add_argument("--dataset", type=str, default="hand_epic_dataset")
 args = parser.parse_args()
 
