@@ -17,3 +17,15 @@ python -m palivla/train.py --config_file palivla/configs/bridge_config.py
 ```
 
 This repository is (for now) a fork of [`big_vision`](https://github.com/google-research/big_vision).
+
+## Citation
+If you use PaliVLA in your own project, please cite this repository:
+```bibtex
+@misc{palivla,
+  author       = {Kyle Stachowicz},
+  title        = {PaliVLA},
+  year         = {2024},
+  url          = {https://github.com/kylestach/bigvision-palivla},
+  note         = {GitHub repository}
+}
+```
