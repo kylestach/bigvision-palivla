@@ -37,6 +37,16 @@ if os.path.exists(FINAL_JSON):
     with open(FINAL_JSON, "r") as file:
         results_dict = json.load(file)
 
+assert results_dict is not None
+
+for i, episode in enumerate(iterator):
+    # write dictionary if it's time
+    if (i + 1) % WRITE_INTERVAL == 0:
+        with open(FINAL_JSON, "w") as f:
+            json.dump(results_dict, f)
+
+    traj_id = int(episode['traj_idx'][0])
+    print(f"Processing traj {traj_id} **********", flush=True)
     traj_id = int(episode['traj_idx'][0])
     print(f"Processing traj {traj_id} **********", flush=True)
 
