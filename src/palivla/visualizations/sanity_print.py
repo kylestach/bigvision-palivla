@@ -8,6 +8,7 @@ import numpy as np
 import prettytable
 
 import jax
+import jax.experimental.multihost_utils as mhu
 from big_vision.utils import Registry
 from palivla.model_components import ModelComponents
 
@@ -20,7 +21,8 @@ def sanity_print(model: ModelComponents, trajectory: Any):
 
     # Predict chain-of-thought
     sequences = model.build_sequence(first_frame, begin_is_prompt=True)
-    predicted_tokens = model.predict_tokens(first_frame, sequences, use_ema_params=True, replicate_out=True)
+    viz_batch, sequences = mhu.broadcast_one_to_all(({"observation": first_frame["observation"]}, sequences))
+    predicted_tokens = model.predict_tokens(viz_batch, sequences, use_ema_params=True, replicate=True)
 
     # Decode the tokens
     predicted_text_tokens = [model.language_tokenizer.decode(tok) for tok in predicted_tokens[0]]

@@ -206,7 +206,7 @@ class ModelComponents:
             begin_is_prompt=begin_is_prompt,
         )
 
-    def predict_tokens(self, batch, sequences: Any | None, *, use_ema_params: bool = False, replicate_out: bool = False):
+    def predict_tokens(self, batch, sequences: Any | None, *, use_ema_params: bool = False, replicate: bool = False):
         if sequences is None:
             sequences = self.build_sequence(batch, begin_is_prompt=True)
 
@@ -218,7 +218,8 @@ class ModelComponents:
             "gen": sequences["gen"],
         }
 
-        inputs = self.sharding.mesh.local_data_to_global_array(inputs)
+        if not replicate:
+            inputs = self.sharding.mesh.local_data_to_global_array(inputs)
 
         # Run the train step
         with self.sharding.mesh.mesh, nn.logical_axis_rules([("act_batch", "fsdp")]):
@@ -231,7 +232,7 @@ class ModelComponents:
                 inputs,
                 model=self.train_state.model,
                 mesh=self.sharding.mesh.mesh,
-                out_sharding=PartitionSpec() if replicate_out else PartitionSpec("fsdp"),
+                out_sharding=PartitionSpec() if replicate else PartitionSpec("fsdp"),
                 max_decode_len=self.sequence_builder.max_decode_length,
                 eos_token=self.language_tokenizer.eos_token_id,
             )
@@ -245,10 +246,10 @@ class ModelComponents:
         *,
         use_ema_params: bool = False,
         return_tokens: bool = False,
-        replicate_out: bool = False,
+        replicate: bool = False,
     ):
         sequences = self.build_sequence(batch, begin_is_prompt=True)
-        tokens = self.predict_tokens(batch, sequences, use_ema_params=use_ema_params, replicate_out=replicate_out)
+        tokens = self.predict_tokens(batch, sequences, use_ema_params=use_ema_params, replicate=replicate)
 
         actions, actions_mask = self.sequence_builder.batch_get_actions(
             tokens,
