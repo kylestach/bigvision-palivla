@@ -25,8 +25,8 @@ tf.config.set_visible_devices(
 # load chunk of dataset in based on ID
 print("Loading dataset *******")
 start_idx = TRAJS_TO_PROCESS*args.id
-dataset_kwargs = make_oxe_dataset_kwargs(args.dataset,"/scratch/partial_datasets/oiermees/epic_rlds/hand_epic_dataset/")
-dataset = make_single_dataset(dataset_kwargs, frame_transform_kwargs=dict(resize_size={"primary": (256, 256)},),train=True)
+dataset_kwargs = make_oxe_dataset_kwargs(args.dataset,"/scratch/partial_datasets/oiermees/epic_rlds/")
+dataset = make_single_dataset(dataset_kwargs, frame_transform_kwargs=dict(resize_size={"primary": (224, 224)},),train=True)
 dataset = dataset.skip(start_idx).take(TRAJS_TO_PROCESS)
 iterator = dataset.iterator()
 
