@@ -44,6 +44,7 @@ gpu = [
     "jax[cuda12]==0.4.34"
 ]
 openvla = [	"openvla", "flash-attn==2.7.2.post1", "torch" ]
+simpler = [ "simpler_env", "gymnasium", "mani_skill2_real2sim" ]
 
 [tool.uv]
 find-links = ["https://storage.googleapis.com/jax-releases/libtpu_releases.html"]
@@ -83,3 +84,5 @@ allow-direct-references = true
 big-vision = { workspace = true }
 octo = { path = "octo", editable = true }
 openvla = { path = "openvla", editable = true, extra="openvla" }
+simpler_env = { path = "simpler_env", editable = true }
+mani_skill2_real2sim = { path="./simpler_env/ManiSkill2_real2sim", editable=true}

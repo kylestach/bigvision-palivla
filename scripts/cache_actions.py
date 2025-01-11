@@ -36,34 +36,7 @@ jax.config.update("jax_persistent_cache_min_compile_time_secs", 0)
 tf.config.set_visible_devices([], "GPU")
 
 
-def main(_):
-    # Turn off debug logs
-    tf.get_logger().setLevel("WARNING")
-    absl_logging.set_verbosity(absl_logging.WARNING)
-
-    os.environ["WANDB__SERVICE_WAIT"] = "300"
-    os.environ["WANDB_INIT_TIMEOUT"] = "120"
-    wandb.require("core")
-
-    config = flags.FLAGS.config
-
-    wandb.init(
-        project=config.wandb_project,
-        name=f"bridge_openvla_action_caching_worker_{flags.FLAGS.worker_id}_of_{flags.FLAGS.num_workers}",
-    )
-    wandb.config.update(config.to_dict())
-
-    os.makedirs(os.path.dirname(flags.FLAGS.output_path), exist_ok=True)
-
-    # train_ds = make_base_dataset(**config.dataset_kwargs.to_dict(), train=True)
-    train_ds = make_base_single_dataset(
-        name="bridge_dataset",
-        **config.dataset_kwargs.to_dict(),
-        **config.dataset_kwargs.oxe_kwargs.to_dict(),
-        train=flags.FLAGS.train_partition,
-    )
-    num_trajectories = 53192 if flags.FLAGS.train_partition else 6872
-    it = train_ds.iterator()
+def initialize_openvla() -> dict:
     # Create OpenVLA agent
     openvla_processor = AutoProcessor.from_pretrained(
         "openvla/openvla-7b", trust_remote_code=True
@@ -94,25 +67,70 @@ def main(_):
         padding_side="right",
     )
 
-    frame_key_to_actions = {}
+    return {
+        "openvla_processor": openvla_processor,
+        "openvla_model": openvla_model,
+        "device_id": device_id,
+        "batch_transform": batch_transform,
+        "collator": collator,
+    }
 
-    def get_actions(observation: dict, language_instruction: str):
-        image = observation["image_primary"][0]
-        assert len(image.shape) == 3
-        images: List[Image.Image] = [
-            Image.fromarray(image)
-        ] * flags.FLAGS.num_action_samples
-        openvla_inputs = openvla_processor(
-            [language_instruction] * flags.FLAGS.num_action_samples,
-            images,
-        ).to(device_id, dtype=torch.bfloat16)
 
-        actions = openvla_model.predict_action(
+def get_openvla_actions(
+    openvla_variables, observation, language_instruction, num_action_samples: int = 1
+):
+    image = observation["image_primary"][0]
+    assert len(image.shape) == 3
+    images: List[Image.Image] = [Image.fromarray(image)] * num_action_samples
+    openvla_inputs = openvla_variables["openvla_processor"](
+        [language_instruction] * num_action_samples,
+        images,
+    ).to(openvla_variables["device_id"], dtype=torch.bfloat16)
+
+    actions = (
+        openvla_variables["openvla_model"]
+        .predict_action(
             **openvla_inputs,
             unnorm_key="bridge_orig",
             do_sample=True,
-        ).reshape(flags.FLAGS.num_action_samples, 7)
-        return actions
+        )
+        .reshape(num_action_samples, 7)
+    )
+    return actions
+
+
+def main(_):
+    # Turn off debug logs
+    tf.get_logger().setLevel("WARNING")
+    absl_logging.set_verbosity(absl_logging.WARNING)
+
+    os.environ["WANDB__SERVICE_WAIT"] = "300"
+    os.environ["WANDB_INIT_TIMEOUT"] = "120"
+    wandb.require("core")
+
+    config = flags.FLAGS.config
+
+    wandb.init(
+        project=config.wandb_project,
+        name=f"bridge_openvla_action_caching_worker_{flags.FLAGS.worker_id}_of_{flags.FLAGS.num_workers}",
+    )
+    wandb.config.update(config.to_dict())
+
+    os.makedirs(os.path.dirname(flags.FLAGS.output_path), exist_ok=True)
+
+    # train_ds = make_base_dataset(**config.dataset_kwargs.to_dict(), train=True)
+    train_ds = make_base_single_dataset(
+        name="bridge_dataset",
+        **config.dataset_kwargs.to_dict(),
+        **config.dataset_kwargs.oxe_kwargs.to_dict(),
+        train=flags.FLAGS.train_partition,
+    )
+    num_trajectories = 53192 if flags.FLAGS.train_partition else 6872
+    it = train_ds.iterator()
+
+    openvla_variables = initialize_openvla()
+
+    frame_key_to_actions = {}
 
     trajectory_index = 0
     processed_trajectories = 0
@@ -157,9 +175,11 @@ def main(_):
             for i in range(trajectory_length):
                 frame_key = trajectory["frame_key"][i].decode("utf-8")
                 if frame_key not in frame_key_to_actions:
-                    frame_key_to_actions[frame_key] = get_actions(
+                    frame_key_to_actions[frame_key] = get_openvla_actions(
+                        openvla_variables,
                         jax.tree.map(lambda x: x[i], trajectory["next_observation"]),
                         language_instruction,
+                        num_action_samples=flags.FLAGS.num_action_samples,
                     )
 
             if processed_trajectories % flags.FLAGS.save_interval == 0:
