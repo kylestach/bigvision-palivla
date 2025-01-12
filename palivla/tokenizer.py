@@ -159,6 +159,46 @@ class Tokenizer:
             _jax_action_tokenize_fn=jax.jit(partial(action_tokenizer.apply, method="tokenize")),
         )
 
+    @classmethod
+    def from_tokenizer(cls, tokenizer: SentencepieceTokenizer, prompt_autoregressive: bool = False):
+        bos_token = tokenizer.string_to_id("<bos>").numpy().item()
+        eos_token = tokenizer.string_to_id("<eos>").numpy().item()
+        pad_token = tokenizer.string_to_id("<pad>").numpy().item()
+        begin_of_action_token = tokenizer.string_to_id("\n").numpy().item()
+        max_pad_length = 60
+
+        return 
+        
+        
+        cls(
+            config=cls.TokenizerConfig(
+                action_vocab_size=256,
+                action_vocab_offset=256000,
+                num_action_tokens=7,
+                bos_token=bos_token,
+                eos_token=eos_token,
+                pad_token=pad_token,
+                begin_of_action_token=begin_of_action_token,
+                max_pad_length=max_pad_length,
+                min_action_value=-2,
+                max_action_value=2,
+                vocab_size=tokenizer.vocab_size().numpy().item(),
+                prompt_autoregressive=prompt_autoregressive,
+            ),
+            language_tokenizer=tokenizer,
+            token_structure={
+                "prefix": [
+                    [bos_token],
+                    "prompt",
+                    [begin_of_action_token],
+                ],
+                "causal": [
+                    "action",
+                ],
+                "pad": [[pad_token] * max_pad_length],
+            },
+        )
+
     def compose_token_structure(self, tokens, include_keys=["prefix", "causal", "pad"]):
         def _extract_tokens(ids_or_str):
             if isinstance(ids_or_str, str):
@@ -231,7 +271,7 @@ class Tokenizer:
         instruction = tf.strings.regex_replace(instruction, "\n", " ")
         instruction = tf.strings.strip(instruction)
         instruction = tf.strings.join([tf.constant("act "), instruction])
-
+        # print(instruction)
         return self.language_tokenizer.tokenize(instruction)
 
     def tokenize_action(self, data, obs=None):
@@ -286,7 +326,26 @@ class Tokenizer:
         }
 
         tokens, mask_ar, mask_loss, mask_ar_fuse, mask_loss_fuse = self.compose_token_structure(
-            tokens
+            tokens,
+        )
+
+        return {
+            "tokens": tokens,
+            "mask_ar": mask_ar,
+            "mask_input": tokens != self.config.pad_token,
+        }
+    
+    def prepare_tokens_for_rollout(self, language_token_instructions):
+        tokens = {
+            "prompt": language_token_instructions[: self.config.max_pad_length - 10],
+            #  "action": self._tf_action_tokenize_fn(
+            #     self.action_tokenizer_params, data["action"][-1], None
+            # )
+            # + self.config.action_vocab_offset,
+        }
+
+        tokens, mask_ar, mask_loss, mask_ar_fuse, mask_loss_fuse = self.compose_token_structure(
+            tokens, include_keys={"prefix", "pad"}
         )
 
         return {

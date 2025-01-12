@@ -10,7 +10,7 @@ placeholder(int)._value
 
 
 def get_config():
-    num_train_steps = FieldReference(400000, int)
+    num_train_steps = FieldReference(40_000, int)
 
     from big_vision.models.ppp.gemma import get_config
     variant = "gemma_2b"
@@ -167,8 +167,8 @@ def get_config():
         "frame_transform_kwargs": frame_transform_kwargs,
         "balance_weights": True,
         "shuffle_buffer_size": 50000,
-        "traj_transform_threads": 48,
-        "traj_read_threads": 48,
+        "traj_transform_threads": 24,
+        "traj_read_threads": 24,
     }
 
     return ConfigDict(
@@ -181,11 +181,11 @@ def get_config():
             "tokenizer_path": "models/paligemma_tokenizer.model",
             "model_path": "models/paligemma",
             "save_path": "models/paligemma_saved_model",
-            "batch_size": 192,
-            "eval_batch_size": 192,
+            "batch_size": 1024,
+            "eval_batch_size": 1024,
             "num_steps": num_train_steps,
             "eval_interval": 100,
-            "save_interval": 50_000,
+            "save_interval": 2500,
             "log_interval": 1,
             "data_axis_size": 1,
             "fsdp_axis_size": -1,

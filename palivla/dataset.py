@@ -4,7 +4,10 @@ import tensorflow as tf
 from ml_collections import ConfigDict
 import numpy as np
 
-from octo.data.utils.data_utils import NormalizationType
+try:
+    from octo_digit.octo.data.utils.data_utils import NormalizationType
+except ImportError:
+    from octo.data.utils.data_utils import NormalizationType
 from palivla.tokenizer import Tokenizer
 from octo.data.dataset import make_interleaved_dataset, make_single_dataset
 from octo.data.oxe import make_oxe_dataset_kwargs_and_weights, make_oxe_dataset_kwargs

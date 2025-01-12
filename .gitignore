@@ -7,5 +7,8 @@ wandb/
 *.egg-info
 
 /trained_tokenizers
-/models
+#/models
 /checkpoints
+models
+kyle-checkpoints-eu4
+octo_digit*

@@ -2,6 +2,7 @@ import jax
 import jax.numpy as jnp
 import orbax.checkpoint as ocp
 import flax
+from functools import partial
 
 import tensorflow as tf
 import tqdm
@@ -61,12 +62,12 @@ def main(_):
         "proprio": jax.ShapeDtypeStruct(shape=(1, 6), dtype=jnp.float32),
         "modality_idx": jax.ShapeDtypeStruct(shape=(1, 1), dtype=jnp.int32),
     }
-    if config.resume_from_checkpoint_dir is not None: # load in pretrained model and merge in weights that exist already
+    if config.resume_from_checkpoint_dir is not None: 
         restore_checkpoint_manager = ocp.CheckpointManager(
             config.resume_from_checkpoint_dir,
             item_handlers=PaliVLATrainState.get_checkpoint_handlers(),
         )
-        loaded_model, pretrained_action_tokenizer_state, loaded_language_tokenizer = PaliVLATrainState.load_components(
+        model = PaliVLATrainState.restore(
             checkpoint_manager=restore_checkpoint_manager,
             step=config.resume_from_checkpoint_step,
             load_optimizer=True,
@@ -74,36 +75,52 @@ def main(_):
             model_sharding=model_sharding,
             data_sharding=data_sharding,
         )
-        pretrained_params = loaded_model.params
     else:
-        pretrained_params = None
-        pretrained_action_tokenizer_state = None
-        loaded_language_tokenizer = None
-    action_shape = (train_ds.element_spec["action"]).shape
-    action_dim = action_shape[-1]
-    action_horizon = action_shape[-2]
-    model = PaliVLATrainState.from_components(
-        paligemma_weights_path=config.paligemma_weights_path,
-        action_tokenizer_weights_path=config.action_tokenizer_path,
-        language_tokenizer_path=config.language_tokenizer_path,
-        config=config.model_config.to_dict(),
-        dataset_statistics=train_ds.dataset_statistics,
-        language_tokenizer=None,
-        optimizer_spec=OptimizerSpec.create(
-            make_optimizer, config.optimizer_kwargs.to_dict()
-        ),
-        model_sharding=model_sharding,
-        data_sharding=data_sharding,
-        mesh=mesh,
-        seed=config.get("seed", 0),
-        param_dtype=jnp.float32,
-        batch_shape=batch_shape,
-        action_dim=action_dim,
-        action_horizon=action_horizon,
-        pretrained_params=pretrained_params,
-        pretrained_action_tokenizer_state=pretrained_action_tokenizer_state,
-        loaded_language_tokenizer=loaded_language_tokenizer
-    )
+        if config.finetune_from_checkpoint_dir is not None: # load in pretrained model and merge in weights that exist already
+            is_legacy = config.resume_from_checkpoint_dir == 'gs://kyle-checkpoints-eu4/paligemma-checkpoints/volcanic-shape-147' and config.resume_from_checkpoint_step <= 200_000
+            restore_checkpoint_manager = ocp.CheckpointManager(
+                config.resume_from_checkpoint_dir,
+                item_handlers=PaliVLATrainState.get_checkpoint_handlers(is_legacy=is_legacy),
+            )
+            loaded_model, pretrained_action_tokenizer_state, loaded_language_tokenizer, dataset_statistics = PaliVLATrainState.load_components(
+                checkpoint_manager=restore_checkpoint_manager,
+                step=config.resume_from_checkpoint_step,
+                load_optimizer=False,
+                mesh=mesh,
+                model_sharding=model_sharding,
+                data_sharding=data_sharding,
+                is_legacy=is_legacy
+            )
+            pretrained_params = loaded_model.params
+        else:
+            pretrained_params = None
+            pretrained_action_tokenizer_state = None
+            loaded_language_tokenizer = None
+        action_shape = (train_ds.element_spec["action"]).shape
+        action_dim = action_shape[-1]
+        action_horizon = action_shape[-2]
+        model = PaliVLATrainState.from_components(
+            paligemma_weights_path=config.paligemma_weights_path,
+            action_tokenizer_weights_path=config.action_tokenizer_path,
+            language_tokenizer_path=config.language_tokenizer_path,
+            config=config.model_config.to_dict(),
+            dataset_statistics=train_ds.dataset_statistics,
+            language_tokenizer=None,
+            optimizer_spec=OptimizerSpec.create(
+                make_optimizer, config.optimizer_kwargs.to_dict()
+            ),
+            model_sharding=model_sharding,
+            data_sharding=data_sharding,
+            mesh=mesh,
+            seed=config.get("seed", 0),
+            param_dtype=jnp.float32,
+            batch_shape=batch_shape,
+            action_dim=action_dim,
+            action_horizon=action_horizon,
+            pretrained_params=pretrained_params,
+            pretrained_action_tokenizer_state=pretrained_action_tokenizer_state,
+            loaded_language_tokenizer=loaded_language_tokenizer
+        )
     
 
     # Construct the final dataset
@@ -177,7 +194,8 @@ def main(_):
             )
         )
 
-
+#    make_training_batch = partial(make_batch, generate=False)
+#    make_gen_batch = partial(make_batch, generate=True)
     train_it = map(
         make_training_batch,
         transform_dataset(
@@ -213,10 +231,12 @@ def main(_):
         .batch(per_host_eval_batch_size)
         .iterator(),
     )
+    next(gen_train_it)
+    next(gen_eval_it)
 
     # W&B setup
     if jax.process_index() == 0:
-        wandb_kwargs = {"project": config.wandb_project, "tags": [config.data_mix]}
+        wandb_kwargs = {"project": config.wandb_project,} 
 
         if 'wandb_run_name' in config.to_dict() and config.wandb_run_name is not None:
             wandb_kwargs["name"] = config.wandb_run_name    
@@ -243,6 +263,11 @@ def main(_):
     start_step = model.model_state.step.item()
     with tqdm.trange(start_step, config.num_steps, desc="Training", dynamic_ncols=True) as pbar:
         for i in pbar:
+            if i == 0:
+                if config.save_path is not None:
+                    print(f"Saving model to {checkpoint_save_path}/{i}")
+                    checkpoint_save_manager.save(i+1, args=model.save_args())
+
             batch = next(train_it)
             info = model.train_step(batch)
 
@@ -256,6 +281,11 @@ def main(_):
                 avg_info = jax.tree.map(
                     lambda *xs: np.mean(np.stack(xs), axis=0), *wandb_logs
                 )
+                for k, v in batch.sensors.items():
+                    avg_info[f"data/{k}_max"] = v.max()
+                    avg_info[f"data/{k}_min"] = v.min()
+                    avg_info[f"data/{k}_mean"] = v.mean()
+                    avg_info[f"data/{k}_std"] = v.std()
                 if jax.process_index() == 0:
                     wandb.log(avg_info, step=i)
                 wandb_logs = []
@@ -280,9 +310,9 @@ def main(_):
                         step=i,
                     )
 
-            if (i + 1) % config.save_interval == 0:
+            if i + 1 == 100 or (i + 1) % config.save_interval == 0:
                 if config.save_path is not None:
-                    print(f"Saving model to {config.save_path}/{i}")
+                    print(f"Saving model to {checkpoint_save_path}/{i}")
                     checkpoint_save_manager.save(i+1, args=model.save_args())
     checkpoint_save_manager.wait_until_finished()
 

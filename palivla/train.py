@@ -177,7 +177,7 @@ def main(_):
     checkpoint_save_manager = ocp.CheckpointManager(
         checkpoint_save_path,
         item_handlers=PaliVLATrainState.get_checkpoint_handlers(),
-        options=ocp.CheckpointManagerOptions(),
+        options=ocp.CheckpointManagerOptions(max_to_keep=1),
     )
 
     wandb_logs = []

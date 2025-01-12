@@ -1,14 +1,16 @@
 from functools import cached_property, partial
-from typing import Dict, Optional, Sequence
+from typing import Dict, Optional, Sequence, Type
 from flax.training.train_state import TrainState as FlaxTrainState
 from flax.struct import dataclass, field
 from flax import linen as nn
 from flax.core.frozen_dict import FrozenDict, unfreeze, freeze
+from ml_collections.config_dict.config_dict import _is_type_safety_violation
 import jax
 import jax.experimental
 import jax.experimental.multihost_utils
 import jax.numpy as jnp
 import orbax.checkpoint as ocp
+from palivla import model
 from scalax.sharding import (
     MeshShardingHelper,
     ShardingRule,
@@ -29,6 +31,9 @@ from palivla.train_step import TrainingBatch, step_fn
 from palivla.types import Params, RolloutBatch
 from palivla.predict_fns import _decode
 from palivla.utils import merge_params
+
+def fmt_handler_name(name, suffix, is_legacy=False):
+    return f"{name}/{suffix}" if is_legacy else f"{name}_{suffix}"
 
 class ShardingMetadata:
     mesh: MeshShardingHelper
@@ -52,12 +57,12 @@ class TrainState(FlaxTrainState):
     sharding_metadata: ShardingMetadata | None = field(pytree_node=False)
 
     @classmethod
-    def get_checkpoint_handlers(cls, name: str):
+    def get_checkpoint_handlers(cls, name: str, is_legacy: bool = False):
         return {
-            f"{name}_model_spec": ocp.JsonCheckpointHandler(),
-            f"{name}_model_params": ocp.StandardCheckpointHandler(),
-            f"{name}_optimizer_spec": ocp.JsonCheckpointHandler(),
-            f"{name}_opt_state": ocp.StandardCheckpointHandler(),
+            fmt_handler_name(name, "model_spec", is_legacy=is_legacy): ocp.JsonCheckpointHandler(),
+            fmt_handler_name(name, "model_params", is_legacy=is_legacy): ocp.StandardCheckpointHandler(),
+            fmt_handler_name(name, "optimizer_spec", is_legacy=is_legacy): ocp.JsonCheckpointHandler(),
+            fmt_handler_name(name, "opt_state", is_legacy=is_legacy): ocp.StandardCheckpointHandler(),
         }
 
     @classmethod
@@ -163,19 +168,25 @@ class TrainState(FlaxTrainState):
         load_optimizer: bool,
         sharding_metadata: ShardingMetadata | None = None,
         step: int | None = None,
+        is_legacy: bool = False
     ):
         if step is None:
             step = checkpoint_manager.latest_step()
 
-        model_params_name = f"{name}_model_params"
-        model_spec_name = f"{name}_model_spec"
-        optimizer_spec_name = f"{name}_optimizer_spec"
-        opt_state_name = f"{name}_opt_state"
+        model_params_name = fmt_handler_name(name, "model_params", is_legacy=is_legacy)
+        model_spec_name = fmt_handler_name(name, "model_spec", is_legacy=is_legacy)
+        optimizer_spec_name = fmt_handler_name(name, "optimizer_spec", is_legacy=is_legacy)
+        opt_state_name = fmt_handler_name(name, "opt_state", is_legacy=is_legacy)
 
-        abstract_params = checkpoint_manager.item_metadata(step).get(model_params_name)[
-            "params"
-        ]
-
+        # breakpoint()
+        try:
+            abstract_params = checkpoint_manager.item_metadata(step).get(model_params_name)[
+                "params"
+            ]
+        except TypeError as e:
+            if jax.process_index() == 0:
+                breakpoint()
+            raise e
         if sharding_metadata is not None:
             shardings = sharding_metadata.mesh.match_sharding_rule(
                 sharding_metadata.model_sharding_rule, {"params": abstract_params}
@@ -310,6 +321,7 @@ class PaliVLATrainState:
         pretrained_params: Params | None = None,
         pretrained_action_tokenizer_state: TrainState | None = None,
         loaded_language_tokenizer: SentencepieceTokenizer | None = None,
+        skip_optimizer: bool = False,
     ):
         model_spec, params = load_from_pretrained(
             paligemma_weights_path,
@@ -332,7 +344,7 @@ class PaliVLATrainState:
             name="model",
             params=params,
             model_spec=model_spec,
-            optimizer_spec=optimizer_spec,
+            optimizer_spec=OptimizerSpec.create(optax.set_to_zero, {}) if skip_optimizer else optimizer_spec,
             sharding_metadata=model_sharding_metadata,
         )
 
@@ -426,16 +438,32 @@ class PaliVLATrainState:
         return self.save_args().keys()
 
     @classmethod
-    def get_checkpoint_handlers(cls):
+    def get_checkpoint_handlers(cls, is_legacy: bool = False):
         return {
-            **TrainState.get_checkpoint_handlers("model"),
-            **TrainState.get_checkpoint_handlers("action_tokenizer"),
+            **TrainState.get_checkpoint_handlers("model", is_legacy),
+            **TrainState.get_checkpoint_handlers("action_tokenizer", is_legacy),
             "config": ocp.JsonCheckpointHandler(),
             "dataset_statistics": ocp.JsonCheckpointHandler(),
             "language_tokenizer": ocp.ProtoCheckpointHandler(
                 "language_tokenizer.proto"
             ),
         }
+                
+    
+    @classmethod
+    def get_old_checkpoint_handlers(cls):
+        return dict(
+            params=ocp.StandardCheckpointHandler(),
+            opt_state=ocp.StandardCheckpointHandler(),
+            step=ocp.StandardCheckpointHandler(),
+            rng=ocp.StandardCheckpointHandler(),
+            model_spec=ocp.JsonCheckpointHandler(),
+            optimizer_spec=ocp.JsonCheckpointHandler(),
+            dataset_statistics=ocp.JsonCheckpointHandler(),
+            tokenizer_config=ocp.JsonCheckpointHandler(),
+            action_tokenizer_spec=ocp.JsonCheckpointHandler(),
+            action_tokenizer_params=ocp.StandardCheckpointHandler(),
+        )
 
     @classmethod
     def load_components(
@@ -447,6 +475,7 @@ class PaliVLATrainState:
         mesh: MeshShardingHelper,
         model_sharding: ShardingRule,
         data_sharding: ShardingRule,
+        is_legacy: bool = False
     ):
         step = step or checkpoint_manager.latest_step()
 
@@ -460,6 +489,7 @@ class PaliVLATrainState:
             load_optimizer=load_optimizer,
             step=step,
             sharding_metadata=model_sharding_metadata,
+            is_legacy=is_legacy,
         )
         restored_action_tokenizer_state = TrainState.restore(
             name="action_tokenizer",
@@ -467,6 +497,7 @@ class PaliVLATrainState:
             load_optimizer=False,
             step=step,
             sharding_metadata=action_tokenizer_sharding_metadata,
+            is_legacy=is_legacy,
         )
         restored = checkpoint_manager.restore(
             step,
@@ -480,7 +511,15 @@ class PaliVLATrainState:
         language_tokenizer = SentencepieceTokenizer(
             model=restored["language_tokenizer"].SerializeToString()
         )
-        return restored_model_state, restored_action_tokenizer_state, language_tokenizer
+
+        dataset_statistics = restored["dataset_statistics"]
+        dataset_statistics = jax.tree.map(
+            lambda x: np.array(x),
+            dataset_statistics,
+            is_leaf=lambda x: isinstance(x, list),
+        )
+
+        return restored_model_state, restored_action_tokenizer_state, language_tokenizer, dataset_statistics
 
     @classmethod
     def restore(
@@ -492,6 +531,7 @@ class PaliVLATrainState:
         mesh: MeshShardingHelper,
         model_sharding: ShardingRule,
         data_sharding: ShardingRule,
+        is_legacy: bool = False
     ):
         step = step or checkpoint_manager.latest_step()
 
@@ -505,6 +545,7 @@ class PaliVLATrainState:
             load_optimizer=load_optimizer,
             step=step,
             sharding_metadata=model_sharding_metadata,
+            is_legacy=is_legacy,
         )
         restored_action_tokenizer_state = TrainState.restore(
             name="action_tokenizer",
@@ -512,6 +553,7 @@ class PaliVLATrainState:
             load_optimizer=False,
             step=step,
             sharding_metadata=action_tokenizer_sharding_metadata,
+            is_legacy=is_legacy,
         )
 
         restored = checkpoint_manager.restore(
@@ -629,14 +671,14 @@ class PaliVLATrainState:
         
 
 
-            self.model_state, fuse_info, self.rng = self.fuse_step_fn(
-                self.model_state,
-                self.prepare_batch(batch),
-                self.rng,
-            )
+            # self.model_state, fuse_info, self.rng = self.fuse_step_fn(
+            #     self.model_state,
+            #     self.prepare_batch(batch),
+            #     self.rng,
+            # )
 
-            info = base_info | fuse_info
-
+            # info = base_info | fuse_info
+            info = base_info
 
         return info
 
@@ -705,3 +747,236 @@ class PaliVLATrainState:
             )
 
         return jax.device_get(results)
+
+
+def load_old_checkpoint(
+    load_directory: str,
+    language_tokenizer_path: str,
+    step: int,
+    save_directory: Optional[str] = None,
+    mesh: Optional[MeshShardingHelper] = None,
+    model_sharding: Optional[ShardingRule] = None,
+    data_sharding: Optional[ShardingRule] = None,
+    load_optimizer: bool = False,
+    model_dtype: Optional[jnp.dtype] = None,
+):
+    
+    load_checkpoint_manager = ocp.CheckpointManager(
+            directory=load_directory,
+            item_names=[
+                "params",
+                "opt_state",
+                "step",
+                "model_spec",
+                "optimizer_spec",
+                "dataset_statistics",
+                "tokenizer_config",
+                "rng",
+                "action_tokenizer_spec",
+                "action_tokenizer_params",
+            ],
+            options=ocp.CheckpointManagerOptions(),
+        )
+    # breakpoint() 
+    rng = jax.random.PRNGKey(0)
+    # train_step_sharding = jax.sharding.NamedSharding(
+    #     mesh.mesh,
+    #     model_sharding.apply({"step": jax.ShapeDtypeStruct((), jnp.int64)}),
+    # )["step"]
+
+    restored_metadata = load_checkpoint_manager.restore(
+            step,
+            args=ocp.args.Composite(
+                step=ocp.args.StandardRestore(
+                    jax.ShapeDtypeStruct((), jnp.int64)
+                ),
+                model_spec=ocp.args.JsonRestore(),
+                optimizer_spec=ocp.args.JsonRestore(),
+                dataset_statistics=ocp.args.JsonRestore(),
+                rng=ocp.args.StandardRestore(rng),
+                tokenizer_config=ocp.args.JsonRestore(),
+                action_tokenizer_spec=ocp.args.JsonRestore(),
+                action_tokenizer_params=ocp.args.StandardRestore(
+                    jax.tree.map(
+                        lambda x: jax.ShapeDtypeStruct(x.shape, x.dtype),
+                        load_checkpoint_manager.item_metadata(step)[
+                            "action_tokenizer_params"
+                        ],
+                    )
+                ),
+            ),
+        )
+    pass
+
+
+# @classmethod
+#     def from_checkpoint(
+#         cls,
+#         load_directory: str,
+#         language_tokenizer_path: str,
+#         step: int,
+#         save_directory: Optional[str] = None,
+#         mesh: Optional[MeshShardingHelper] = None,
+#         model_sharding: Optional[ShardingRule] = None,
+#         data_sharding: Optional[ShardingRule] = None,
+#         load_optimizer: bool = True,
+#         model_dtype: Optional[jnp.dtype] = None,
+#     ):
+#         load_checkpoint_manager = ocp.CheckpointManager(
+#             directory=load_directory,
+#             item_names=[
+#                 "params",
+#                 "opt_state",
+#                 "step",
+#                 "model_spec",
+#                 "optimizer_spec",
+#                 "dataset_statistics",
+#                 "tokenizer_config",
+#                 "rng",
+#                 "action_tokenizer_spec",
+#                 "action_tokenizer_params",
+#             ],
+#             options=ocp.CheckpointManagerOptions(),
+#         )
+
+#         # Restore JSON saved objects
+#         rng = jax.random.PRNGKey(0)
+#         train_step_sharding = jax.sharding.NamedSharding(
+#             mesh.mesh,
+#             model_sharding.apply({"step": jax.ShapeDtypeStruct((), jnp.int64)}),
+#         )["step"]
+
+#         restored_metadata = load_checkpoint_manager.restore(
+#             step,
+#             args=ocp.args.CompositeRestore(
+#                 step=ocp.args.StandardRestore(
+#                     jax.ShapeDtypeStruct((), jnp.int64, sharding=train_step_sharding)
+#                 ),
+#                 model_spec=ocp.args.JsonRestore(),
+#                 optimizer_spec=ocp.args.JsonRestore(),
+#                 dataset_statistics=ocp.args.JsonRestore(),
+#                 rng=ocp.args.StandardRestore(rng),
+#                 tokenizer_config=ocp.args.JsonRestore(),
+#                 action_tokenizer_spec=ocp.args.JsonRestore(),
+#                 action_tokenizer_params=ocp.args.StandardRestore(
+#                     jax.tree.map(
+#                         lambda x: jax.ShapeDtypeStruct(x.shape, x.dtype),
+#                         load_checkpoint_manager.item_metadata(step)[
+#                             "action_tokenizer_params"
+#                         ],
+#                     )
+#                 ),
+#             ),
+#         )
+#         rng = restored_metadata["rng"]
+#         train_step = restored_metadata["step"]
+#         model_spec = ModuleSpec.from_dict(restored_metadata["model_spec"])
+#         optimizer_spec = OptimizerSpec.from_dict(restored_metadata["optimizer_spec"])
+#         action_tokenizer_spec = ModuleSpec.from_dict(
+#             restored_metadata["action_tokenizer_spec"]
+#         )
+
+#         dataset_statistics = restored_metadata["dataset_statistics"]
+#         with tf.io.gfile.GFile(language_tokenizer_path, "rb") as f:
+#             language_tokenizer = SentencepieceTokenizer(f.read())
+
+#         tokenizer = Tokenizer.from_components(
+#             language_tokenizer=language_tokenizer,
+#             action_tokenizer=action_tokenizer_spec.instantiate(),
+#             action_tokenizer_params=restored_metadata["action_tokenizer_params"],
+#             prompt_autoregressive=restored_metadata["tokenizer_config"][
+#                 "prompt_autoregressive"
+#             ],
+#         )
+
+#         # Load sharded params
+#         params_metadata = load_checkpoint_manager.item_metadata(step)["params"]
+
+#         def _make_abstract_array(metadata):
+#             return jax.ShapeDtypeStruct(
+#                 shape=metadata.shape,
+#                 dtype=metadata.dtype,
+#             )
+
+#         def _shard_abstract_array(abstract_array, sharding_rule):
+#             return jax.ShapeDtypeStruct(
+#                 shape=abstract_array.shape,
+#                 dtype=model_dtype or abstract_array.dtype,
+#                 sharding_rule=sharding_rule,
+#             )
+
+#         abstract_params = jax.tree_map(_make_abstract_array, params_metadata)
+#         params_sharding_rules = model_sharding.apply(abstract_params)
+#         abstract_params = jax.tree.map(
+#             _shard_abstract_array,
+#             abstract_params,
+#             params_sharding_rules,
+#         )
+#         params = load_checkpoint_manager.restore(
+#             step,
+#             args=ocp.args.Composite(params=ocp.args.StandardRestore(abstract_params)),
+#         )["params"]
+
+#         if load_optimizer:
+#             tx = optimizer_spec.instantiate()
+#             abstract_optimizer_state = jax.eval_shape(tx.init, abstract_params)
+#             optimizer_sharding_rules = model_sharding.apply(abstract_optimizer_state)
+#             abstract_optimizer_state = jax.tree.map(
+#                 _shard_abstract_array,
+#                 abstract_optimizer_state,
+#                 optimizer_sharding_rules,
+#             )
+#             opt_state = load_checkpoint_manager.restore(
+#                 step,
+#                 args=ocp.args.Composite(
+#                     opt_state=ocp.args.StandardRestore(abstract_optimizer_state)
+#                 ),
+#             )["opt_state"]
+#         else:
+#             optimizer_spec = OptimizerSpec(optax.set_to_zero, {})
+#             opt_state = {}
+
+#         model = model_spec.instantiate()
+#         tx = optimizer_spec.instantiate()
+#         decode_fn = get_decode_fn(model, tokenizer)
+
+#         if save_directory is not None:
+#             checkpoint_manager = ocp.CheckpointManager(
+#                 directory=save_directory,
+#                 item_names=[
+#                     "params",
+#                     "opt_state",
+#                     "step",
+#                     "model_spec",
+#                     "optimizer_spec",
+#                     "dataset_statistics",
+#                     "tokenizer_config",
+#                     "rng",
+#                 ],
+#                 options=ocp.CheckpointManagerOptions(
+#                     max_to_keep=1,
+#                 ),
+#             )
+#         else:
+#             checkpoint_manager = None
+
+#         return cls(
+#             train_state=TrainState(
+#                 step=train_step,
+#                 apply_fn=model.apply,
+#                 params=params,
+#                 tx=tx,
+#                 opt_state=opt_state,
+#             ),
+#             module_spec=model_spec,
+#             optimizer_spec=optimizer_spec,
+#             dataset_statistics=dataset_statistics,
+#             tokenizer=tokenizer,
+#             module=model_spec.instantiate(),
+#             model_sharding=model_sharding,
+#             data_sharding=data_sharding,
+#             mesh=mesh,
+#             decode_fn=decode_fn,
+#             checkpoint_manager=checkpoint_manager,
+#             rng=rng,
+#         )

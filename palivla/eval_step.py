@@ -83,7 +83,6 @@ def compute_gen_stats(
             "gen_mask": gen_mask,
             "gen_ar": gen_ar,
         }
-
     gen_start = (
             jnp.argmax(batch.tokens == tokenizer_config.begin_of_action_token, axis=-1) + 1
     )

@@ -3,7 +3,7 @@ import re
 
 DEFAULT_TRAIN_ARGS = {
     "eval_interval": 100,
-    "save_interval": 2500,
+    "save_interval": 1000,
     "data_axis_size": 1,
     "fsdp_axis_size": -1,
     "paligemma_weights_path": "models/paligemma-3b-pt-224.f16.npz",
@@ -42,21 +42,6 @@ TPU_PODS = {
         },
     },
     "homer-pod-128": {
-        "tpc_args": {
-            "project": "rail-tpus",
-            "zone": "europe-west4-b",
-            "accelerator_type": "v5litepod-128",
-            "runtime_version": "v2-alpha-tpuv5-lite",
-            "reserved": True,
-        },
-        "setup_script": "source $HOME/.bashrc && conda activate big_vision",
-        "src_dir": "/nfs/nfs3/users/kstachowicz/big_vision_multimodal",
-        "train_args": {
-            "batch_size": 1024,
-            "save_path": "gs://kyle-checkpoints-eu4/paligemma-checkpoints",
-        },
-    },
-    "pranav-pod-128": {
         "tpc_args": {
             "project": "rail-tpus",
             "zone": "europe-west4-b",
@@ -167,10 +152,10 @@ if config is None:
     raise ValueError(f"No matching configuration found for pod name: {pod_name}")
 
 train_args = os.environ.get("TRAIN_ARGS")
-config_file = os.environ.get("CONFIG_FILE", "bridge_config.py")
+config_file = os.environ.get("CONFIG_FILE", "fuse_config.py")
 train_args = DEFAULT_TRAIN_ARGS | config["train_args"] | parse_args(train_args)
 train_args_str = " \\\n\t".join([f"--config.{k} {v}" for k, v in train_args.items()])
-train_script = os.environ.get("TRAIN_SCRIPT", "palivla/train.py")
+train_script = os.environ.get("TRAIN_SCRIPT", "palivla/train_fuse.py")
 
 launch_script = f"""
 #!/bin/bash

@@ -8,7 +8,7 @@ from flax.training.train_state import TrainState
 from palivla.tokenizer import ActionTokenizer, Tokenizer
 from palivla.load_model import components_by_label
 from palivla.types import TrainingBatch
-from dataset import create_fuse_modal_mask, enforce_valid_language_instruction
+from palivla.dataset import create_fuse_modal_mask, enforce_valid_language_instruction
 from einops import repeat
 
 
