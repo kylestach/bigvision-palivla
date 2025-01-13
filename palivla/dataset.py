@@ -3,24 +3,23 @@ from typing import Optional, Sequence
 import tensorflow as tf
 from ml_collections import ConfigDict
 import numpy as np
-
-try:
-    from octo_digit.octo.data.utils.data_utils import NormalizationType
-except ImportError:
-    from octo.data.utils.data_utils import NormalizationType
-from palivla.tokenizer import Tokenizer
-from octo.data.dataset import make_interleaved_dataset, make_single_dataset
-from octo.data.oxe import make_oxe_dataset_kwargs_and_weights, make_oxe_dataset_kwargs
 import dlimp
 import jax
 import jax.numpy as jnp
+
+from octo.data.utils.data_utils import NormalizationType
+from octo.utils.fuse_constants import create_batch
+from palivla.tokenizer import Tokenizer
+from octo.data.dataset import make_interleaved_dataset, make_single_dataset
+from octo.data.oxe import make_oxe_dataset_kwargs_and_weights, make_oxe_dataset_kwargs
+from palivla.types import TrainingBatch, Data
 
 # Filter unmasked modalities to match modality_idx
 # the modalities, in order, are:
 # [('simple'), (), ('visual',), ('tactile',), ('audio',), ('visual', 'tactile'), ('visual', 'audio'), ('tactile', 'audio'), ('visual', 'tactile', 'audio')]
 def create_fuse_modal_mask(data):
     sensor_masks = data["observation"]["pad_mask_dict"]
-    modality_idx = data["modality_idx"]
+    modality_idx = data["observation"]["modality_idx"]
 
     modal_masks = jax.tree.map(lambda leaf: leaf, sensor_masks)
 
@@ -42,60 +41,21 @@ def create_fuse_modal_mask(data):
     data["observation"]["modal_pad_mask_dict"] = modal_masks
     return data
 
-
-# if mic_mask = True, then this is an audio task, and no tactile instruction is valid 
-# if mic_mask = False, then the audio data is masked, and any audio instruction is not valid
-def enforce_valid_language_instruction(mask_loss_fuse: jax.Array, modality_idx: jax.Array, mic_mask: jax.Array):
-    mask_loss_fuse = mask_loss_fuse & jnp.expand_dims((
-        (mic_mask & ((modality_idx != 3) & (modality_idx != 5) & (modality_idx != 7))) |
-        (~mic_mask & ((modality_idx != 4)))
-    ), axis=-1)
+# some invalid instructions are included for batching reasons
+# e.g. a tactile-based command for a button-pressing task
+# we mask out the loss for these invalid instructions
+def enforce_valid_language_instruction(
+    batch: TrainingBatch,
+    mask_loss_fuse: jax.Array,
+):
+    mask_loss_fuse = mask_loss_fuse & jnp.expand_dims(batch.language_validity[np.arange(batch.modality_idx.shape[0]), batch.modality_idx[:, 0]], axis=-1)
     return mask_loss_fuse
 
 
 def process_rephrase_tf(
-    data, rephrase_prob: float, num_gpt_gen: int, num_modalities: int
+    data,
 ):
-    probabilities = tf.constant(
-        [1 / (num_modalities - 1) if i != 1 else 0 for i in range(num_modalities)]
-    )
-    # Add these arrays to the data dictionary
-    should_rephrase = tf.random.uniform(()) < rephrase_prob
-    rephrases = tf.stack(
-        [
-            tf.stack(
-                [
-                    (
-                        ""
-                        if modality == 1
-                        else data["task"][f"rephrased_{modality}_{rephrase}"]
-                    )
-                    for rephrase in range(num_gpt_gen)
-                ]
-            )
-            for modality in range(num_modalities)
-        ]
-    )
-    targets = tf.stack(
-        [
-            data["task"][f"target_all_lang_{modality}"]
-            for modality in range(num_modalities)
-        ]
-    )
-
-    logits = tf.where(probabilities > 0, tf.math.log(probabilities), -np.inf)[None]
-    modality_idx = tf.random.categorical(
-        tf.math.log(probabilities)[None], num_samples=1
-    )
-    modality_idx = tf.squeeze(tf.squeeze(modality_idx, axis=-1), axis=-1)
-    rephrase_idx = tf.random.uniform([], maxval=num_gpt_gen, dtype=tf.int64)
-
-    data["task"]["language_instruction"] = tf.where(
-        should_rephrase, rephrases[modality_idx, rephrase_idx], targets[modality_idx]
-    )
-    
-    data["modality_idx"] = modality_idx
-    data["observation"]["modality_idx"] = modality_idx
+    data['task'].pop('modal_commands')
     return data
 
 
@@ -119,7 +79,6 @@ def mel_spectro_to_image(data):
     resized_mel_spectro = tf.image.resize(grayscale_mel_spectro, [224, 224])
 
     data["observation"]["mel_spectro"] = resized_mel_spectro
-    data["observation"]["pad_mask_dict"]["mel_spectro"] &= data["mic_mask"]
     return data
 
 
@@ -138,11 +97,6 @@ def tactile_to_image(data):
     data["observation"]["image_digit_right"] = normalize_and_clip(
         data["observation"]["image_digit_right"], tactile_mean, tactile_std
     )
-    return data
-
-
-def process_mic_mask(data):
-    data["mic_mask"] = tf.squeeze(tf.cast(data["observation"]["mic_mask"], tf.bool), axis=-1)
     return data
 
 
@@ -249,7 +203,6 @@ def make_base_single_dataset(
 
 def make_frame_transform(
     multimodal_rephrasings: bool,
-    multimodal_rephrasing_kwargs: dict,
     chunk_relative_actions: bool,
     gripper_relative_actions: bool,
     proprio_dropout_prob: float,
@@ -258,12 +211,10 @@ def make_frame_transform(
 ):
     def frame_transform(data):
         if multimodal_rephrasings:
-            data = process_rephrase_tf(data, **multimodal_rephrasing_kwargs)
-            data = process_mic_mask(data)
+            data = process_rephrase_tf(data)
             data = mel_spectro_to_image(data)
             data = tactile_to_image(data)
             data = create_fuse_modal_mask(data)
-            
             
         if chunk_relative_actions:
             # Gripper is absolute, rest is relative
@@ -313,7 +264,6 @@ def transform_dataset(
     *,
     multimodal_rephrasings: bool = False,
     chunk_relative_actions: bool = False,
-    multimodal_rephrasing_kwargs: dict = {},
     gripper_relative_actions: bool = True,
     require_language: bool = True,
     proprio_dropout_prob: float = 0.0,
@@ -325,7 +275,6 @@ def transform_dataset(
     dataset = dataset.map(
         make_frame_transform(
             multimodal_rephrasings,
-            multimodal_rephrasing_kwargs,
             chunk_relative_actions,
             gripper_relative_actions,
             proprio_dropout_prob,

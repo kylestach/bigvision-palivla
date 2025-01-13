@@ -338,10 +338,6 @@ class Tokenizer:
     def prepare_tokens_for_rollout(self, language_token_instructions):
         tokens = {
             "prompt": language_token_instructions[: self.config.max_pad_length - 10],
-            #  "action": self._tf_action_tokenize_fn(
-            #     self.action_tokenizer_params, data["action"][-1], None
-            # )
-            # + self.config.action_vocab_offset,
         }
 
         tokens, mask_ar, mask_loss, mask_ar_fuse, mask_loss_fuse = self.compose_token_structure(

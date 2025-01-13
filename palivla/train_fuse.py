@@ -17,8 +17,7 @@ from scalax.sharding import (
 import wandb
 import numpy as np
 
-from palivla.dataset import make_base_dataset_digit, make_base_dataset, make_base_single_dataset, transform_dataset
-from octo.data.dataset import make_single_dataset
+from palivla.dataset import make_base_dataset_digit, transform_dataset
 from palivla.load_model import make_optimizer
 from palivla.spec import OptimizerSpec
 from palivla.train_state import PaliVLATrainState
@@ -133,8 +132,6 @@ def main(_):
             k: batch["observation"][k]
             for k in batch["observation"]
             if k in model.model_state.model.modality_mappings and k != "text"
-        } | {
-            "modality_idx": batch["modality_idx"][:, None],
         }
         sensors_mask = {
             k: np.squeeze(batch["observation"]["pad_mask_dict"][k], axis=-1)
@@ -161,8 +158,8 @@ def main(_):
                 tokens_ar_fuse=batch["mask_ar_fuse"],
                 tokens_loss_fuse=batch.get("mask_loss_fuse", None),
                 tokens_mask=batch["mask_input"],
-                modality_idx=batch["modality_idx"],
-                mic_mask=batch["mic_mask"],
+                modality_idx=batch["observation"]["modality_idx"],
+                language_validity=batch["task"]["language_validity"],
             )
         )
 
@@ -171,15 +168,13 @@ def main(_):
             k: batch["observation"][k]
             for k in batch["observation"]
             if k in model.model_state.model.modality_mappings and k != "text"
-        } | {
-            "modality_idx": batch["modality_idx"][:, None],
         }
         sensors_mask = {
             k: np.squeeze(batch["observation"]["pad_mask_dict"][k], axis=-1)
             for k in model.model_state.model.modality_mappings
             if k != "text" and k != "modality_idx"
         } | {
-            "modality_idx": jnp.zeros_like(batch["modality_idx"], dtype=jnp.bool_),
+            "modality_idx": jnp.zeros_like(batch["observation"]["pad_mask_dict"]["modality_idx"], dtype=jnp.bool_),
         }
         return mesh.local_data_to_global_array(
             TrainingBatch(
@@ -194,8 +189,6 @@ def main(_):
             )
         )
 
-#    make_training_batch = partial(make_batch, generate=False)
-#    make_gen_batch = partial(make_batch, generate=True)
     train_it = map(
         make_training_batch,
         transform_dataset(
@@ -207,6 +200,7 @@ def main(_):
         .batch(per_host_train_batch_size)
         .iterator(),
     )
+
 
     gen_train_it = map(
         make_gen_batch,
@@ -231,8 +225,6 @@ def main(_):
         .batch(per_host_eval_batch_size)
         .iterator(),
     )
-    next(gen_train_it)
-    next(gen_eval_it)
 
     # W&B setup
     if jax.process_index() == 0:
@@ -263,11 +255,6 @@ def main(_):
     start_step = model.model_state.step.item()
     with tqdm.trange(start_step, config.num_steps, desc="Training", dynamic_ncols=True) as pbar:
         for i in pbar:
-            if i == 0:
-                if config.save_path is not None:
-                    print(f"Saving model to {checkpoint_save_path}/{i}")
-                    checkpoint_save_manager.save(i+1, args=model.save_args())
-
             batch = next(train_it)
             info = model.train_step(batch)
 
@@ -310,7 +297,7 @@ def main(_):
                         step=i,
                     )
 
-            if i + 1 == 100 or (i + 1) % config.save_interval == 0:
+            if (i + 1) % config.save_interval == 0:
                 if config.save_path is not None:
                     print(f"Saving model to {checkpoint_save_path}/{i}")
                     checkpoint_save_manager.save(i+1, args=model.save_args())
@@ -319,6 +306,6 @@ def main(_):
 
 if __name__ == "__main__":
     config_flags.DEFINE_config_file(
-        "config", "fuse_config.py", "Path to the config file.", lock_config=False
+        "config", "configs/fuse_config.py", "Path to the config file.", lock_config=False
     )
     app.run(main)

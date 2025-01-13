@@ -43,8 +43,6 @@ class CtorSpec(Generic[T]):
 
     @classmethod
     def from_name(cls, ctor_full_name: str, config: Dict[str, Any]):
-        # if ctor_full_name.split(".")[0] == 'octo':
-        #     ctor_full_name = 'octo_digit.' + ctor_full_name
         ctor_module = importlib.import_module(".".join(ctor_full_name.split(".")[:-1]))
         ctor_name = ctor_full_name.split(".")[-1]
         ctor = getattr(ctor_module, ctor_name)

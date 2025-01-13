@@ -206,7 +206,7 @@ def step_fn(
             sensor_masks = batch.modal_mask | {
                 "modality_idx": jnp.squeeze(jnp.ones_like(batch.sensors["modality_idx"], dtype=jnp.bool_), axis=-1),
             }
-            mask_loss = enforce_valid_language_instruction(batch.tokens_loss_fuse, batch.modality_idx, jnp.squeeze(batch.mic_mask, axis=-1))
+            mask_loss = enforce_valid_language_instruction(batch, batch.tokens_loss_fuse)
             ar_mask = batch.tokens_ar_fuse
         else:   
             sensor_masks = batch.sensors_mask | {

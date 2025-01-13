@@ -24,11 +24,11 @@ class TrainingBatch:
     tokens_ar: jax.Array
     tokens_loss: jax.Array
     tokens_mask: jax.Array
+    language_validity: jax.Array | None = None
     tokens_ar_fuse: jax.Array | None = None
     tokens_loss_fuse: jax.Array | None = None
     gen_start: jax.Array | None = None
     modality_idx: jax.Array | None = None
-    mic_mask: jax.Array | None = None
     modal_mask: jax.Array | None = None
 
 

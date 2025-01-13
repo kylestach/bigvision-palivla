@@ -1,11 +1,3 @@
-"""
-This script shows how we evaluated a finetuned Octo model on a real WidowX robot. While the exact specifics may not
-be applicable to your use case, this script serves as a didactic example of how to use Octo in a real-world setting.
-
-If you wish, you may reproduce these results by [reproducing the robot setup](https://rail-berkeley.github.io/bridgedata/)
-and installing [the robot controller](https://github.com/rail-berkeley/bridge_data_robot)
-"""
-
 from datetime import datetime
 from functools import partial
 import os
@@ -14,7 +6,8 @@ import time
 from absl import app, flags, logging
 import click
 import cv2
-from octo_digit_eval.eval.envs.widowx_env import WidowXGym, LostConnection
+from eval.envs.widowx_env import WidowXGym, LostConnection
+from eval.utils import DummyClient, DelayedKeyboardInterrupt
 import imageio
 import jax
 import jax.numpy as jnp
@@ -92,22 +85,13 @@ flags.DEFINE_integer(
 flags.DEFINE_string("video_save_path", "./woven-wildflower-21", "Path to save video")
 flags.DEFINE_integer("num_timesteps", 100, "num timesteps")
 
+flags.DEFINE_string("checkpoint_dir", None, "Path to directory containing state")
+flags.DEFINE_integer("checkpoint_step", 15_000, "Step of checkpoint to load")
+flags.DEFINE_string("video_dir", None, "Path to directory to save video")
+flags.DEFINE_bool("verbose", False, "Print step times")
+flags.DEFINE_bool("debug_env", False, "Whether to use a debugging dummy action server or not")
 
-##############################################################################
-import signal
 
-class DelayedKeyboardInterrupt:
-    def __enter__(self):
-        self.signal_received = False
-        self.old_handler = signal.signal(signal.SIGINT, self.handler)
-                
-    def handler(self, sig, frame):
-        self.signal_received = (sig, frame)
-    
-    def __exit__(self, type, value, traceback):
-        signal.signal(signal.SIGINT, self.old_handler)
-        if self.signal_received:
-            self.old_handler(*self.signal_received)
 ##############################################################################
 
 STEP_DURATION_MESSAGE = """
@@ -139,26 +123,29 @@ ENV_PARAMS = {
 }
 
 
-def initialize_widowx_env(FLAGS, env_params): 
-    if FLAGS.initial_eep is not None:
-        assert isinstance(FLAGS.initial_eep, list)
-        initial_eep = [float(e) for e in FLAGS.initial_eep]
-        start_state = np.concatenate([initial_eep, [0, 0, 0, 1]])
+def initialize_widowx_env(FLAGS, env_params, debug_env: bool = False): 
+    if debug_env:
+        widowx_client = DummyClient()
     else:
-        start_state = None
-    connection_success = False
-    while not connection_success: 
-        try: 
-            widowx_client = WidowXClient(host=FLAGS.ip, port=FLAGS.port)
-            connection_success = True
-        except Exception as e: 
-            print(f"RECEIVED EXCEPTION:     {e}")
-            print("Retrying environment initialization...")
+        if FLAGS.initial_eep is not None:
+            assert isinstance(FLAGS.initial_eep, list)
+            initial_eep = [float(e) for e in FLAGS.initial_eep]
+            start_state = np.concatenate([initial_eep, [0, 0, 0, 1]])
+        else:
+            start_state = None
+        connection_success = False
+        while not connection_success: 
+            try: 
+                widowx_client = WidowXClient(host=FLAGS.ip, port=FLAGS.port)
+                connection_success = True
+            except Exception as e: 
+                print(f"RECEIVED EXCEPTION:     {e}")
+                print("Retrying environment initialization...")
 
-    env_params = deepcopy(WidowXConfigs.DefaultEnvParams)
-    env_params.update(deepcopy(ENV_PARAMS))
-    env_params["start_state"] = list(start_state)
-    widowx_client.init(env_params, image_size=FLAGS.im_size)
+        env_params = deepcopy(WidowXConfigs.DefaultEnvParams)
+        env_params.update(deepcopy(ENV_PARAMS))
+        env_params["start_state"] = list(start_state)
+        widowx_client.init(env_params, image_size=FLAGS.im_size)
 
     env = WidowXGym(widowx_client, {
         'image_0': (256, 256),
@@ -170,14 +157,14 @@ def initialize_widowx_env(FLAGS, env_params):
 
 ##############################################################################
 
-def load_pretrained_model(config, mesh, model_sharding, data_sharding):
+def load_pretrained_model(checkpoint_step, checkpoint_dir, mesh, model_sharding, data_sharding):
     restore_checkpoint_manager = ocp.CheckpointManager(
-        config.resume_from_checkpoint_dir,
+        checkpoint_dir,
         item_handlers=PaliVLATrainState.get_checkpoint_handlers(),
     )
     model_train_state = PaliVLATrainState.restore(
         checkpoint_manager=restore_checkpoint_manager,
-            step=config.resume_from_checkpoint_step,
+            step=checkpoint_step,
             load_optimizer=False,
             mesh=mesh,
             model_sharding=model_sharding,
@@ -244,14 +231,13 @@ def process_observations(observation, background_images):
 
 def main(_):
     FLAGS = flags.FLAGS
-    config = FLAGS.config
 
 
     mesh = MeshShardingHelper([-1], ["fsdp"])
     model_sharding = FSDPShardingRule("fsdp", fsdp_axis_size=mesh.mesh.shape["fsdp"])
     data_sharding = PartitionSpec("fsdp")
 
-    model_state = load_pretrained_model(config, mesh, model_sharding, data_sharding)
+    model_state = load_pretrained_model(FLAGS.checkpoint_step, FLAGS.checkpoint_dir, mesh, model_sharding, data_sharding)
     dataset_statistics = model_state.dataset_statistics[list(model_state.dataset_statistics.keys())[0]]
     print(dataset_statistics.keys())
     action_mean = dataset_statistics["action"]["mean"]
@@ -259,28 +245,7 @@ def main(_):
     action_std = dataset_statistics["action"]["std"]
     action_std[-1] = 1
 
-
-    # # set up the widowx client
-    # if FLAGS.initial_eep is not None:
-    #     assert isinstance(FLAGS.initial_eep, list)
-    #     initial_eep = [float(e) for e in FLAGS.initial_eep]
-    #     start_state = np.concatenate([initial_eep, [0, 0, 0, 1]])
-    # else:
-    #     start_state = None
-
-    # env_params = deepcopy(WidowXConfigs.DefaultEnvParams)
-    # env_params.update(deepcopy(ENV_PARAMS))
-    # env_params["start_state"] = list(start_state)
-    # widowx_client = WidowXClient(host=FLAGS.ip, port=FLAGS.port)
-    # widowx_client.init(env_params, image_size=FLAGS.im_size)
-
-    # env = WidowXGym(widowx_client, {
-    #     'image_0': (256, 256),
-    #     'image_1': (128, 128),
-    #     'digit_l': (224, 224),
-    #     'digit_r': (224, 224),
-    # }, FLAGS.blocking, STICKY_GRIPPER_NUM_STEPS)
-    env = initialize_widowx_env(FLAGS, ENV_PARAMS)
+    env = initialize_widowx_env(FLAGS, ENV_PARAMS, debug_env=FLAGS.debug_env)
     obs, _ = env.reset()
 
     background_images = {}
@@ -359,7 +324,7 @@ def main(_):
                     "Reset environment?", default=False
                 ): 
                     input('Restart server and then hit enter:   ')
-                    env = initialize_widowx_env(FLAGS, ENV_PARAMS)
+                    env = initialize_widowx_env(FLAGS, ENV_PARAMS, debug_env=FLAGS.debug_env)
 
                 print("Current instruction: ", goal_instruction)
                 if click.confirm("Take a new instruction?", default=False):
@@ -419,14 +384,11 @@ def main(_):
                     imageio.mimsave(save_path, video, fps=1.0 / STEP_DURATION * 3)
         except LostConnection:
             input('Restart server and hit enter:   ')
-            env = initialize_widowx_env(FLAGS, ENV_PARAMS)
+            env = initialize_widowx_env(FLAGS, ENV_PARAMS, debug_env=FLAGS.debug_env)
             
         except KeyboardInterrupt:
             if click.confirm("Exit?", default=False):
                 break
         
 if __name__ == "__main__":
-    config_flags.DEFINE_config_file(
-        "config", "palivla/configs/fuse_config_eval.py", "Path to the config file.", lock_config=False
-    )
     app.run(main)
