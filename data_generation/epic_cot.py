@@ -63,7 +63,7 @@ for i, episode in enumerate(iterator):
         print("skipping traj ", traj_id, flush=True)
         continue
 
-    images = episode['observation']['ego_image_1'].squeeze()
+    images = episode['observation']['image_primary'].squeeze()
     language_label = episode['task']['language_instruction'][0].decode()
 
     # create results dict for this trajectory
