@@ -10,10 +10,10 @@ TRAJS_TO_PROCESS = 5200
 WRITE_INTERVAL=25
 parser = argparse.ArgumentParser()
 parser.add_argument("--id", type=int, default=0)
-parser.add_argument("--dataset", type=str, default="hand_epic_dataset")
+parser.add_argument("--dataset", type=str, default="ego4d_hamer")
 args = parser.parse_args()
 
-FINAL_JSON = f"/scratch/partial_datasets/oiermees/generated_ecot/{args.dataset}/jsons/batch{args.id}.json"
+FINAL_JSON = f"/home/oiermees/generated_ecot/{args.dataset}/jsons/batch{args.id}.json"
 
 
 tf.config.set_visible_devices(
@@ -22,11 +22,18 @@ tf.config.set_visible_devices(
 tf.config.set_visible_devices(
     [], device_type="GPU"
 )
+dataset_paths = {
+    "epic_kitchens": "/raid/datasets/openx/",
+    "h2_o_dataset": "/raid/users/homanga/h2o/",
+    "fpha_dataset": "/raid/users/homanga/fpha/",
+    "ss_v2_dataset": "/raid/users/homanga/ssv2_full/",
+    "ego4d_hamer": "/raid/datasets/openx/"
+}
 
 # load chunk of dataset in based on ID
 print("Loading dataset *******")
 start_idx = TRAJS_TO_PROCESS*args.id
-dataset_kwargs = make_oxe_dataset_kwargs(args.dataset,"/scratch/partial_datasets/oiermees/epic_rlds/")
+dataset_kwargs = make_oxe_dataset_kwargs(args.dataset,dataset_paths[args.dataset])
 dataset = make_single_dataset(dataset_kwargs, frame_transform_kwargs=dict(resize_size={"primary": (224, 224)},),train=True)
 dataset = dataset.skip(start_idx).take(TRAJS_TO_PROCESS)
 iterator = dataset.iterator()
@@ -56,7 +63,7 @@ for i, episode in enumerate(iterator):
         print("skipping traj ", traj_id, flush=True)
         continue
 
-    images = episode['observation']['image_primary'].squeeze()
+    images = episode['observation']['ego_image_1'].squeeze()
     language_label = episode['task']['language_instruction'][0].decode()
 
     # create results dict for this trajectory
