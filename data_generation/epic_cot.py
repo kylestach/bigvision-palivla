@@ -31,7 +31,7 @@ dataset_paths = {
 }
 
 # load chunk of dataset in based on ID
-print("Loading dataset *******")
+print("Loading dataset ", args.dataset)
 start_idx = TRAJS_TO_PROCESS*args.id
 dataset_kwargs = make_oxe_dataset_kwargs(args.dataset,dataset_paths[args.dataset])
 dataset = make_single_dataset(dataset_kwargs, train=True)
