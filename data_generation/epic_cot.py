@@ -57,8 +57,6 @@ for i, episode in enumerate(iterator):
 
     traj_id = int(episode['traj_idx'][0])
     print(f"Processing traj {traj_id} **********", flush=True)
-    traj_id = int(episode['traj_idx'][0])
-    print(f"Processing traj {traj_id} **********", flush=True)
 
     # skip traj if we've already processed it
     if str(traj_id) in results_dict:
