@@ -42,7 +42,7 @@ def process_traj(info):
 
 
 def main(dataset):
-    json_path = f'/home/oiermees/generated_ecot/generated_data/{dataset}/jsons/all'
+    json_path = f'/home/oiermees/generated_ecot/generated_data/{dataset}/jsons/'
     final_json_path = f'/home/oiermees/generated_ecot/generated_data/{dataset}/jsons/{dataset}_reasonings.json'
 
     final_dict = {}
