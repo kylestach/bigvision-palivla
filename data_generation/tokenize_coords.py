@@ -33,8 +33,6 @@ def process_traj(info):
     if not info:
         return {} # don't process empty trajectory
 
-    filtered_info = info.copy()
-
     # 2. convert hand centroids to <loc> format
     new_info = {}
     new_info['right_hand_centroids'] = convert_to_loc(info["right_hand_centroids"])
