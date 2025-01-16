@@ -76,6 +76,10 @@ def get_config(variant_config: str):
             "traj_transform_kwargs": {
                 "window_size": 1,
                 "action_horizon": 1,
+                "task_augment_strategy": "delete_task_conditioning",
+                "task_augment_kwargs": {
+                    "keep_image_prob": 0,
+                },
             },
             "frame_transform_kwargs": {
                 "image_augment_kwargs": {},
@@ -100,10 +104,14 @@ def get_config(variant_config: str):
             },
         },
         "visualizations": {
-            "bridge_sanity_print": {
+            # "bridge_sanity_print": {
+            #     "dataset": "bridge",
+            #     "visualization": "viz.sanity_print",
+            # },
+            "bridge_chain_of_thought": {
                 "dataset": "bridge",
-                "visualization": "viz.sanity_print",
-            }
+                "visualization": "viz.chain_of_thought"
+            },
         },
     }
 
