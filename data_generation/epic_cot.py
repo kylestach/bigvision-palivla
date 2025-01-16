@@ -34,7 +34,7 @@ dataset_paths = {
 print("Loading dataset ", args.dataset)
 start_idx = TRAJS_TO_PROCESS*args.id
 dataset_kwargs = make_oxe_dataset_kwargs(args.dataset,dataset_paths[args.dataset])
-dataset = make_single_dataset(dataset_kwargs, train=True)
+dataset = dataset = make_single_dataset(dataset_kwargs, frame_transform_kwargs=dict(resize_size={"primary": (256, 256)},),train=True)
 dataset = dataset.skip(start_idx).take(TRAJS_TO_PROCESS)
 iterator = dataset.iterator()
 
