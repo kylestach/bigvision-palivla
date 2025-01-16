@@ -160,7 +160,7 @@ def main(_):
     viz_datasets = {
         k: make_trajectory_dataset(
             **viz_dataset_kwargs.to_dict(),
-            train=False,
+            train=True,
         )
         for k, viz_dataset_kwargs in config.visualization_datasets.items()
     }
