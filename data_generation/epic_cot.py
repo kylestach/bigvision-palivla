@@ -64,7 +64,7 @@ for i, episode in enumerate(iterator):
         continue
 
     #images = episode['observation']['image_primary'].squeeze()
-    hand_kp_2d = episode["observation"]["proprio_primary"][...,:2].squeeze()
+    hand_kp_2d = episode["observation"]["proprio_primary"][:,0,:2]
     language_label = episode['task']['language_instruction'][0].decode()
 
     # create results dict for this trajectory
