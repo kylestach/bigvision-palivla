@@ -34,7 +34,9 @@ dataset_paths = {
 print("Loading dataset ", args.dataset)
 start_idx = TRAJS_TO_PROCESS*args.id
 dataset_kwargs = make_oxe_dataset_kwargs(args.dataset,dataset_paths[args.dataset], load_proprio=True)
-dataset = dataset = make_single_dataset(dataset_kwargs, frame_transform_kwargs=dict(resize_size={"primary": (256, 256)},),skip_norm_keys=["primary_proprio"],train=True)
+#avoid normalizing 2d keypoint proprio
+dataset_kwargs["skip_norm_keys"]=["proprio_primary"]
+dataset = dataset = make_single_dataset(dataset_kwargs, frame_transform_kwargs=dict(resize_size={"primary": (256, 256)},),train=True)
 dataset = dataset.skip(start_idx).take(TRAJS_TO_PROCESS)
 iterator = dataset.iterator()
 
@@ -63,12 +65,22 @@ for i, episode in enumerate(iterator):
         print("skipping traj ", traj_id, flush=True)
         continue
 
-    images = episode['observation']['image_primary'].squeeze()
+    #images = episode['observation']['image_primary'].squeeze()
+    hand_kp_2d = episode["observation"]["proprio_primary"][...,:2].squeeze()
     language_label = episode['task']['language_instruction'][0].decode()
 
     # create results dict for this trajectory
     results_dict[traj_id] = {}
     results_dict[traj_id]['language_label'] = language_label
+    results_dict[traj_id]['right_hand_centroids'] = {}
+    # non-filtered frames are inside episode["frame_idx"]
+    for step, coord in enumerate(hand_kp_2d):
+        if coord is None:
+            results_dict[traj_id]['right_hand_centroids'][step] = None
+        else:
+            x, y = coord
+            results_dict[traj_id]['right_hand_centroids'][
+                step] = f"{y},{x}"  # flipping point to be consistent with PaliGemma format
 
 with open(FINAL_JSON, "w") as f:
     json.dump(results_dict, f)
