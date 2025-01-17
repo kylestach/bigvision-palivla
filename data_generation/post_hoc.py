@@ -42,8 +42,8 @@ def convert_to_loc(traj_centroids):
         centroid = centroid.split(",")
         x_orig,y_orig = float(centroid[0]), float(centroid[1])
 
-        x = str(int(x_orig/1024 * 256))
-        y = str(int(y_orig/1024 * 256))
+        x = str(int(x_orig/256 * 1024))
+        y = str(int(y_orig/256 * 1024))
 
         # format x to string such that we left-pad with up to four 0's
         x, y = x.zfill(4), y.zfill(4)
