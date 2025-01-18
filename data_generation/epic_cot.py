@@ -6,7 +6,7 @@ import os
 
 from octo.data.oxe import make_oxe_dataset_kwargs
 from octo.data.dataset import make_single_dataset
-TRAJS_TO_PROCESS = 5200
+TRAJS_TO_PROCESS = 30000
 WRITE_INTERVAL=25
 parser = argparse.ArgumentParser()
 parser.add_argument("--id", type=int, default=0)
