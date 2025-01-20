@@ -184,6 +184,7 @@ class ModelComponents:
             batch, action_dim=gt_actions.shape[-1], return_tokens=True,
         )
 
+        gt_actions = self.data_gather_fn(self.sharding.mesh.local_data_to_global_array(gt_actions))
         predicted_actions = np.nan_to_num(predicted_actions)
 
         return {

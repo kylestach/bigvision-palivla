@@ -19,7 +19,7 @@ def sanity_print(model: ModelComponents, trajectory: Any):
     first_frame["observation"] = jax.tree.map(lambda x: x[None], first_frame["observation"])
     first_frame["action"] = trajectory["action"][None, :1, :]
 
-    # Predict chain-of-thought
+    # Predict tokens
     sequences = model.build_sequence(first_frame, begin_is_prompt=True)
     viz_batch, sequences = mhu.broadcast_one_to_all(({"observation": first_frame["observation"]}, sequences))
     predicted_tokens = model.predict_tokens(viz_batch, sequences, use_ema_params=True, replicate=True)
@@ -51,9 +51,9 @@ def sanity_print(model: ModelComponents, trajectory: Any):
 
     row_length = 10
     _add_row_shim("Predicted Text", predicted_text_tokens)
-    _add_row_shim("Predicted IDs", predicted_tokens[0].tolist())
+    # _add_row_shim("Predicted IDs", predicted_tokens[0].tolist())
     _add_row_shim("Target Text", target_gen_text_tokens)
-    _add_row_shim("Target IDs", target_gen_tokens[0].tolist())
+    # _add_row_shim("Target IDs", target_gen_tokens[0].tolist())
 
     # Plot text on right
     table_str = table.get_string(title='Sanity Print', header=False)

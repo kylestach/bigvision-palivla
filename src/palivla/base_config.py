@@ -104,13 +104,9 @@ def get_config(variant_config: str):
             },
         },
         "visualizations": {
-            # "bridge_sanity_print": {
-            #     "dataset": "bridge",
-            #     "visualization": "viz.sanity_print",
-            # },
-            "bridge_chain_of_thought": {
+            "bridge_sanity_print": {
                 "dataset": "bridge",
-                "visualization": "viz.chain_of_thought"
+                "visualization": "viz.sanity_print",
             },
         },
     }
