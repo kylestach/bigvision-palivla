@@ -8,6 +8,7 @@ from palivla.model_components import ModelComponents
 from palivla.typing import Params
 from ml_collections import FrozenConfigDict
 
+
 @Registry.register("load.paligemma_weights")
 def load_paligemma_weights(
     model: ModelComponents,
@@ -89,6 +90,15 @@ def load_paligemma_weights(
 
         if path_str in ["/llm/embedder/input_embedding"]:
             strategy = "subarray"
+            # Replace the new embeddings with the mean of the existing embeddings.
+            # This ensures that the new vocab doesn't drown out signal from the existing vocab.
+            mean_embedding = jnp.mean(params, axis=0, keepdims=True)
+            mean_embedding = jnp.repeat(
+                mean_embedding, params.shape[0] - param_replacements.shape[0], axis=0
+            )
+            params = jax.lax.dynamic_update_slice(
+                params, mean_embedding, (param_replacements.shape[0], 0)
+            )
             jax.debug.print(f"Replacing param {path_str} with subarray strategy")
         else:
             strategy = "error"
