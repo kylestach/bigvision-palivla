@@ -12,3 +12,6 @@ wandb/
 /checkpoints
 /uv.lock
 /build/
+
+.ruff_cache
+.pytest_cache

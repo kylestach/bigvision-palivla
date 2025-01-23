@@ -52,7 +52,7 @@ class CoTSequenceBuilder(SequenceBuilder):
         ]
 
         prompt_tokens = language_tokenizer.batch_encode_plus(prompt)["input_ids"]
-
+        
         if include_action_tokens:
             action = batch["action"]
             if action.ndim == 4:
@@ -68,11 +68,12 @@ class CoTSequenceBuilder(SequenceBuilder):
         else:
             gen_tokens = [[] for _ in range(len(prompt_tokens))]
 
+        prompt_is_ar = [[tok == bor_id for tok in prompt] for prompt in prompt_tokens]
         return {
             "prompt": self.pad_and_format_token_group(
                 prompt_tokens,
                 self.prompt_pad_length,
-                is_gen=[tok == bor_id for tok in prompt_tokens],
+                is_gen=prompt_is_ar,
                 is_loss=False,
             ),
             "gen": self.pad_and_format_token_group(

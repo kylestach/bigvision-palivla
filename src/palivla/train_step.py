@@ -16,8 +16,10 @@ def compute_stats(
 ):
     loss = jnp.mean(
         target_mask_loss
-        * optax.softmax_cross_entropy_with_integer_labels(pred_logits, target_tokens)
-    ) / jnp.mean(target_mask_loss)
+        * optax.softmax_cross_entropy_with_integer_labels(pred_logits, target_tokens),
+        axis=-1,
+    ) / jnp.mean(target_mask_loss, axis=-1)
+    loss = jnp.mean(loss)
 
     accuracy = jnp.mean(
         target_mask_loss * (jnp.argmax(pred_logits, axis=-1) == target_tokens)

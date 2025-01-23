@@ -22,7 +22,7 @@ def sanity_print(model: ModelComponents, trajectory: Any):
     # Predict tokens
     sequences = model.build_sequence(first_frame, begin_is_prompt=True)
     viz_batch, sequences = mhu.broadcast_one_to_all(({"observation": first_frame["observation"]}, sequences))
-    predicted_tokens = model.predict_tokens(viz_batch, sequences, use_ema_params=True, replicate=True)
+    predicted_tokens = model.predict_tokens(viz_batch, sequences, use_ema_params=False, replicate=True)
 
     # Decode the tokens
     predicted_text_tokens = [model.language_tokenizer.decode(tok) for tok in predicted_tokens[0]]

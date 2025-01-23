@@ -90,6 +90,8 @@ def make_trajectory_dataset(
     action_proprio_normalization_type: NormalizationType,
     force_recompute_dataset_statistics: bool,
     train: bool,
+    frame_transform_kwargs: dict = {},
+    traj_transform_kwargs: dict = {},
     **kwargs,
 ):
     import tensorflow as tf
@@ -119,6 +121,6 @@ def make_trajectory_dataset(
     return make_single_dataset(
         dataset_kwargs,
         train=train,
-        frame_transform_kwargs={},
-        traj_transform_kwargs={},
+        frame_transform_kwargs=frame_transform_kwargs,
+        traj_transform_kwargs=traj_transform_kwargs,
     ).map(squeeze_fn)

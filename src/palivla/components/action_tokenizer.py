@@ -31,7 +31,7 @@ class BinActionTokenizer(ActionTokenizer):
         min_action_value: np.ndarray | float,
         max_action_value: np.ndarray | float,
         action_vocab_size: int = 1000,
-        action_horizon: int = 10,
+        action_horizon: int = 1,
     ):
         self.min_action_value = min_action_value
         self.max_action_value = max_action_value

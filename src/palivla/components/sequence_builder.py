@@ -59,7 +59,7 @@ class SequenceBuilder:
         ]
 
         prompt_tokens = language_tokenizer.batch_encode_plus(prompt)["input_ids"]
-
+        
         if include_action_tokens:
             action = batch["action"]
             if action.ndim == 4:
@@ -75,8 +75,9 @@ class SequenceBuilder:
         else:
             action_tokens = [[] for _ in range(len(prompt_tokens))]
 
+        prompt_is_ar = [[tok == boa_id for tok in prompt] for prompt in prompt_tokens]
         return {
-            "prompt": self.pad_and_format_token_group(prompt_tokens, self.prompt_pad_length, is_gen=[tok == boa_id for tok in prompt_tokens], is_loss=False),
+            "prompt": self.pad_and_format_token_group(prompt_tokens, self.prompt_pad_length, is_gen=prompt_is_ar, is_loss=False),
             "gen": self.pad_and_format_token_group(action_tokens, self.gen_pad_length, is_gen=True, is_loss=True),
         }
    
@@ -91,11 +92,16 @@ class SequenceBuilder:
                 data, (0, num_pad_tokens), mode="constant", constant_values=pad_value
             )[:pad_length]
 
+        if isinstance(is_gen, bool):
+            is_gen = [is_gen for _ in tokens]
+        if isinstance(is_loss, bool):
+            is_loss = [is_loss for _ in tokens]
+
         return {
             "tokens": np.stack([_pad(tok, pad_length) for tok in tokens]),
             "mask": np.stack([_pad(np.ones_like(tok, dtype=bool), pad_length) for tok in tokens]),
-            "mask_ar": np.stack([_pad(is_gen, pad_length, data_len=len(tok)) for tok in tokens]),
-            "mask_loss": np.stack([_pad(is_loss, pad_length, data_len=len(tok)) for tok in tokens]),
+            "mask_ar": np.stack([_pad(gen, pad_length, data_len=len(tok)) for tok, gen in zip(tokens, is_gen)]),
+            "mask_loss": np.stack([_pad(loss, pad_length, data_len=len(tok)) for tok, loss in zip(tokens, is_loss)]),
         }
 
     def get_actions(
@@ -115,12 +121,12 @@ class SequenceBuilder:
         act0_id = act0_id or language_tokenizer.encode("<act0>")[0]
 
         # Find the beginning of the action
-        if begin_is_prompt:
-            start_idx = 0
-        else:
-            try:
-                start_idx = np.where(tokens == boa_id)[0][0] + 1
-            except IndexError:
+        try:
+            start_idx = np.where(tokens == boa_id)[0][0] + 1
+        except IndexError:
+            if begin_is_prompt:
+                start_idx = 0
+            else:
                 return None
 
         # Find the end of the action

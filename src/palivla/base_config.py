@@ -55,10 +55,9 @@ def get_config(variant_config: str):
         "optimizer": {
             "name": "optimizer.default_optimizer",
             "kwargs": {
-                "optimizer": "sgd",
+                "optimizer": "adamw",
                 "num_train_steps": num_train_steps,
-                "base_learning_rate": 1e-3,
-                "ema_rate": 0.999,
+                "base_learning_rate": 4e-5,
             },
         },
         # Dataset settings
@@ -86,7 +85,7 @@ def get_config(variant_config: str):
                 "resize_size": {"primary": [224, 224]},
             },
             "balance_weights": True,
-            "shuffle_buffer_size": 50000,
+            "shuffle_buffer_size": 500000,
             "traj_transform_threads": 16,
             "traj_read_threads": 16,
         },
@@ -101,6 +100,10 @@ def get_config(variant_config: str):
                 "load_language": True,
                 "force_recompute_dataset_statistics": False,
                 "action_proprio_normalization_type": NormalizationType.NORMAL,
+                "frame_transform_kwargs": {
+                    "image_augment_kwargs": {},
+                    "resize_size": {"primary": [224, 224]},
+                },
             },
         },
         "visualizations": {

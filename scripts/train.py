@@ -110,6 +110,16 @@ def create_model(config: ConfigDict, sharding_metadata: ShardingMetadata):
     )
 
 
+def make_viz_function(visualization_name, visualization_config, callback, viz_trajectories):
+    def _viz_fn(model):
+        visualizations = {}
+        for viz_num, trajectory in enumerate(viz_trajectories[visualization_config.dataset]):
+            visualizations[f"{viz_num}"] = callback(model, trajectory)
+        return visualizations
+
+    return _viz_fn
+
+
 def main(_):
     if flags.FLAGS.platform == "tpu":
         jax.distributed.initialize()
@@ -174,14 +184,8 @@ def main(_):
     visualization_callbacks = {}
     for visualization_name, visualization_config in config.visualizations.items():
         viz_callback = Registry.lookup(visualization_config.visualization)
-        def _viz_fn():
-            nonlocal model, viz_trajectories
-            visualizations = {}
-            for viz_num, trajectory in enumerate(viz_trajectories[visualization_config.dataset]):
-                visualizations[f"{visualization_name}_{viz_num}"] = viz_callback(model, trajectory)
-            return visualizations
 
-        visualization_callbacks[visualization_name] = _viz_fn
+        visualization_callbacks[visualization_name] = make_viz_function(visualization_name, visualization_config, viz_callback, viz_trajectories)
 
     # W&B setup
     if jax.process_index() == 0:
@@ -245,10 +249,12 @@ def main(_):
 
             if (i + 1) % config.save_interval == 0:
                 if config.save_path is not None:
-                    checkpoint_save_manager.save(i + 1, args=model.save_args())
+                    model.save_state(
+                        i + 1, checkpoint_save_manager
+                    )
 
             if (i + 1) % config.viz_interval == 0:
-                visualizations = flatten_wandb_dict({"viz": {k: v() for k, v in visualization_callbacks.items()}})
+                visualizations = {k: v(model) for k, v in visualization_callbacks.items()}
                 if jax.process_index() == 0:
                     wandb.log(flatten_wandb_dict({"viz": visualizations}), step=i + 1, commit=False)
 

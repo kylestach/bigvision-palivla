@@ -1,5 +1,6 @@
 import tempfile
 from contextlib import contextmanager
+from typing import List
 
 import jax
 import numpy as np
@@ -13,6 +14,7 @@ def freeze_structure(structure):
         is_leaf=lambda x: isinstance(x, list),
     )
 
+
 def key_string(path, separator="/") -> str:
     def _component_to_string(component) -> str:
         if isinstance(component, jax.tree_util.SequenceKey):
@@ -25,7 +27,31 @@ def key_string(path, separator="/") -> str:
             return str(component.key)
         else:
             return str(component)
+
     return separator.join(_component_to_string(component) for component in path)
+
+
+def strings_process_allgather(local_strings: List[str]) -> List[str]:
+    # Get the max length
+    local_max_strlen = max(len(s) for s in local_strings)
+    max_strlen = np.max(multihost_utils.process_allgather(np.asarray(local_max_strlen)))
+
+    # Decode all strings from bytes to str
+    local_strings = [s.decode() for s in local_strings]
+
+    encoded = np.stack(
+        [
+            np.array([ord(c) for c in s.ljust(max_strlen)], dtype=np.uint8)
+            for s in local_strings
+        ],
+        axis=0,
+    )
+    encoded_all_hosts = multihost_utils.process_allgather(encoded)
+
+    return [
+        ["".join([chr(u) for u in string_encoded]).rstrip() for string_encoded in strings_by_host]
+        for strings_by_host in encoded_all_hosts
+    ]
 
 
 def host_broadcast_str(x: str | None) -> str:
@@ -79,10 +105,10 @@ def flatten_wandb_dict(nested_dict: dict, prefix: str = "") -> dict:
 @contextmanager
 def write_staging_directory(target_dir: str):
     """Creates a temporary staging directory and copies its contents to target_dir on exit.
-    
+
     Args:
         target_dir: Directory to copy staged files to (can be local or GCS path)
-    
+
     Yields:
         Path to temporary staging directory
     """
@@ -96,13 +122,14 @@ def write_staging_directory(target_dir: str):
 
         gcs_recursive_copy(temp_dir, target_dir)
 
+
 @contextmanager
 def read_staging_directory(target_dir: str):
     """Stages a directory from GCS to a temporary directory. The temporary directory is deleted on exit.
 
     Args:
         target_dir: Directory to stage from (can be local or GCS path)
-    
+
     Yields:
         Path to temporary staging directory
     """

@@ -261,6 +261,7 @@ class ModelComponents:
         )
 
         if return_tokens:
+            sequences = self.data_gather_fn(self.sharding.mesh.local_data_to_global_array(sequences))
             return (
                 actions,
                 actions_mask,
