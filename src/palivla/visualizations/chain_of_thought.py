@@ -44,8 +44,19 @@ def visualize_trajectory(
     # Plot gripper trajectory
     x = [state.x * scale for state in trajectory.gripper]
     y = [state.y * scale for state in trajectory.gripper]
-    ax.plot(x, y, marker="o", color="red", linestyle="-", linewidth=2, markersize=10)
-    legend.append("gripper")
+    ax.plot(x, y, color="red", linewidth=2, alpha=0.3)
+    for i, (x_, y_) in enumerate(zip(x, y)):
+        ax.plot(
+            x_,
+            y_,
+            marker="o",
+            color="red",
+            linestyle="-",
+            linewidth=2,
+            markersize=10,
+            alpha=0.7**i,
+            label="gripper" if i == 0 else None,
+        )
 
     # Assign colors to objects
     colors = [
@@ -77,11 +88,11 @@ def visualize_trajectory(
                 edgecolor=color,
                 facecolor="none",
                 alpha=0.7**i,
+                label=obj_name if i == 0 else None,
             )
             ax.add_patch(rect)
-            legend.append(obj_name)
 
-    ax.legend(legend)
+    ax.legend()
     ax.set_title(title)
     ax.axis("off")
 
