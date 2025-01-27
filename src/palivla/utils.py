@@ -72,9 +72,9 @@ def flatten_wandb_dict(nested_dict: dict, prefix: str = "") -> dict:
     flat_dict = {}
     for key, value in nested_dict.items():
         if isinstance(value, dict):
-            flat_dict.update(flatten_wandb_dict(value, f"{prefix}/{key}"))
+            flat_dict.update(flatten_wandb_dict(value, f"{prefix}{key}/"))
         else:
-            flat_dict[f"{prefix}/{key}"] = value
+            flat_dict[f"{prefix}{key}"] = value
     return flat_dict
 
 
