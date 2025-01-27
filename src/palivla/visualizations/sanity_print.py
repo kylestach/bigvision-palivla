@@ -50,7 +50,10 @@ def sanity_print(model: ModelComponents, trajectory: Any):
             table.add_row([name if i == 0 else "", *row])
 
     row_length = 10
-    _add_row_shim("Predicted Text", predicted_text_tokens)
+    _add_row_shim("Predicted Text", [
+        p if p == t else "**" + p + "**"
+        for p, t in zip(predicted_text_tokens, target_gen_text_tokens)
+    ])
     # _add_row_shim("Predicted IDs", predicted_tokens[0].tolist())
     _add_row_shim("Target Text", target_gen_text_tokens)
     # _add_row_shim("Target IDs", target_gen_tokens[0].tolist())
