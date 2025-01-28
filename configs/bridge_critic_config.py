@@ -19,7 +19,6 @@ def get_config():
     model_config["q_max"] = 1.0
     # set to default value suggested by the paper
     # https://arxiv.org/pdf/2403.03950.pdf
-    # model_config["critic_sigma"] = 0.01
     model_config["critic_sigma"] = (
         0.75
         * (model_config["q_max"] - model_config["q_min"])
@@ -28,6 +27,8 @@ def get_config():
     model_config["discount"] = discount
     model_config["target_ema_rate"] = 0.005
     model_config["target_ema_rate"] = ema_rate
+    model_config["aux_mc_prediction"] = False
+    model_config["aux_loss_weight"] = 0.0
 
     return ConfigDict(
         {
@@ -35,11 +36,11 @@ def get_config():
             "data_dir": data_dir,
 
             # W&B settings
-            "wandb_project": "palivla-bridge",
+            "wandb_project": "palivla-bridge-critic",
             "wandb_mode": "online",
             "wandb_experiment_name": "bridge-critic",
             # Tokenizers
-            "language_tokenizer": "google/paligemma-3b-pt-224",
+            "language_tokenizer": "google/paligemma2-3b-pt-224",
             "action_tokenizer": "action_tokenizer.bin(min_action_value=-3, max_action_value=3)",
             "sequence_builder": "sequence_builder.default(prompt_pad_length=50, gen_pad_length=10)",
             # Initialization
@@ -115,6 +116,7 @@ def get_config():
                     "load_language": True,
                     "force_recompute_dataset_statistics": False,
                     "action_proprio_normalization_type": NormalizationType.NORMAL,
+                    "mc_discount": discount,
                 },
                 "traj_transform_kwargs": {
                     "window_size": 1,
@@ -128,11 +130,10 @@ def get_config():
                 "shuffle_buffer_size": 50000,
                 "traj_transform_threads": 16,
                 "traj_read_threads": 16,
-                "parl_action_cache_glob_pattern": "./bridge_openvla_cached_actions/*.pkl",
-                "mc_discount": discount,
+                # "parl_action_cache_glob_pattern": "./bridge_openvla_cached_actions/*.pkl",
             },
             "viz_traj_datasets": {
-                "bridge": {
+                "bridge_train": {
                     "name": "bridge_dataset",
                     "data_dir": data_dir,
                     "load_camera_views": ["primary"],
@@ -141,14 +142,35 @@ def get_config():
                     "load_language": True,
                     "force_recompute_dataset_statistics": False,
                     "action_proprio_normalization_type": NormalizationType.NORMAL,
-                    "mc_discount": discount,
+                    "frame_transform_kwargs": {
+                        "image_augment_kwargs": {},
+                        "resize_size": {"primary": [224, 224]},
+                    },
+                    "traj_transform_kwargs": {},
+                    "train": True,
                 },
+                "bridge_val": {
+                    "name": "bridge_dataset",
+                    "data_dir": data_dir,
+                    "load_camera_views": ["primary"],
+                    "load_depth": False,
+                    "load_proprio": True,
+                    "load_language": True,
+                    "force_recompute_dataset_statistics": False,
+                    "action_proprio_normalization_type": NormalizationType.NORMAL,
+                    "frame_transform_kwargs": {
+                        "image_augment_kwargs": {},
+                        "resize_size": {"primary": [224, 224]},
+                    },
+                    "traj_transform_kwargs": {},
+                    "train": False,
+                }
             },
             # Critic training kwargs
-            "viz_num_trajectories": 4,
+            "viz_num_trajectories": 8,
             "critic_train_step_kwargs": {
                 "regress_to_mc_returns": False,
-                "train_with_sarsa": False,
+                "train_with_sarsa": True,
                 "zero_out_actions": False,
             },
         }

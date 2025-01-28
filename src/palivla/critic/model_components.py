@@ -7,6 +7,7 @@ import numpy as np
 from jax.sharding import PartitionSpec
 from transformers import AutoTokenizer
 
+from palivla import utils
 from palivla.components.action_tokenizer import ActionTokenizer
 from palivla.components.sequence_builder import SequenceBuilder
 from palivla.components.train_state import ShardingMetadata, TrainState
@@ -111,7 +112,10 @@ class CriticModelComponents(ModelComponents):
     def prepare_batch_for_train_step(self, batch: dict):
         # Tokenize the batch and build sequences
         sequences = self.sequence_builder.build_sequence(
-            batch, self.language_tokenizer, self.action_tokenizer
+            batch,
+            self.language_tokenizer,
+            self.action_tokenizer,
+            include_action_tokens=False,
         )
 
         # Shard the batch to devices
@@ -124,7 +128,7 @@ class CriticModelComponents(ModelComponents):
             "next_prompt": sequences["prompt"],
             "action": batch["action"][:, -1, -1, :],
             "next_action": batch["next_action"][:, -1, -1, :],
-            "counterfactual_next_actions": batch["counterfactual_next_actions"],
+            # "counterfactual_next_actions": batch["counterfactual_next_actions"],
             "rewards": batch["reward"],
             "td_mask": batch["td_mask"],
             "mc_return": batch["mc_return"],
@@ -148,7 +152,7 @@ class CriticModelComponents(ModelComponents):
 
         return info
 
-    def predict(self, batch: Data, *, train: bool = False) -> Data:
+    def predict(self, batch: Data, *, train: bool = False, has_aux: bool = False, broadcast_from_host: bool = False) -> Data:
         # Tokenize the batch and build sequences
         sequences = self.sequence_builder.build_sequence(
             batch,
@@ -164,10 +168,13 @@ class CriticModelComponents(ModelComponents):
             "prompt": sequences["prompt"],
             "action": batch["action"],
         }
-        batch = self.sharding.mesh.local_data_to_global_array(batch)
+        if broadcast_from_host:
+            batch = utils.broadcast_one_to_replicated(batch, self.sharding.mesh)
+        else:
+            batch = self.sharding.mesh.local_data_to_global_array(batch)
 
         with self.sharding.mesh.mesh, nn.logical_axis_rules([("act_batch", "fsdp")]):
-            _, critic_value, _ = self.predict_fn(
+            critic_distribution, info = self.predict_fn(
                 {"params": self.train_state.params},
                 batch["sensors"],
                 batch["sensors_mask"],
@@ -175,7 +182,10 @@ class CriticModelComponents(ModelComponents):
                 batch["action"],
             )
 
-        return self.data_gather_fn(critic_value)
+        if has_aux:
+            return self.data_gather_fn((critic_distribution, info))
+        else:
+            return self.data_gather_fn(critic_distribution)
 
     def eval_step(self, batch: dict):
         batch = self.prepare_batch_for_train_step(batch)

@@ -1,5 +1,6 @@
 from typing import Literal
 
+from flax.training.train_state import TrainState
 import jax
 import jax.numpy as jnp
 
@@ -107,11 +108,16 @@ def load_paligemma_weights(
         except ValueError as e:
             raise ValueError(f"Error replacing param {path_str}: {e}")
 
-    def _replace_params(params: Params, param_replacements: Params):
-        return jax.tree.map(
+    def _replace_params(train_state: TrainState, param_replacements: Params):
+        params = jax.tree.map(
             lambda x: x.astype(param_dtype),
-            _replace_params_fn(params, param_replacements, ""),
+            _replace_params_fn(train_state.params, param_replacements, ""),
         )
+        if "ema" in train_state.opt_state:
+            opt_state = {**train_state.opt_state, "ema": params}
+        else:
+            opt_state = train_state.opt_state
+        return train_state.replace(params=params, opt_state=opt_state)
 
     replace_params_fn = model.sharding.mesh.sjit(
         _replace_params,
@@ -120,8 +126,9 @@ def load_paligemma_weights(
         donate_argnums=(0,),
     )
 
-    model.train_state = model.train_state.replace(
-        params=replace_params_fn(model.train_state.params, base_params)
+    model.train_state = replace_params_fn(
+        model.train_state,
+        base_params,
     )
 
 @Registry.register("load.copy_loc_tokens_to_action")

@@ -1,5 +1,4 @@
 from functools import partial
-from os import PathLike
 from typing import Any
 
 import cloudpickle
@@ -123,7 +122,7 @@ class ModelComponents:
         self.train_state.save_state(step, checkpoint_manager)
 
     @classmethod
-    def load_static(cls, path: PathLike, sharding: ShardingMetadata):
+    def load_static(cls, path: Any, sharding: ShardingMetadata, **kwargs):
         from tensorflow import io
 
         # Huggingface can't load from GCS, so we need to stage the tokenizer to a local directory
@@ -151,6 +150,7 @@ class ModelComponents:
             sharding=sharding,
             rng=rng,
             example_batch=example_batch,
+            **kwargs,
         )
 
     def load_state(self, step: int, checkpoint_manager: ocp.CheckpointManager):

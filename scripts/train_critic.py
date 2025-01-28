@@ -1,6 +1,5 @@
 import os
 from collections import OrderedDict
-from pathlib import Path
 
 from big_vision.utils import Registry
 from palivla.components.action_tokenizer import ActionTokenizer
@@ -101,7 +100,11 @@ def get_example_batch():
 def create_model(config: ConfigDict, sharding_metadata: ShardingMetadata):
     example_batch = get_example_batch()
 
-    language_tokenizer = AutoTokenizer.from_pretrained(config.language_tokenizer)
+    language_tokenizer = AutoTokenizer.from_pretrained(
+        config.language_tokenizer,
+        cache_dir=os.environ.get("HF_CACHE"),
+        token=os.environ.get("HF_TOKEN"),
+    )
     action_tokenizer: ActionTokenizer = Registry.lookup(config.action_tokenizer)()
     sequence_builder: SequenceBuilder = Registry.lookup(config.sequence_builder)()
 
@@ -155,10 +158,12 @@ def main(_):
 
     sharding_metadata = make_sharding(config)
 
-    if config.resume_checkpoint_dir != "":
+    if config.resume_checkpoint_dir is not None:
         # Load the model from a checkpoint
         model = CriticModelComponents.load_static(
-            config.resume_checkpoint_dir, sharding_metadata
+            config.resume_checkpoint_dir,
+            sharding_metadata,
+            critic_train_step_kwargs=config.critic_train_step_kwargs.to_dict(),
         )
         restore_manager = ocp.CheckpointManager(
             config.resume_checkpoint_dir, options=ocp.CheckpointManagerOptions()
@@ -181,7 +186,6 @@ def main(_):
     viz_datasets = {
         k: make_trajectory_dataset(
             **viz_dataset_kwargs.to_dict(),
-            train=False,
         )
         for k, viz_dataset_kwargs in config.viz_traj_datasets.items()
     }
@@ -210,11 +214,17 @@ def main(_):
     )
 
     if config.overfit_dataset:
-
         def _make_overfit_it(it):
-            overfit_batch = next(it)
+            overfit_dataset = jax.tree.map(
+                lambda *xs: np.concatenate(xs, axis=0),
+                *[v for vd in viz_trajectories.values() for v in vd],
+            )
+            overfit_dataset["action"] = jax.tree.map(lambda x: x[:, None, None, :], overfit_dataset["action"])
+            overfit_dataset["observation"] = jax.tree.map(lambda x: x[:, None, ...], overfit_dataset["observation"])
+            len_overfit_dataset = len(jax.tree.leaves(overfit_dataset)[0])
             while True:
-                yield overfit_batch
+                idcs = np.random.randint(len_overfit_dataset, size=per_host_train_batch_size)
+                yield jax.tree.map(lambda xs: xs[idcs], overfit_dataset)
 
         train_it = _make_overfit_it(train_it)
 
@@ -235,7 +245,7 @@ def main(_):
         wandb.init(**wandb_kwargs)
         wandb.config.update(config.to_dict())
 
-        run_name = wandb.run.name
+        wandb.run.name = run_name = wandb.run.name + "_" + wandb.run.id
     else:
         run_name = None
 
@@ -249,7 +259,7 @@ def main(_):
             options=ocp.CheckpointManagerOptions(max_to_keep=config.max_to_keep),
         )
 
-        model.save_static(Path(tf.io.gfile.join(checkpoint_save_path)))
+        model.save_static(checkpoint_save_path)
 
     train_infos = []
 
@@ -267,7 +277,7 @@ def main(_):
             train_info = jax.device_get(train_info)
             train_infos.append(train_info)
             pbar.set_postfix(
-                loss=f"{train_info['loss']:.2f}",
+                loss=f"{train_info['loss.total']:.2f}",
                 q_value=f"{train_info['q_value']:.2f}",
             )
 
@@ -284,7 +294,7 @@ def main(_):
                                 "batch_info": get_batch_info(batch),
                             }
                         ),
-                        step=i,
+                        step=i+1,
                     )
                 train_infos = []
 
@@ -310,13 +320,13 @@ def main(_):
                     wandb.log(
                         flatten_wandb_dict({"validation": eval_info}),
                         commit=False,
-                        step=i,
+                        step=i+1,
                     )
 
             # Checkpointing
             if (i + 1) % config.save_interval == 0:
                 if config.save_path is not None:
-                    checkpoint_save_manager.save(i + 1, args=model.save_args())
+                    model.save_state(i + 1, checkpoint_save_manager)
 
     if config.save_path is not None:
         checkpoint_save_manager.wait_until_finished()

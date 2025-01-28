@@ -1,9 +1,12 @@
 import tempfile
 from contextlib import contextmanager
+from typing import Any
 
 import jax
+from jax.sharding import PartitionSpec
 import numpy as np
 from jax.experimental import multihost_utils
+from scalax.sharding import MeshShardingHelper
 
 
 def freeze_structure(structure):
@@ -114,3 +117,15 @@ def read_staging_directory(target_dir: str):
         gcs_recursive_copy(target_dir, temp_dir)
 
         yield temp_dir
+
+def broadcast_one_to_replicated(
+    in_tree: Any, mesh: MeshShardingHelper, is_source: bool | None = None
+) -> Any:
+    tree = multihost_utils.broadcast_one_to_all(in_tree, is_source)
+    tree = jax.tree_map(lambda x: np.expand_dims(x, axis=0).repeat(jax.local_device_count(), axis=0), tree)
+    tree = mesh.local_data_to_global_array(tree)
+
+    return jax.jit(
+        lambda x: jax.tree_map(lambda x: x[0], x),
+        out_shardings=jax.sharding.NamedSharding(mesh.mesh, PartitionSpec()),
+    )(tree)

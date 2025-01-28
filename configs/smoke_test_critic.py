@@ -26,12 +26,14 @@ def get_config(variant_config: str | None = None):
         "img", "S/14"
     )
 
-    model_config["num_critic_bins"] = 256
+    model_config["num_critic_bins"] = 128
     model_config["q_min"] = 0.0
     model_config["q_max"] = 1.0
-    model_config["critic_sigma"] = 0.01
+    model_config["critic_sigma"] = 0.75 * (model_config["q_max"] - model_config["q_min"]) / model_config["num_critic_bins"]
     model_config["discount"] = 0.5
     model_config["target_ema_rate"] = 0.5
+    model_config["aux_mc_prediction"] = False
+    model_config["aux_loss_weight"] = 0.0
 
     return ConfigDict(
         {
@@ -48,13 +50,13 @@ def get_config(variant_config: str | None = None):
             "sequence_builder": "sequence_builder.default(prompt_pad_length=50, gen_pad_length=10)",
             # Initialization
             "load_fns": [],
-            "resume_checkpoint_dir": "",
-            "resume_checkpoint_step": -1,
+            "resume_checkpoint_dir": placeholder(str),
+            "resume_checkpoint_step": placeholder(int),
             # Overfit the dataset (for smoke tests/debugging)
             "overfit_dataset": True,
             # Training settings
-            "batch_size": 16,
-            "eval_batch_size": 16,
+            "batch_size": 32,
+            "eval_batch_size": 32,
             "num_steps": num_train_steps,
             # Checkpoint settings
             "save_path": placeholder(str),
@@ -62,7 +64,7 @@ def get_config(variant_config: str | None = None):
             "max_to_keep": 1,
             # Logging and visualization
             "eval_interval": 100,
-            "viz_interval": 1000,
+            "viz_interval": 2500,
             "log_interval": 10,
             # Multi-device settings
             "data_axis_size": 1,
@@ -73,9 +75,9 @@ def get_config(variant_config: str | None = None):
             "optimizer": {
                 "name": "optimizer.default_optimizer",
                 "kwargs": {
-                    "optimizer": "sgd",
+                    "optimizer": "adamw",
                     "num_train_steps": num_train_steps,
-                    "base_learning_rate": 1e-3,
+                    "base_learning_rate": 1e-4,
                     "ema_rate": 0.005,
                 },
             },
@@ -105,7 +107,7 @@ def get_config(variant_config: str | None = None):
                 "traj_read_threads": 16,
             },
             "viz_traj_datasets": {
-                "bridge": {
+                "bridge_train": {
                     "name": "bridge_dataset",
                     "data_dir": data_dir,
                     "load_camera_views": ["primary"],
@@ -114,12 +116,35 @@ def get_config(variant_config: str | None = None):
                     "load_language": True,
                     "force_recompute_dataset_statistics": False,
                     "action_proprio_normalization_type": NormalizationType.NORMAL,
+                    "frame_transform_kwargs": {
+                        "image_augment_kwargs": {},
+                        "resize_size": {"primary": [224, 224]},
+                    },
+                    "traj_transform_kwargs": {},
+                    "train": True,
+                },
+                "bridge_val": {
+                    "name": "bridge_dataset",
+                    "data_dir": data_dir,
+                    "load_camera_views": ["primary"],
+                    "load_depth": False,
+                    "load_proprio": True,
+                    "load_language": True,
+                    "force_recompute_dataset_statistics": False,
+                    "action_proprio_normalization_type": NormalizationType.NORMAL,
+                    "frame_transform_kwargs": {
+                        "image_augment_kwargs": {},
+                        "resize_size": {"primary": [224, 224]},
+                    },
+                    "traj_transform_kwargs": {},
+                    "train": False,
                 }
             },
             "viz_num_trajectories": 4,
             "critic_train_step_kwargs": {
                 "regress_to_mc_returns": True,
                 "train_with_sarsa": False,
+                "zero_out_actions": False,
             },
         }
     )
