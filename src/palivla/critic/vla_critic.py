@@ -3,6 +3,7 @@ import flax.linen as nn
 import jax
 import jax.numpy as jnp
 from einops import repeat
+from flax.struct import dataclass
 
 from big_vision.models.proj.paligemma.paligemma import make_attn_mask
 from palivla.components.model import PaliVLAModel
@@ -63,6 +64,36 @@ def make_attn_mask_for_critic(input_mask, input_mask_ar, n_actions):
     )
 
 
+@dataclass
+class DistributionalValue:
+    logits: jnp.ndarray
+    atoms: jnp.ndarray
+
+    @classmethod
+    def from_hl(
+        cls, mean: jnp.ndarray, qmin: float, qmax: float, num_bins: int, sigma: float
+    ):
+        xs = jnp.linspace(qmin, qmax, num_bins - 1)
+        cdf = jax.scipy.stats.norm.cdf(xs, mean[..., None], sigma)
+        cdf = jnp.concatenate(
+            [jnp.zeros_like(cdf[..., :1]), cdf, jnp.ones_like(cdf[..., -1:])], axis=-1
+        )
+        probs = jnp.diff(cdf, axis=-1)
+        atoms = jnp.linspace(qmin, qmax, num_bins)
+        logits = jnp.log(jnp.clip(probs, a_min=1e-8, a_max=None))
+        return cls(logits=logits, atoms=atoms)
+
+    def mean(self):
+        probs = jax.nn.softmax(self.logits, axis=-1)
+        return jnp.sum(probs * self.atoms, axis=-1)
+
+    def std(self):
+        probs = jax.nn.softmax(self.logits, axis=-1)
+        mean = jnp.sum(probs * self.atoms, axis=-1, keepdims=True)
+        var = jnp.sum(probs * (self.atoms - mean) ** 2, axis=-1)
+        return jnp.sqrt(var)
+
+
 class PaliVLACritic(PaliVLAModel):
     num_critic_bins: int = 256
     q_min: float = 0.0
@@ -70,11 +101,16 @@ class PaliVLACritic(PaliVLAModel):
     critic_sigma: float = 0.03
     discount: float = 0.99
     target_ema_rate: float = 0.005
+    aux_mc_prediction: bool = False
+    aux_loss_weight: float | None = None
 
     def setup(self):
         super().setup()
         self.action_proj = nn.Dense(self.llm.embdim)
         self.critic_head = nn.Dense(self.num_critic_bins)
+
+        if self.aux_mc_prediction:
+            self.critic_head_mc = nn.Dense(self.num_critic_bins)
 
     def __call__(
         self,
@@ -117,14 +153,21 @@ class PaliVLACritic(PaliVLAModel):
         info["text_logits"] = critic_logits
         info["text_tokens"] = jnp.argmax(critic_logits, axis=-1)
 
-        critic_value = jnp.sum(
-            jax.nn.softmax(critic_logits)
-            * jnp.linspace(self.q_min, self.q_max, self.num_critic_bins),
-            axis=-1,
-        )
-
         if actions_squeeze:
             critic_logits = jnp.squeeze(critic_logits, axis=1)
-            critic_value = jnp.squeeze(critic_value, axis=1)
 
-        return critic_logits, critic_value, info
+        atoms = jnp.linspace(self.q_min, self.q_max, self.num_critic_bins)
+
+        info = {}
+
+        # Auxiliary head for MC regression
+        if self.aux_mc_prediction:
+            mc_logits = self.critic_head_mc(pre_logits)
+            if actions_squeeze:
+                mc_logits = jnp.squeeze(mc_logits, axis=1)
+            info["mc_head"] = DistributionalValue(
+                logits=mc_logits,
+                atoms=atoms,
+            )
+
+        return DistributionalValue(logits=critic_logits, atoms=atoms), info

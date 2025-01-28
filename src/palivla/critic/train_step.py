@@ -48,7 +48,7 @@ def loss_fn(
         else:
             next_action = batch["counterfactual_next_actions"]
 
-        _, next_target_value, _ = model.apply(
+        next_target_value_dist, _ = model.apply(
             {"params": ema_params},
             batch["next_sensors"],
             batch["next_sensors_mask"],
@@ -57,6 +57,7 @@ def loss_fn(
             train=train,
             rngs={"dropout": target_key},
         )
+        next_target_value = next_target_value_dist.mean()
 
         # Maximize over next action options
         if next_target_value.ndim == 2:
@@ -73,7 +74,7 @@ def loss_fn(
         target_value = batch["rewards"] + model.discount * next_target_value * (
             batch["td_mask"]
         )
-
+    
     chex.assert_shape(target_value, (batch["rewards"].shape[0],))
 
     critic_target_probs = hl_gauss_target(
@@ -84,7 +85,7 @@ def loss_fn(
         sigma=model.critic_sigma,
     )
 
-    critic_logits, critic_value, critic_info = model.apply(
+    critic_distribution, critic_info = model.apply(
         {"params": params},
         batch["sensors"],
         batch["sensors_mask"],
@@ -94,25 +95,44 @@ def loss_fn(
         rngs={"dropout": critic_key},
     )
 
-    critic_probs = jax.nn.softmax(critic_logits)
-    critic_atoms = jnp.linspace(
-        model.q_min,
-        model.q_max,
-        model.num_critic_bins,
-    )
-    critic_std = jnp.sqrt(
-        jnp.sum(critic_probs * (critic_atoms - critic_value[..., None]) ** 2, axis=-1)
-    )
+    critic_value = critic_distribution.mean()
+    critic_std = critic_distribution.std()
 
-    loss = optax.softmax_cross_entropy(critic_logits, critic_target_probs).mean()
-    return loss, {
-        "loss": loss,
+    loss = optax.softmax_cross_entropy(critic_distribution.logits, critic_target_probs).mean()
+    info = {
         "q_target": jnp.mean(target_value),
         "q_value": jnp.mean(critic_value),
         "q_mse": jnp.mean(jnp.square(critic_value - target_value)),
         "q_std": jnp.mean(critic_std),
         "q - mc": jnp.mean(critic_value - batch["mc_return"]),
     }
+
+    if regress_to_mc_returns:
+        info["loss.mc"] = loss
+    else:
+        info["loss.td"] = loss
+
+    if model.aux_mc_prediction:
+        chex.assert_shape(target_value, (batch["rewards"].shape[0],))
+
+        aux_mc_head_distribution = critic_info["mc_head"]
+        mc_target_probs = hl_gauss_target(
+            q_min=model.q_min,
+            q_max=model.q_max,
+            num_bins=model.num_critic_bins,
+            critic_value=batch["mc_return"],
+            sigma=model.critic_sigma,
+        )
+        chex.assert_equal_shape([aux_mc_head_distribution.logits, mc_target_probs])
+        aux_loss = optax.softmax_cross_entropy(aux_mc_head_distribution.logits, mc_target_probs).mean()
+        info["loss.mc"] = aux_loss
+        info["q_value_aux_mc"] = jnp.mean(aux_mc_head_distribution.mean())
+
+        loss = loss + model.aux_loss_weight * aux_loss
+
+    info["loss.total"] = loss
+
+    return loss, info
 
 
 def train_step(
