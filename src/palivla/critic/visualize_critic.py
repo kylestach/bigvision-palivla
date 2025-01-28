@@ -16,7 +16,7 @@ def apply_critic_to_trajectory(
 ) -> Data:
     # Use the first host's trajectory to compute the critic values.
     traj_len = trajectory["observation"]["image_primary"].shape[0]
-    w0_traj_len = multihost_utils.broadcast_one_to_all(traj_len, is_source=(jax.process_index() == 0))
+    w0_traj_len = multihost_utils.broadcast_one_to_all(traj_len)
 
     # Pad the trajectory to a multiple of the batch size
     padded_traj_len = ((w0_traj_len - 1) // batch_size + 1) * batch_size
@@ -28,13 +28,20 @@ def apply_critic_to_trajectory(
 
     critic_values = []
     baseline_values = []
+    mc_critic_values = []
     for i in range(0, padded_traj_len, batch_size):
         batch = jax.tree.map(lambda x: x[i : i + batch_size], trajectory).copy()
         batch["action"] = np.concatenate([
             batch["action"][:, None, :],
             np.random.normal(size=(batch_size, num_counterfactual_actions, batch["action"].shape[-1]))
         ], axis=1)
-        critic_value = critic.predict(batch)
+
+        critic_value, critic_info = critic.predict(batch, has_aux=True, broadcast_from_host=True)
+        critic_value = critic_value.mean()
+
+        if "mc_head" in critic_info:
+            mc_critic_value = critic_info["mc_head"].mean()[:, 0]
+            mc_critic_values.append(mc_critic_value)
 
         qsa_value = critic_value[:, 0]
         random_action_value = critic_value[:, 1:].mean(axis=1)
@@ -42,11 +49,22 @@ def apply_critic_to_trajectory(
         critic_values.append(qsa_value)
         baseline_values.append(random_action_value)
 
-    return np.concatenate(critic_values, axis=0)[:traj_len], np.concatenate(baseline_values, axis=0)[:traj_len]
+    critic_values = np.concatenate(critic_values, axis=0)[:traj_len]
+    baseline_values = np.concatenate(baseline_values, axis=0)[:traj_len]
+    mc_critic_values = np.concatenate(mc_critic_values, axis=0)[:traj_len] if mc_critic_values else None
+
+    return {
+        "critic_values": critic_values,
+        "baseline_values": baseline_values,
+        "mc_critic_values": mc_critic_values,
+    }
 
 
 def visualize_critic(critic: CriticModelComponents, trajectory: Data) -> Dict:
-    critic_values, baseline_values = apply_critic_to_trajectory(critic, trajectory)
+    values = apply_critic_to_trajectory(critic, trajectory)
+    critic_values = values["critic_values"]
+    baseline_values = values["baseline_values"]
+    mc_critic_values = values["mc_critic_values"]
 
     # Create figure with subplots
     fig = plt.figure(figsize=(10, 4), dpi=300)
@@ -70,6 +88,8 @@ def visualize_critic(critic: CriticModelComponents, trajectory: Data) -> Dict:
     ax = plt.subplot(2, 1, 2)
     ax.plot(critic_values, label="Predicted $Q(s, a)$")
     ax.plot(baseline_values, label="Predicted $Q(s, a\sim\mathcal{N})$")
+    if mc_critic_values is not None:
+        ax.plot(mc_critic_values, label="Predicted MC $Q_{{aux}}(s, a)$")
     ax.plot(trajectory["mc_return"], label="Monte-Carlo $Q(s, a)$")
     ax.set_xlabel("Time step")
     ax.set_ylabel("$Q(s, a)$")
