@@ -123,11 +123,20 @@ class ModelComponents:
         self.train_state.save_state(step, checkpoint_manager)
 
     @classmethod
-    def load_static(cls, path: PathLike, sharding: ShardingMetadata):
+    def load_static(
+        cls,
+        path: Any,
+        sharding: ShardingMetadata,
+        *,
+        weights_only: bool = False,
+        **kwargs,
+    ):
         from tensorflow import io
 
         # Huggingface can't load from GCS, so we need to stage the tokenizer to a local directory
-        with read_staging_directory(io.gfile.join(path, "language_tokenizer")) as temp_dir:
+        with read_staging_directory(
+            io.gfile.join(path, "language_tokenizer")
+        ) as temp_dir:
             language_tokenizer = AutoTokenizer.from_pretrained(temp_dir)
 
         action_tokenizer = ActionTokenizer.load(path)
@@ -142,6 +151,7 @@ class ModelComponents:
             path,
             sharding=sharding,
             example_batch=example_batch,
+            weights_only=weights_only,
         )
         return cls(
             language_tokenizer=language_tokenizer,
@@ -153,8 +163,16 @@ class ModelComponents:
             example_batch=example_batch,
         )
 
-    def load_state(self, step: int, checkpoint_manager: ocp.CheckpointManager):
-        self.train_state = self.train_state.load_state(step, checkpoint_manager)
+    def load_state(
+        self,
+        step: int,
+        checkpoint_manager: ocp.CheckpointManager,
+        *,
+        weights_only: bool = False,
+    ):
+        self.train_state = self.train_state.load_state(
+            step, checkpoint_manager, weights_only=weights_only
+        )
 
     def train_step(self, batch: Any):
         # Tokenize the batch and build sequences

@@ -29,7 +29,7 @@ class ShardingMetadata:
         self.model_sharding_rule = model_sharding_rule
 
 
-def initialize_train_state(
+def initialize_train_state_fn(
     example_batch: Any,
     model_spec: ModuleSpec,
     optimizer_spec: OptimizerSpec,
@@ -58,7 +58,41 @@ def initialize_train_state(
     return sharding.mesh.sjit(
         init_train_state,
         out_shardings=sharding.model_sharding_rule,
+    )
+
+
+def initialize_train_state(
+    example_batch: Any,
+    model_spec: ModuleSpec,
+    optimizer_spec: OptimizerSpec,
+    sharding: ShardingMetadata,
+    rng: jax.Array,
+):
+    return initialize_train_state_fn(
+        example_batch,
+        model_spec,
+        optimizer_spec,
+        sharding,
+        rng,
     )()
+
+
+def initialize_abstract_train_state(
+    example_batch: Any,
+    model_spec: ModuleSpec,
+    optimizer_spec: OptimizerSpec,
+    sharding: ShardingMetadata,
+    rng: jax.Array,
+):
+    return jax.eval_shape(
+        initialize_train_state_fn(
+            example_batch,
+            model_spec,
+            optimizer_spec,
+            sharding,
+            rng,
+        )
+    )
 
 
 class TrainState(FlaxTrainState):
@@ -97,14 +131,21 @@ class TrainState(FlaxTrainState):
         *,
         sharding: ShardingMetadata,
         example_batch: Any,
+        weights_only: bool = False,
     ):
         with tf.io.gfile.GFile(tf.io.gfile.join(path, "model_spec.json"), "r") as f:
             model_spec = ModuleSpec.from_json(f.read())
-        with tf.io.gfile.GFile(tf.io.gfile.join(path, "optimizer_spec.json"), "r") as f:
-            optimizer_spec = OptimizerSpec.from_json(f.read())
+
+        if weights_only:
+            optimizer_spec = OptimizerSpec(optax.set_to_zero, {})
+        else:
+            with tf.io.gfile.GFile(
+                tf.io.gfile.join(path, "optimizer_spec.json"), "r"
+            ) as f:
+                optimizer_spec = OptimizerSpec.from_json(f.read())
 
         # Initialize the model
-        return initialize_train_state(
+        abstract_train_state = initialize_abstract_train_state(
             example_batch,
             model_spec,
             optimizer_spec,
@@ -112,11 +153,53 @@ class TrainState(FlaxTrainState):
             rng=jax.random.PRNGKey(0),
         )
 
+        # Shard the abstract train state
+        if isinstance(sharding.model_sharding_rule, ShardingRule):
+            shardings = sharding.model_sharding_rule.apply(abstract_train_state)
+        elif isinstance(sharding.model_sharding_rule, PartitionSpec):
+            shardings = jax.tree.map(
+                lambda x: jax.sharding.NamedSharding(
+                    sharding.mesh.mesh, sharding.model_sharding_rule
+                ),
+                abstract_train_state,
+            )
+        else:
+            raise ValueError(
+                "Sharding rule must be either ShardingRule or PartitionSpec"
+            )
+
+        return jax.tree.map(
+            lambda x, s: jax.ShapeDtypeStruct(shape=x.shape, dtype=x.dtype, sharding=s),
+            abstract_train_state,
+            shardings,
+        )
+
     def save_state(self, step: int, checkpoint_manager: ocp.CheckpointManager):
         checkpoint_manager.save(step, args=ocp.args.StandardSave(self))
 
-    def load_state(self, step: int, checkpoint_manager: ocp.CheckpointManager):
-        return checkpoint_manager.restore(step, args=ocp.args.StandardRestore(self))
+    def load_state(
+        self,
+        step: int,
+        checkpoint_manager: ocp.CheckpointManager,
+        *,
+        weights_only: bool = False,
+    ):
+        if weights_only:
+            restore_args = jax.tree.map(
+                lambda x: ocp.ArrayRestoreArgs(sharding=x.sharding), self
+            )
+            return checkpoint_manager.restore(
+                step,
+                args=ocp.args.PyTreeRestore(
+                    self,
+                    restore_args=restore_args,
+                    transforms={
+                        r"params/([a-z]+)": ocp.Transform(original_key=r"params/\1")
+                    },
+                ),
+            )
+        else:
+            return checkpoint_manager.restore(step, args=ocp.args.StandardRestore(self))
 
     def get_params(self, *, use_ema_params: bool = False):
         if use_ema_params:
