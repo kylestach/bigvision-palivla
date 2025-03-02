@@ -28,10 +28,10 @@ dependencies = [
     "tensorflow-text-nightly>=2.15.0",
     "tf-nightly>=2.15.0",
     "wandb>=0.18.3",
-    "protobuf>=3.20",
+    "protobuf==3.20.3",
     "huggingface-hub>=0.27.0",
     "transformers>=4.47.1",
-    "tensorflow-metadata==1.16.1",
+    "tensorflow-metadata<=1.16.1",
     "prettytable>=3.12.0",
 ]
 
