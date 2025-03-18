@@ -4,15 +4,13 @@ This is a framework for training multimodal vision-language-action (VLA) model f
 ## Installation
 We develop with `uv`, but other environment managers should work fine. To install the dependencies, run:
 ```bash
-uv init --python=python3.10
+uv venv
 uv sync
 ```
 For local dev copy of Octo, install it with:
 ```bash
 uv pip install -e ./orca
 ```
-
-We require some extra packages, namely [`dlimp`](https://github.com/kvablack/dlimp) and [`octo`](https://github.com/octo-models/octo) for dataloading. To install them, clone them locally. You will have to install `dlimp` without its dependencies, as its specified tensorflow version has some mutual incompatibilities with other packages we use.
 
 ## Training
 To train a model, run:
@@ -23,3 +21,15 @@ uv run --extra gpu python scripts/train.py --config configs/smoke_test.py --plat
 ```
 
 This repository is (for now) a fork of [`big_vision`](https://github.com/google-research/big_vision).
+
+## Citation
+If you use PaliVLA in your own project, please cite this repository:
+```bibtex
+@misc{palivla,
+  author       = {Kyle Stachowicz},
+  title        = {PaliVLA},
+  year         = {2024},
+  url          = {https://github.com/kylestach/bigvision-palivla},
+  note         = {GitHub repository}
+}
+```

@@ -3,20 +3,17 @@ from typing import Dict, Sequence, Tuple
 
 import chex
 import einops
+import flax.linen as nn
 import jax
 import jax.numpy as jnp
 from einops import repeat
-
-from big_vision.models.proj.paligemma.paligemma import make_attn_mask
-import flax.linen as nn
+from flax.core import FrozenDict
 
 from big_vision.models.proj.paligemma.gemma_bv import Model as GemmaModel
+from big_vision.models.proj.paligemma.paligemma import make_attn_mask
 from big_vision.models.vit import Model as ViTModel
-
 from palivla.spec import ModuleSpec
 from palivla.typing import Data, Info
-
-from flax.core import FrozenDict
 
 
 def get_default_config():

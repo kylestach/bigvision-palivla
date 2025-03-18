@@ -1,10 +1,10 @@
 import math
-from typing import Sequence, Tuple, Optional, Literal
-from einops import einops
+from typing import Literal, Optional, Sequence, Tuple
 
+import chex
 import jax
 import jax.numpy as jnp
-import chex
+from einops import einops
 from flax import linen as nn
 from flax.struct import dataclass
 

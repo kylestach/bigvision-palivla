@@ -1,4 +1,4 @@
-from scalax.sharding import MeshShardingHelper, ShardingRule, PartitionSpec
+from scalax.sharding import MeshShardingHelper, PartitionSpec, ShardingRule
 
 
 class ShardingMetadata:

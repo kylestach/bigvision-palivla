@@ -2,11 +2,11 @@ import importlib
 import json
 from typing import Any, Callable, Dict, Generic, Mapping, TypeVar
 
+import jax
 import optax
 from flax import linen as nn
 from flax import struct
 from flax.core.frozen_dict import FrozenDict, freeze, unfreeze
-import jax
 
 from palivla.utils import freeze_structure
 
@@ -59,6 +59,9 @@ class CtorSpec(Generic[T]):
     def from_dict(
         cls, data: Dict[str, Any], overrides: Dict[str, Any] | None = None
     ) -> "CtorSpec":
+        if isinstance(data, CtorSpec):
+            return data
+
         if overrides:
             data["config"].update(overrides)
 

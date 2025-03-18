@@ -17,7 +17,7 @@ def get_tpu_config(zone, tpu_type, num_tpus):
         "us-central2-b": "gs://rail-orca-central2/resize_256_256",
     }
 
-    SOURCE_DIR_NAME = "big_vision_rl"
+    SOURCE_DIR_NAME = "bigvision_cot"
 
     nfs = NFS_DIRS[zone]
     checkpoints_dir = CHECKPOINT_DIRS[zone]
@@ -32,9 +32,9 @@ def get_tpu_config(zone, tpu_type, num_tpus):
             "zone": zone,
             "accelerator_type": accelerator_types[tpu_type],
             "runtime_version": runtime_versions[tpu_type],
-            "reserved": True,
+            "reserved": False,
         },
-        "setup_script": "source $HOME/.bashrc",
+        "setup_script": "source $HOME/.env",
         "src_dir": f"{nfs}/{SOURCE_DIR_NAME}",
         "train_args": {
             "batch_size": num_tpus * 8,
@@ -48,8 +48,6 @@ DEFAULT_TRAIN_ARGS = {
     "save_interval": 1000,
     "data_axis_size": 1,
     "fsdp_axis_size": -1,
-    "paligemma_weights_path": "models/paligemma-3b-pt-224.f16.npz",
-    "language_tokenizer_path": "models/paligemma_tokenizer.model",
 }
 
 
@@ -70,7 +68,13 @@ TPU_POD_TYPES = {
     "kyle-pod-256": "eu-v5-256",
     "homer-pod-64": "eu-v5-64",
     "homer-pod-128": "eu-v5-128",
+    "dibya-pod-64-1": "eu-v5-64",
+    "dibya-pod-64-2": "eu-v5-64",
     "v4-vm-*": "us-v4-8",
+    "v4-pod-16*": "us-v4-16",
+    "v4-pod-32*": "us-v4-32",
+    "v4-pod-64*": "us-v4-64",
+    "v4-pod-128*": "us-v4-128",
 }
 
 def parse_args(args_str):
@@ -90,10 +94,10 @@ for config_re, maybe_pod_type in TPU_POD_TYPES.items():
 config = TPU_POD_CONFIGS[pod_type]
 
 train_args = os.environ.get("TRAIN_ARGS")
-config_file = os.environ.get("CONFIG_FILE", "bridge_config.py")
+config_file = os.environ.get("CONFIG_FILE", "configs/bridge_critic_config.py")
 train_args = DEFAULT_TRAIN_ARGS | config["train_args"] | parse_args(train_args)
 train_args_str = " \\\n\t".join([f"--config.{k} {v}" for k, v in train_args.items()])
-train_script = os.environ.get("TRAIN_SCRIPT", "palivla/train.py")
+train_script = os.environ.get("TRAIN_SCRIPT", "scripts/train.py")
 
 launch_script = f"""
 #!/bin/bash
@@ -101,9 +105,12 @@ launch_script = f"""
 {config["setup_script"]}
 cd {config["src_dir"]}
 
-uv run --extra tpu python {train_script} --config {config_file} \
-    {train_args_str}
+source .venv/bin/activate
+python {train_script} --config {config_file} \
+    {train_args_str} \
+    --platform tpu
 
+bash
 read -p "Press any key to continue..."
 """
 

@@ -1,6 +1,7 @@
-import optax
-import jax
 import fnmatch
+
+import jax
+import optax
 
 from big_vision.utils import Registry
 from palivla.utils import key_string
@@ -37,6 +38,19 @@ def components_by_label(values):
     return groups
 
 
+def ema_params(rate: float):
+    def _init_fn(params):
+        return params
+
+    def _update_fn(updates, state, params):
+        return updates, optax.incremental_update(params, state, rate)
+
+    return optax.GradientTransformation(
+        init=_init_fn,
+        update=_update_fn,
+    )
+
+
 @Registry.register("optimizer.default_optimizer")
 def make_optimizer(
     optimizer: str,
@@ -45,6 +59,7 @@ def make_optimizer(
     img_optimizer_kwargs: dict = {},
     embed_optimizer_kwargs: dict = {},
     llm_optimizer_kwargs: dict = {},
+    ema_rate: float | None = None,
 ):
     @optax.inject_hyperparams
     def _make_optimizer(llm_learning_rate, img_learning_rate, embed_learning_rate):
@@ -95,12 +110,22 @@ def make_optimizer(
         return optax.warmup_cosine_decay_schedule(
             init_learning_rate,
             learning_rate,
-            warmup_steps,
-            num_train_steps - warmup_steps,
+            min(warmup_steps, num_train_steps - 1),
+            max(num_train_steps - warmup_steps, 1),  # Ensure at least one step
         )
 
-    return _make_optimizer(
-        _make_learning_rate(**llm_optimizer_kwargs),
-        _make_learning_rate(**img_optimizer_kwargs),
-        _make_learning_rate(**embed_optimizer_kwargs),
-    )
+    transforms = [
+        (
+            "optimizer",
+            _make_optimizer(
+                _make_learning_rate(**llm_optimizer_kwargs),
+                _make_learning_rate(**img_optimizer_kwargs),
+                _make_learning_rate(**embed_optimizer_kwargs),
+            ),
+        ),
+    ]
+
+    if ema_rate is not None:
+        transforms.append(("ema", ema_params(ema_rate)))
+
+    return optax.named_chain(*transforms)

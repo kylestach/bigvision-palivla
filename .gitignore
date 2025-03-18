@@ -1,13 +1,17 @@
 __pycache__
 .venv
-notebooks
 **/*.mp4
 *.ipynb
 wandb/
 *.egg-info
 
+/orca
 /trained_tokenizers
 /models
 /checkpoints
 /uv.lock
 /build/
+/wandb/
+
+.ruff_cache
+.pytest_cache

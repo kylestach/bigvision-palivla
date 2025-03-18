@@ -1,9 +1,10 @@
 from os import PathLike
+from typing import Any
 
 import cloudpickle
-from einops import rearrange
 import numpy as np
 import tensorflow as tf
+from einops import rearrange, EinopsError
 
 from big_vision.utils import Registry
 
@@ -13,13 +14,13 @@ class ActionTokenizer:
 
     def detokenize(self, tokens, obs=None): ...
 
-    def save(self, path: PathLike):
-        with tf.io.gfile.GFile(path / "action_tokenizer.pkl", "wb") as f:
+    def save(self, path: Any):
+        with tf.io.gfile.GFile(tf.io.gfile.join(path, "action_tokenizer.pkl"), "wb") as f:
             cloudpickle.dump(self, f)
 
     @classmethod
     def load(cls, path: PathLike):
-        with tf.io.gfile.GFile(path / "action_tokenizer.pkl", "rb") as f:
+        with tf.io.gfile.GFile(tf.io.gfile.join(path, "action_tokenizer.pkl"), "rb") as f:
             return cloudpickle.load(f)
 
 
@@ -30,7 +31,7 @@ class BinActionTokenizer(ActionTokenizer):
         min_action_value: np.ndarray | float,
         max_action_value: np.ndarray | float,
         action_vocab_size: int = 1000,
-        action_horizon: int = 10,
+        action_horizon: int = 1,
     ):
         self.min_action_value = min_action_value
         self.max_action_value = max_action_value
@@ -67,5 +68,8 @@ class BinActionTokenizer(ActionTokenizer):
             + self.min_action_value
         )
         data = data[..., :action_dim]
-        data = rearrange(data, "... (p a) -> ... p a", a=action_dim)
+        try:
+            data = rearrange(data, "... (p a) -> ... p a", a=action_dim)
+        except EinopsError:
+            raise ValueError(f"Could not detokenize data with shape {data.shape} into {action_dim} dimensions")
         return data
