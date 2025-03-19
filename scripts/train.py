@@ -21,6 +21,9 @@ from ml_collections import ConfigDict, config_flags
 from scalax.sharding import FSDPShardingRule, MeshShardingHelper
 from transformers import AutoTokenizer
 
+from datetime import datetime
+DATE=datetime.now().strftime("%d%m%Y_%H%M%S")
+
 import palivla.load_fns
 import palivla.visualizations
 
@@ -34,6 +37,7 @@ from palivla.utils import flatten_wandb_dict, host_broadcast_str
 jax.config.update("jax_compilation_cache_dir", "/tmp/jax_cache")
 jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
 jax.config.update("jax_persistent_cache_min_compile_time_secs", 0)
+
 tf.config.set_visible_devices([], "GPU")
 
 
@@ -198,7 +202,8 @@ def main(_):
         wandb.init(**wandb_kwargs)
         wandb.config.update(config.to_dict())
 
-        run_name = wandb.run.name
+        run_name = config.wandb_run_name if config.wandb_run_name else wandb.run.name
+        run_name = f'{run_name}_{DATE}'
     else:
         run_name = None
 

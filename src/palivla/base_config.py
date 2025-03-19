@@ -16,6 +16,7 @@ def get_config(variant_config: str):
         # W&B settings
         "wandb_project": placeholder(str),
         "wandb_mode": "online",
+        "wandb_run_name": placeholder(str),
         # Tokenizers
         "language_tokenizer": "google/paligemma2-3b-pt-224",
         "action_tokenizer": "action_tokenizer.bin(min_action_value=-3, max_action_value=3)",
