@@ -6,7 +6,9 @@ import cloudpickle
 import flax.linen as nn
 import jax
 import orbax.checkpoint as ocp
+import jax
 from jax.sharding import PartitionSpec
+import jax.experimental.multihost_utils as mhu
 from transformers import AutoTokenizer
 import numpy as np
 
@@ -199,12 +201,13 @@ class ModelComponents:
             / tokens["mask"].mean(),
         }
 
-    def build_sequence(self, batch: Any, begin_is_prompt: bool = True):
+    def build_sequence(self, batch: Any, begin_is_prompt: bool = True, include_action_tokens: bool = True):
         return self.sequence_builder.build_sequence(
             batch,
             self.language_tokenizer,
             self.action_tokenizer,
             begin_is_prompt=begin_is_prompt,
+            include_action_tokens=include_action_tokens,
         )
 
     def predict_tokens(self, batch, sequences: Any | None, *, use_ema_params: bool = False, replicate: bool = False):
@@ -248,8 +251,13 @@ class ModelComponents:
         use_ema_params: bool = False,
         return_tokens: bool = False,
         replicate: bool = False,
+        include_action_tokens: bool = True,
     ):
-        sequences = self.build_sequence(batch, begin_is_prompt=True)
+        sequences = self.build_sequence(batch, begin_is_prompt=True, include_action_tokens=include_action_tokens)
+        batch, sequences = mhu.broadcast_one_to_all(
+            (batch, sequences)
+        )
+        
         tokens = self.predict_tokens(batch, sequences, use_ema_params=use_ema_params, replicate=replicate)
 
         actions, actions_mask = self.sequence_builder.batch_get_actions(
@@ -261,7 +269,7 @@ class ModelComponents:
         )
 
         if return_tokens:
-            sequences = self.data_gather_fn(self.sharding.mesh.local_data_to_global_array(sequences))
+            # sequences = self.data_gather_fn(self.sharding.mesh.local_data_to_global_array(sequences))
             return (
                 actions,
                 actions_mask,
