@@ -224,7 +224,7 @@ def main(_):
         ]
         viz_trajectories["overfit"][0]["action"] = viz_trajectories["overfit"][0]["action"][:, 0, 0, :]
         viz_trajectories["overfit"][0]["observation"] = jax.tree.map(lambda x: x[0], viz_trajectories["overfit"][0]["observation"])
-
+    
     with tqdm.trange(
         start_step, config.num_steps, desc="Training", dynamic_ncols=True
     ) as pbar:
@@ -270,5 +270,5 @@ if __name__ == "__main__":
     config_flags.DEFINE_config_file(
         "config", "configs/cot_bridge_config.py:smoke_test", "Path to the config file."
     )
-    flags.DEFINE_string("platform", "gpu", "Platform to run on.")
+    flags.DEFINE_string("platform", "tpu", "Platform to run on.")
     app.run(main)
