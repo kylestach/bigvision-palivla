@@ -5,6 +5,7 @@ import cloudpickle
 import numpy as np
 import tensorflow as tf
 from einops import rearrange, EinopsError
+from transformers import AutoProcessor
 
 from big_vision.utils import Registry
 
@@ -72,4 +73,49 @@ class BinActionTokenizer(ActionTokenizer):
             data = rearrange(data, "... (p a) -> ... p a", a=action_dim)
         except EinopsError:
             raise ValueError(f"Could not detokenize data with shape {data.shape} into {action_dim} dimensions")
+        return data
+
+@Registry.register("action_tokenizer.fast")
+class FASTActionTokenizer(ActionTokenizer):
+    def __init__(
+        self, 
+        min_action_value: np.ndarray | float,
+        max_action_value: np.ndarray | float,
+        action_vocab_size: int = 1024,
+        # add chunking ! 
+    ):
+        self.tokenizer = AutoProcessor.from_pretrained(
+            "physical-intelligence/fast", trust_remote_code=True
+        )
+        self.min_action_value = min_action_value
+        self.max_action_value = max_action_value
+        self.action_vocab_size = action_vocab_size
+
+    @property
+    def vocab_size(self):
+        return self.action_vocab_size
+
+    def tokenize(self, data, obs=None):
+        data = -1 + 2 * (data - self.min_action_value) / (
+            self.max_action_value - self.min_action_value
+        ) # normalize to [-1, 1]
+
+        return self.tokenizer(data)
+
+    def detokenize(self, tokens, *, obs=None, action_dim: int):
+        # if there are any invalid tokens (i.e. >1024 or <0), the action is deemed invalid
+        if np.any((tokens < 0) | (tokens >= self.vocab_size)):
+            invalid_action = np.empty(shape=(tokens.shape[0], action_dim))
+            invalid_action.fill(np.nan)
+            return invalid_action
+
+        # the issue is that this token sequence might not always correspond to 14 tokens
+        # so this might still error... 
+        unnormalized_actions = self.tokenizer.decode([tokens], action_dim=14)  
+        data = self.min_action_value + (unnormalized_actions + 1) * 0.5 * (
+            self.max_action_value - self.min_action_value
+        ) # unnormalize from [-1,1] to original range
+
+        data = data.squeeze(0) # unbatch
+
         return data
