@@ -180,7 +180,8 @@ class ModelComponents:
         return info
 
     def eval_step(self, batch):
-        gt_actions = batch["action"][:, -1, :, :]
+
+        gt_actions = batch["action"][:, -1, :, :] # (batch, max_chunk_size, dimension)
 
         predicted_actions, actions_mask, tokens = self.predict(
             batch, action_dim=gt_actions.shape[-1], return_tokens=True,
@@ -266,6 +267,7 @@ class ModelComponents:
             self.action_tokenizer,
             begin_is_prompt=True,
             action_dim=action_dim,
+            action_chunk_sizes=batch['action_chunk_size'],
         )
 
         if return_tokens:

@@ -95,13 +95,18 @@ class FASTActionTokenizer(ActionTokenizer):
     def vocab_size(self):
         return self.action_vocab_size
 
-    def tokenize(self, data, obs=None):
+    # unbatched tokenizer
+    def tokenize(self, data, action_chunk_size, obs=None):
         data = -1 + 2 * (data - self.min_action_value) / (
             self.max_action_value - self.min_action_value
         ) # normalize to [-1, 1]
 
+        # actions.shape: (max_chunk_size, action_dim) --> (1, chunk_size, action_dim)
+        data = data[None, :action_chunk_size, :]
+
         return self.tokenizer(data)
 
+    # unbatched detokenizer
     def detokenize(self, tokens, *, obs=None, action_dim: int):
         # if there are any invalid tokens (i.e. >1024 or <0), the action is deemed invalid
         if np.any((tokens < 0) | (tokens >= self.vocab_size)):

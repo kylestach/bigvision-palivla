@@ -58,10 +58,24 @@ class CoTSequenceBuilder(SequenceBuilder):
             if action.ndim == 4:
                 action = action[..., -1, :, :]
 
+            # gen_tokens = [
+            #     boa_gen + self.prepare_gen(reasonings, t)
+            #     for reasonings, t in zip(
+            #         batch["reasonings"], action_tokenizer.tokenize(action, batch['action_chunk_size'])
+            #     )
+            # ]
+
+            action_tokens = [
+                action_tokenizer.tokenize(ac, chunk_size) 
+                for ac, chunk_size in zip(
+                    action, batch['action_chunk_size']
+                )
+            ]
+
             gen_tokens = [
                 boa_gen + self.prepare_gen(reasonings, t)
                 for reasonings, t in zip(
-                    batch["reasonings"], action_tokenizer.tokenize(action)
+                    batch["reasonings"], action_tokens
                 )
             ]
             gen_tokens = language_tokenizer.batch_encode_plus(gen_tokens)["input_ids"]

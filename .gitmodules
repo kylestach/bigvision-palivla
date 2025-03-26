@@ -1,6 +1,6 @@
 [submodule "octo"]
 	path = octo
-	url = git@github.com:kylestach/octo
+	url = https://github.com/kylestach/octo.git
 [submodule "dlimp"]
 	path = dlimp
-	url = git@github.com:kylestach/dlimp.git
+	url = https://github.com/kylestach/dlimp.git

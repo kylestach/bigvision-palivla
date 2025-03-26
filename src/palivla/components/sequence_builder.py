@@ -16,6 +16,7 @@ from palivla.components.action_tokenizer import ActionTokenizer
 class SequenceBuilder:
     prompt_pad_length: int
     gen_pad_length: int
+    action_chunk_pad_length: int
 
     @property
     def max_decode_length(self):
@@ -115,6 +116,7 @@ class SequenceBuilder:
         boa_id: int | None = None,
         eos_id: int | None = None,
         act0_id: int | None = None,
+        action_chunk_size: int | None = None
     ):
         boa_id = boa_id or language_tokenizer.encode("<begin_of_action>")[0]
         eos_id = eos_id or language_tokenizer.encode("<eos>")[0]
@@ -135,10 +137,17 @@ class SequenceBuilder:
         except IndexError:
             return None
 
-        # Get the action
+        # Get the unchunked action
         action = tokens[start_idx:end_idx] - act0_id
+
+        # Chunk the action 
         try:
-            return action_tokenizer.detokenize(action, action_dim=action_dim)
+            action = action.reshape((action_chunk_size, action_dim))
+        except ValueError: 
+            return None
+
+        try:
+            return action_tokenizer.detokenize(action, action_dim=action_dim) # will return (action_chunks,) actions
         except ValueError:
             return None
 
@@ -150,6 +159,7 @@ class SequenceBuilder:
         *,
         begin_is_prompt: bool = False,
         action_dim: int,
+        action_chunk_sizes: list,
     ):
         boa_id = language_tokenizer.encode("<begin_of_action>")[0]
         eos_id = language_tokenizer.encode("<eos>")[0]
@@ -165,36 +175,39 @@ class SequenceBuilder:
                 eos_id=eos_id,
                 act0_id=act0_id,
                 action_dim=action_dim,
+                action_chunk_size=action_chunk_sizes[i]
             )
             for i in range(len(tokens))
-        ]
+        ] # these actions will be either "None" or (action_chunk_size, action_dim) always!
 
-        # Get the shape of a valid action
-        action_horizon = 0
-        for action in actions:
-            if action is not None:
-                action_horizon = max(action_horizon, action.shape[0])
-                if action_dim is None:
-                    action_dim = action.shape[1]
-                assert action_dim == action.shape[1]
+        # Find max generated action horizon of batch
+        # max_action_horizon = 0
+        # for action in actions:
+        #     if action is not None:
+        #         max_action_horizon = max(max_action_horizon, action.shape[0])
+        #         if action_dim is None:
+        #             action_dim = action.shape[1]
+        #         assert action_dim == action.shape[1]
 
+        # Pad all actions to maximum chunk length across datasets
+        max_action_horizon = self.action_chunk_pad_length
         actions_mask = np.array([action is not None for action in actions])
         actions = np.stack(
             [
                 (
                     np.pad(
                         action,
-                        ((0, action_horizon - action.shape[0]), (0, 0)),
+                        ((0, max_action_horizon - action.shape[0]), (0, 0)),
                         constant_values=np.nan,
                     )
                     if action is not None
-                    else np.zeros((action_horizon, action_dim))
+                    else np.zeros((max_action_horizon, action_dim))
                 )
                 for action in actions
             ]
         )
         actions_mask = einops.repeat(
-            actions_mask, "b -> b p a", p=action_horizon, a=action_dim
+            actions_mask, "b -> b p a", p=max_action_horizon, a=action_dim
         ) & ~np.isnan(actions)
 
         return actions, actions_mask

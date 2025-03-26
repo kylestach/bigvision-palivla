@@ -3,10 +3,11 @@ from ml_collections.config_dict import placeholder
 from palivla.base_config import get_config as get_base_config
 
 BIMANUAL_ACTION_DIM = 14
+MAX_CHUNK_SIZE = 50
 
-def get_config(variant_config: str = "default"):
+def get_config(variant_config: str = "smoke_test"):
     config = get_base_config(variant_config)
-    config["sequence_builder"] = "sequence_builder.cot(prompt_pad_length=50, gen_pad_length=150)"
+    config["sequence_builder"] = f"sequence_builder.cot(prompt_pad_length=50, gen_pad_length=150, action_chunk_pad_length={MAX_CHUNK_SIZE})"
 
     config["cot_path"] = FieldReference(None, str)
     config['action_tokenizer'] = "action_tokenizer.fast(min_action_value=-3, max_action_value=3)"
@@ -19,7 +20,7 @@ def get_config(variant_config: str = "default"):
 
     config["dataset_kwargs"]["traj_transform_kwargs"] = {
         "window_size": 1,
-        "action_horizon": 1,
+        "action_horizon": MAX_CHUNK_SIZE,
         "task_augment_strategy": "delete_task_conditioning",
         "task_augment_kwargs": {
             "keep_image_prob": 0,
@@ -58,15 +59,15 @@ def get_config(variant_config: str = "default"):
             )
         ]
 
-        config['visualization_datasets']['aloha_pick_place'] = config['visualization_datasets']['bridge']
-        config['visualization_datasets']['aloha_pick_place']['name'] = "aloha_pick_place_dataset"
+        config['visualization_datasets']['aloha_pick_place_full'] = config['visualization_datasets']['bridge']
+        config['visualization_datasets']['aloha_pick_place_full']['name'] = "aloha_pick_place_full_dataset"
 
         config["visualizations"]["bridge_chain_of_thought"] = {
             "dataset": "bridge",
             "visualization": "viz.chain_of_thought"
         }
-        config["visualizations"]["aloha_pick_place_chain_of_thought"] = {
-            "dataset": "aloha_pick_place",
+        config["visualizations"]["aloha_pick_place_full_chain_of_thought"] = {
+            "dataset": "aloha_pick_place_full",
             "visualization": "viz.chain_of_thought"
             
         }

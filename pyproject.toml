@@ -76,5 +76,5 @@ allow-direct-references = true
 
 [tool.uv.sources]
 big-vision = { workspace = true }
-octo = { path = "octo", editable = true }
-dlimp = { path = "dlimp", editable = true }
+octo = { path = "/nfs/nfs2/users/riadoshi/bigvision_palivla/octo", editable = true }
+dlimp = { path = "/nfs/nfs2/users/riadoshi/bigvision_palivla/dlimp", editable = true }
