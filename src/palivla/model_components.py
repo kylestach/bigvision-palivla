@@ -253,25 +253,31 @@ class ModelComponents:
         return_tokens: bool = False,
         replicate: bool = False,
         include_action_tokens: bool = True,
+        inference_mode: bool = False,
     ):
         sequences = self.build_sequence(batch, begin_is_prompt=True, include_action_tokens=include_action_tokens)
-        batch, sequences = mhu.broadcast_one_to_all(
-            (batch, sequences)
-        )
-        
-        tokens = self.predict_tokens(batch, sequences, use_ema_params=use_ema_params, replicate=replicate)
 
+        if inference_mode:
+            batch, sequences = mhu.broadcast_one_to_all(
+                (batch, sequences)
+            )
+            action_chunk_sizes = batch['action_chunk_size']
+        else:
+            action_chunk_sizes = self.data_gather_fn(self.sharding.mesh.local_data_to_global_array(batch['action_chunk_size']))
+
+        tokens = self.predict_tokens(batch, sequences, use_ema_params=use_ema_params, replicate=replicate)
+        
         actions, actions_mask = self.sequence_builder.batch_get_actions(
             tokens,
             self.language_tokenizer,
             self.action_tokenizer,
             begin_is_prompt=True,
             action_dim=action_dim,
-            action_chunk_sizes=batch['action_chunk_size'],
+            action_chunk_sizes=action_chunk_sizes,
         )
 
         if return_tokens:
-            # sequences = self.data_gather_fn(self.sharding.mesh.local_data_to_global_array(sequences))
+            sequences = self.data_gather_fn(self.sharding.mesh.local_data_to_global_array(sequences)) if not inference_mode else sequences
             return (
                 actions,
                 actions_mask,
