@@ -5,7 +5,7 @@ from palivla.base_config import get_config as get_base_config
 BIMANUAL_ACTION_DIM = 14
 MAX_CHUNK_SIZE = 50
 
-def get_config(variant_config: str = "smoke_test"):
+def get_config(variant_config: str = "default"):
     config = get_base_config(variant_config)
     config["sequence_builder"] = f"sequence_builder.cot(prompt_pad_length=50, gen_pad_length=150, action_chunk_pad_length={MAX_CHUNK_SIZE})"
 
