@@ -73,7 +73,7 @@ def parse_cot_string(cot_string: str) -> TrajectoryData:
             break
 
         # Parse gripper coordinates
-        if component.startswith("gripper"):
+        if component.startswith("right-end-effector"):
             loc_tokens = re.findall(r"<loc(\d{4})>", component)
             if len(loc_tokens) >= 2:
                 y = float(loc_tokens[0])
