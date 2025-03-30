@@ -81,8 +81,7 @@ class FASTActionTokenizer(ActionTokenizer):
         self, 
         min_action_value: np.ndarray | float,
         max_action_value: np.ndarray | float,
-        action_vocab_size: int = 1024,
-        # add chunking ! 
+        action_vocab_size: int = 2048,
     ):
         self.tokenizer = AutoProcessor.from_pretrained(
             "physical-intelligence/fast", trust_remote_code=True
@@ -96,31 +95,43 @@ class FASTActionTokenizer(ActionTokenizer):
         return self.action_vocab_size
 
     # unbatched tokenizer
-    def tokenize(self, data, action_chunk_size, obs=None):
+    def tokenize(self, data, action_chunk_size):
         data = -1 + 2 * (data - self.min_action_value) / (
             self.max_action_value - self.min_action_value
         ) # normalize to [-1, 1]
 
         # actions.shape: (max_chunk_size, action_dim) --> (1, chunk_size, action_dim)
         data = data[None, :action_chunk_size, :]
+        
+        # add scaling factor
+        scale_factor = (action_chunk_size**0.5) / 50
+        data = scale_factor * data
 
         return self.tokenizer(data)
 
     # unbatched detokenizer
-    def detokenize(self, tokens, *, obs=None, action_dim: int):
-        # if there are any invalid tokens (i.e. >1024 or <0), the action is deemed invalid
+    def detokenize(self, tokens, *, action_chunk_size: int, action_dim: int):
+        # if there are any invalid tokens (i.e. >2048 or <0), the action is deemed invalid
         if np.any((tokens < 0) | (tokens >= self.vocab_size)):
-            invalid_action = np.empty(shape=(tokens.shape[0], action_dim))
+            invalid_action = np.empty(shape=(action_chunk_size, action_dim))
             invalid_action.fill(np.nan)
             return invalid_action
 
         # the issue is that this token sequence might not always correspond to 14 tokens
         # so this might still error... 
-        unnormalized_actions = self.tokenizer.decode([tokens], action_dim=14)  
+        unnormalized_actions = self.tokenizer.decode(
+            [tokens], 
+            time_horizon=action_chunk_size, 
+            action_dim=action_dim
+        )  
         data = self.min_action_value + (unnormalized_actions + 1) * 0.5 * (
             self.max_action_value - self.min_action_value
         ) # unnormalize from [-1,1] to original range
 
         data = data.squeeze(0) # unbatch
+
+        # undo scaling
+        scale_factor = (action_chunk_size**0.5) / 50
+        data = data / scale_factor
 
         return data

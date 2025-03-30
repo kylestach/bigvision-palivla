@@ -139,15 +139,13 @@ class SequenceBuilder:
 
         # Get the unchunked action
         action = tokens[start_idx:end_idx] - act0_id
-
-        # Chunk the action 
+        
         try:
-            action = action.reshape((action_chunk_size, action_dim))
-        except ValueError: 
-            return None
-
-        try:
-            return action_tokenizer.detokenize(action, action_dim=action_dim) # will return (action_chunks,) actions
+            return action_tokenizer.detokenize(
+                action, 
+                action_chunk_size=action_chunk_size,
+                action_dim=action_dim
+            ) # will return (action_chunks,) actions
         except ValueError:
             return None
 
