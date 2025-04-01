@@ -191,7 +191,7 @@ class ModelComponents:
         predicted_actions = np.nan_to_num(predicted_actions)
 
         return {
-            "gen_valid_pct": actions_mask.mean(),
+            # "gen_valid_pct": actions_mask.mean(), # okay this should be CLOSE to zero since we're padding 4--> 50, but not exactly 0? 
             "gen_l2": np.mean(np.square(predicted_actions - gt_actions) * actions_mask)
             / actions_mask.mean(),
             "gen_l1": np.mean(np.abs(predicted_actions - gt_actions) * actions_mask)
