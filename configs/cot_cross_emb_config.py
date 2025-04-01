@@ -59,7 +59,7 @@ def get_config(variant_config: str = "default"):
             )
         ]
 
-        config['visualization_datasets']['aloha_pick_place_full'] = config['visualization_datasets']['bridge']
+        config['visualization_datasets']['aloha_pick_place_full'] = config['visualization_datasets']['bridge'].copy()
         config['visualization_datasets']['aloha_pick_place_full']['name'] = "aloha_pick_place_full_dataset"
 
         config["visualizations"]["bridge_chain_of_thought"] = {
