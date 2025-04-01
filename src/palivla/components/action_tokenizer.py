@@ -102,12 +102,8 @@ class FASTActionTokenizer(ActionTokenizer):
 
         # actions.shape: (max_chunk_size, action_dim) --> (1, chunk_size, action_dim)
         data = data[None, :action_chunk_size, :]
-        
-        # add scaling factor
-        scale_factor = (action_chunk_size**0.5) / 50
-        data = scale_factor * data
 
-        return self.tokenizer(data)
+        return self.tokenizer(data)[0]
 
     # unbatched detokenizer
     def detokenize(self, tokens, *, action_chunk_size: int, action_dim: int):
@@ -129,9 +125,5 @@ class FASTActionTokenizer(ActionTokenizer):
         ) # unnormalize from [-1,1] to original range
 
         data = data.squeeze(0) # unbatch
-
-        # undo scaling
-        scale_factor = (action_chunk_size**0.5) / 50
-        data = data / scale_factor
 
         return data
