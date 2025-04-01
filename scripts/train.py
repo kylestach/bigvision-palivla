@@ -204,6 +204,8 @@ def main(_):
 
         run_name = config.wandb_run_name if config.wandb_run_name else wandb.run.name
         run_name = f'{run_name}_{DATE}'
+
+        wandb.run.name = run_name
     else:
         run_name = None
 
