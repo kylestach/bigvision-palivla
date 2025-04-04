@@ -66,9 +66,16 @@ class SequenceBuilder:
             if action.ndim == 4:
                 action = action[..., -1, :, :]
 
+            raw_action_tokens = [
+                action_tokenizer.tokenize(ac, chunk_size) 
+                for ac, chunk_size in zip(
+                    action, batch['action_chunk_size']
+                )
+            ]
+
             action_tokens = [
                 boa_gen + self.prepare_gen(t)
-                for t in action_tokenizer.tokenize(action)
+                for t in raw_action_tokens
             ]
             action_tokens = language_tokenizer.batch_encode_plus(action_tokens)[
                 "input_ids"
