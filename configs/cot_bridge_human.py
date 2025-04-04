@@ -16,7 +16,6 @@ def get_config(variant_config: str = "default"):
     config["dataset_kwargs"]["oxe_kwargs"]["cot_data_path"] = config["cot_path"]
 
     config["dataset_kwargs"]["oxe_kwargs"]["data_mix"] = "human_bridge" 
-    config["dataset_kwargs"]["oxe_kwargs"]["load_camera_views"] = ["primary"]
 
     config["dataset_kwargs"]["traj_transform_kwargs"] = {
         "window_size": 1,
