@@ -15,10 +15,12 @@ from palivla.model_components import ModelComponents
 
 @Registry.register("viz.sanity_print")
 def sanity_print(model: ModelComponents, trajectory: Any):
-    action_chunk_size = trajectory['action_chunk_size'][0]
-    first_frame = jax.tree.map(lambda x: x[:action_chunk_size], trajectory)
+    
+    first_frame = jax.tree.map(lambda x: x[:1], trajectory)
     first_frame["observation"] = jax.tree.map(lambda x: x[None], first_frame["observation"])
-    first_frame["action"] = trajectory["action"][None, :1, :]
+
+    action_chunk_size = trajectory['action_chunk_size'][0]
+    first_frame["action"] = trajectory["action"][None, :action_chunk_size, :]
 
     # Predict tokens
     sequences = model.build_sequence(first_frame, begin_is_prompt=True)
