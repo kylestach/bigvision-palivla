@@ -42,7 +42,7 @@ def get_config(variant_config: str):
         # Checkpoint settings
         "save_path": placeholder(str),
         "save_interval": 10000,
-        "max_to_keep": 1,
+        "max_to_keep": 10,
         # Logging and visualization
         "eval_interval": 100,
         "log_interval": 10,
@@ -59,6 +59,9 @@ def get_config(variant_config: str):
                 "optimizer": "adamw",
                 "num_train_steps": num_train_steps,
                 "base_learning_rate": 4e-5,
+                # "llm_optimizer_kwargs": {
+                #     "weight_decay": 0.0,
+                # },
             },
         },
         # Dataset settings
