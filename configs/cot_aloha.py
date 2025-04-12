@@ -16,7 +16,7 @@ def get_config(variant_config: str = "default"):
     config["dataset_kwargs"]["oxe_kwargs"]["use_cot"] = True
     config["dataset_kwargs"]["oxe_kwargs"]["cot_data_path"] = config["cot_path"]
 
-    config["dataset_kwargs"]["oxe_kwargs"]["data_mix"] = "all" 
+    config["dataset_kwargs"]["oxe_kwargs"]["data_mix"] = "aloha_pp_mix" 
     config["dataset_kwargs"]["oxe_kwargs"]["load_camera_views"] = ["primary", "left_wrist", "right_wrist"]
 
     config["dataset_kwargs"]["traj_transform_kwargs"] = {
@@ -32,16 +32,12 @@ def get_config(variant_config: str = "default"):
 
     config['dataset_kwargs']["frame_transform_kwargs"]["resize_size"] = {"primary": [224, 224], "left_wrist": [224, 224], "right_wrist": [224, 224]}
 
-    config["dataset_kwargs"]["traj_read_threads"] = 5
-
-    config['visualization_datasets']['epic_kitchens'] = config['visualization_datasets']['bridge'].copy()
-    config['visualization_datasets']['epic_kitchens']['name'] = "epic_kitchens"
+    config["dataset_kwargs"]["traj_read_threads"] = 1
 
     config['visualization_datasets']['aloha_pick_place_full_dataset'] = config['visualization_datasets']['bridge'].copy()
     config['visualization_datasets']['aloha_pick_place_full_dataset']['name'] = "aloha_pick_place_full_dataset"
 
-    config['visualization_datasets']['libero_90'] = config['visualization_datasets']['bridge'].copy()
-    config['visualization_datasets']['libero_90']['name'] = "libero_90"
+    config['visualization_datasets'].pop('bridge')
 
     for v in config["visualization_datasets"].values():
         v["use_cot"] = True
@@ -70,22 +66,11 @@ def get_config(variant_config: str = "default"):
             )
         ]
         
-        config["visualizations"]["bridge_chain_of_thought"] = {
-            "dataset": "bridge",
-            "visualization": "viz.chain_of_thought"
-        }
-        config["visualizations"]["epic_kitchens_chain_of_thought"] = {
-            "dataset": "epic_kitchens",
-            "visualization": "viz.chain_of_thought"
-        }
         config["visualizations"]["aloha_pick_place_full_dataset_chain_of_thought"] = {
             "dataset": "aloha_pick_place_full_dataset",
             "visualization": "viz.chain_of_thought"
         }
-        config["visualizations"]["libero_90_chain_of_thought"] = {
-            "dataset": "libero_90",
-            "visualization": "viz.chain_of_thought"
-        }
+
         config["wandb_project"] = "palivla-cot"
 
     return ConfigDict(config)
