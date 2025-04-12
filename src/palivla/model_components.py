@@ -267,6 +267,7 @@ class ModelComponents:
 
         tokens = self.predict_tokens(batch, sequences, use_ema_params=use_ema_params, replicate=replicate)
         
+        # since our gt sequence doesn't include actions for certain datasets, our actions for those datasets will be masked out
         actions, actions_mask = self.sequence_builder.batch_get_actions(
             tokens,
             self.language_tokenizer,

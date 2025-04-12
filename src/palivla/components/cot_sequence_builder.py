@@ -65,10 +65,11 @@ class CoTSequenceBuilder(SequenceBuilder):
             #     )
             # ]
 
+            # include action tokens on a per-dataset basis
             action_tokens = [
-                action_tokenizer.tokenize(ac, chunk_size) 
-                for ac, chunk_size in zip(
-                    action, batch['action_chunk_size']
+                action_tokenizer.tokenize(ac, chunk_size) if use_actions else [] #
+                for ac, chunk_size, use_actions in zip(
+                    action, batch['action_chunk_size'], batch['use_actions']
                 )
             ]
 
