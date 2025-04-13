@@ -3,6 +3,7 @@ from typing import Dict, Sequence, Tuple
 
 import chex
 import einops
+from einops import rearrange
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
@@ -30,6 +31,7 @@ def get_default_config():
         "modality_mappings": {"image_primary": "img"},
         "prompt_autoregressive": False,
         "target_key_order": ("image_primary",),
+        "num_proprio_tokens": 0,
     }
 
 
@@ -68,6 +70,9 @@ class PaliVLAModel(nn.Module):
     prompt_autoregressive: bool
     target_key_order: Sequence[str]
 
+    # Number of proprio tokens
+    num_proprio_tokens: int
+
     def setup(self):
         self.llm: GemmaModel = ModuleSpec.from_dict(self.llm_spec).instantiate(
             name="llm"
@@ -75,6 +80,8 @@ class PaliVLAModel(nn.Module):
         self.image: ViTModel = ModuleSpec.from_dict(self.img_spec).instantiate(
             name="img", num_classes=self.llm.embdim
         )
+        # adding proprio
+        self._proprio_model = nn.Dense(self.llm.embdim * self.num_proprio_tokens, name="proprio")
 
         def _encode_image(data, mask, *, train: bool = False):
             # Normalize the image to be in the range [-1, 1]
@@ -98,14 +105,33 @@ class PaliVLAModel(nn.Module):
                 mask = einops.rearrange(mask, "(b k) t -> b (k t)", b=orig_shape[0])
 
             return result, mask, info
+        
+        def _encode_proprio(data, mask, *, train: bool = False):
+            orig_shape = data.shape
+            num_batch_dims = len(orig_shape) - 1
+            mask = jnp.any(mask, axis=tuple(range(num_batch_dims, mask.ndim)))
 
+            if len(orig_shape) == 3:
+                data = einops.rearrange(data, "... p -> (...) p")
+                mask = einops.rearrange(mask, "... -> (...)")
+
+            result = self._proprio_model(data) # proprio has shape (batch, 1, propriotokens*llm_embedding_dim)
+            result = einops.rearrange(result, "b (k e) -> b k e", e=self.llm.embdim)
+
+            # result has shape (batch, num_proprio_tokens, llm_embedding_dim)
+            return result, mask, {}
+
+        # proprio will be included as an encoder
         self.encoders = {
             "img": _encode_image,
+        } | {
+            "proprio": _encode_proprio,
         } | {
             name: spec.instantiate(name=name)
             for name, spec in self.encoder_specs.items()
         }
 
+        # proprio will be included as a modality start token, so long as we specify it in modality_mappings
         self.modality_start_tokens = {
             modality: self.param(
                 name=f"start_{modality}",
@@ -147,6 +173,9 @@ class PaliVLAModel(nn.Module):
                 b=data[modality].shape[0],
             )
             embed = jnp.concatenate([start_token, embed], axis=1)
+
+            # proprio embed has shape (batch, num_proprio_tokens=14, llm_embedding_dim)
+            # img embed has shape (batch, num_img_tokens=256, llm_embedding_dim)
 
             # Create a mask to match the shape of the embeddings
             # Add one to the length to account for the modality start tokens

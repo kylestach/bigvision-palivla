@@ -53,19 +53,30 @@ def make_sharding(config: ConfigDict):
 
 
 def create_model(config: ConfigDict, sharding_metadata: ShardingMetadata):
+    # Create sensor mask dictionary for both image and proprio sensors
+    example_batch_sensors, example_batch_sensors_mask = {}, {}
+    
+    # Add mask for each image sensor
+    for img_key in config.dataset_kwargs.oxe_kwargs.load_camera_views:
+        example_batch_sensors[f"image_{img_key}"] = jax.ShapeDtypeStruct(
+            shape=(1, 224, 224, 3), dtype=jnp.uint8
+        )
+        example_batch_sensors_mask[f"image_{img_key}"] = jax.ShapeDtypeStruct(
+            shape=(1, 224, 224, 3), dtype=jnp.bool_
+        )
+    
+    # Add mask for proprio sensor if it's being loaded
+    if config.dataset_kwargs.oxe_kwargs.load_proprio:
+        example_batch_sensors["proprio_bimanual"] = jax.ShapeDtypeStruct(
+            shape=(1, 14), dtype=jnp.float32
+        )
+        example_batch_sensors_mask["proprio_bimanual"] = jax.ShapeDtypeStruct(
+            shape=(1, 14), dtype=jnp.bool_
+        )
+
     example_batch = {
-        "sensors": {
-            "image_primary": jax.ShapeDtypeStruct(
-                shape=(1, 224, 224, 3), dtype=jnp.uint8
-            ),
-            "proprio": jax.ShapeDtypeStruct(shape=(1, 7), dtype=jnp.float32),
-        },
-        "sensors_mask": {
-            "image_primary": jax.ShapeDtypeStruct(
-                shape=(1, 224, 224, 3), dtype=jnp.bool_
-            ),
-            "proprio": jax.ShapeDtypeStruct(shape=(1, 7), dtype=jnp.bool_),
-        },
+        "sensors": example_batch_sensors,
+        "sensors_mask": example_batch_sensors_mask,
         "prompt": {
             "tokens": jax.ShapeDtypeStruct(shape=(1, 10), dtype=jnp.int32),
             "mask": jax.ShapeDtypeStruct(shape=(1, 10), dtype=jnp.bool_),
