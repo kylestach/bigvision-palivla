@@ -7,16 +7,29 @@ MAX_CHUNK_SIZE = 50
 
 def get_config(variant_config: str = "default"):
     config = get_base_config(variant_config)
+    config["model_config"]["num_proprio_tokens"] = 14
 
-    config["sequence_builder"] = "sequence_builder.cot(prompt_pad_length=50, gen_pad_length=150)"
+    config["model_config"]["modality_mappings"] =  {
+        "image_primary": "img",
+        "image_left_wrist": "img",
+        "image_right_wrist": "img",
+        "proprio_bimanual": "proprio",
+    }
+    config["model_config"]["target_key_order"] = (
+        "proprio_bimanual",
+        "image_left_wrist", 
+        "image_right_wrist", 
+        "image_primary",
+    )
+
+    config["sequence_builder"] = f"sequence_builder.default(prompt_pad_length=50, gen_pad_length=150, action_chunk_pad_length={MAX_CHUNK_SIZE})"
 
     config["cot_path"] = FieldReference(None, str)
     config['action_tokenizer'] = "action_tokenizer.fast(min_action_value=-3, max_action_value=3)"
 
-    config["dataset_kwargs"]["oxe_kwargs"]["use_cot"] = True
-    config["dataset_kwargs"]["oxe_kwargs"]["cot_data_path"] = config["cot_path"]
+    config["dataset_kwargs"]["oxe_kwargs"]["use_cot"] = False
 
-    config["dataset_kwargs"]["oxe_kwargs"]["data_mix"] = "aloha_pick_place" 
+    config["dataset_kwargs"]["oxe_kwargs"]["data_mix"] = "bridge_aloha_pp" 
     config["dataset_kwargs"]["oxe_kwargs"]["load_camera_views"] = ["primary", "left_wrist", "right_wrist"]
 
     config["dataset_kwargs"]["traj_transform_kwargs"] = {
@@ -29,9 +42,13 @@ def get_config(variant_config: str = "default"):
         "max_action_dim": BIMANUAL_ACTION_DIM,
     }
 
+    config['dataset_kwargs']["frame_transform_kwargs"]["resize_size"] = {"primary": [224, 224]}
     config['dataset_kwargs']["frame_transform_kwargs"]["resize_size"] = {"primary": [224, 224], "left_wrist": [224, 224], "right_wrist": [224, 224]}
 
-    config["dataset_kwargs"]["traj_read_threads"] = 1
+    config["dataset_kwargs"]["traj_read_threads"] = 2
+
+    config['visualization_datasets']['aloha_pick_place_full_dataset'] = config['visualization_datasets']['bridge'].copy()
+    config['visualization_datasets']['aloha_pick_place_full_dataset']['name'] = "aloha_pick_place_full_dataset"
     
     if variant_config == "smoke_test":
         config["visualizations"] = {
@@ -55,21 +72,12 @@ def get_config(variant_config: str = "default"):
                 },
             )
         ]
-
-        config['visualization_datasets']['aloha_pick_place_full'] = config['visualization_datasets']['bridge']
-        config['visualization_datasets']['aloha_pick_place_full']['name'] = "aloha_pick_place_full_dataset"
-        config['visualization_datasets'].pop('bridge')
-
-        for v in config["visualization_datasets"].values():
-            v["use_cot"] = True
-            v["cot_data_path"] = config["cot_path"]
-
-
-        config["visualizations"]["aloha_pick_place_full_chain_of_thought"] = {
-            "dataset": "aloha_pick_place_full",
+        config["visualizations"]["aloha_pick_place_full_dataset_chain_of_thought"] = {
+            "dataset": "aloha_pick_place_full_dataset",
             "visualization": "viz.chain_of_thought"
             
         }
+        
         config["wandb_project"] = "palivla-cot"
 
     return ConfigDict(config)
