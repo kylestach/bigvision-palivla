@@ -1,14 +1,29 @@
 from ml_collections import ConfigDict, FieldReference
 from ml_collections.config_dict import placeholder
 from palivla.base_config import get_config as get_base_config
+from octo.data.utils.data_utils import NormalizationType
 
-PADDED_ACTION_DIM = 15
-ALOHA_PROPRIO_DIM = 14
+BIMANUAL_ACTION_DIM = 14
 MAX_CHUNK_SIZE = 50
 
 def get_config(variant_config: str = "default"):
     config = get_base_config(variant_config)
     config["sequence_builder"] = f"sequence_builder.cot(prompt_pad_length=50, gen_pad_length=150, action_chunk_pad_length={MAX_CHUNK_SIZE})"
+
+    config["model_config"]["num_proprio_tokens"] = 14
+
+    config["model_config"]["modality_mappings"] =  {
+        "image_primary": "img",
+        "image_left_wrist": "img",
+        "image_right_wrist": "img",
+        "proprio_bimanual": "proprio",
+    }
+    config["model_config"]["target_key_order"] = (
+        "proprio_bimanual",
+        "image_left_wrist", 
+        "image_right_wrist", 
+        "image_primary",
+    )
 
     config["cot_path"] = FieldReference(None, str)
     config['action_tokenizer'] = "action_tokenizer.fast(min_action_value=-3, max_action_value=3)"
@@ -26,8 +41,7 @@ def get_config(variant_config: str = "default"):
         "task_augment_kwargs": {
             "keep_image_prob": 0,
         },
-        "max_action_dim": PADDED_ACTION_DIM,
-        "max_proprio_dim": ALOHA_PROPRIO_DIM,
+        "max_action_dim": BIMANUAL_ACTION_DIM,
     }
 
     config['dataset_kwargs']["frame_transform_kwargs"]["resize_size"] = {"primary": [224, 224], "left_wrist": [224, 224], "right_wrist": [224, 224]}
@@ -38,6 +52,23 @@ def get_config(variant_config: str = "default"):
     config['visualization_datasets']['aloha_pick_place_full_dataset']['name'] = "aloha_pick_place_full_dataset"
 
     config['visualization_datasets'].pop('bridge')
+
+    config["visualization_datasets"] = {
+        "aloha_pick_place_full_dataset": {
+            "name": "aloha_pick_place_full_dataset",
+            "data_dir": config['data_dir'],
+            "load_camera_views": ["primary", "left_wrist", "right_wrist"],
+            "load_depth": False,
+            "load_proprio": True,
+            "load_language": True,
+            "force_recompute_dataset_statistics": False,
+            "action_proprio_normalization_type": NormalizationType.NORMAL,
+            "frame_transform_kwargs": {
+                "image_augment_kwargs": {},
+                "resize_size": {"primary": [224, 224], "left_wrist": [224, 224], "right_wrist": [224, 224]},
+            },
+        },
+    }
 
     for v in config["visualization_datasets"].values():
         v["use_cot"] = True
@@ -65,10 +96,16 @@ def get_config(variant_config: str = "default"):
                 },
             )
         ]
-        
-        config["visualizations"]["aloha_pick_place_full_dataset_chain_of_thought"] = {
-            "dataset": "aloha_pick_place_full_dataset",
-            "visualization": "viz.chain_of_thought"
+
+        config["visualizations"] = {
+            "aloha_pick_place_full_dataset_sanity_print": {
+                "dataset": "aloha_pick_place_full_dataset",
+                "visualization": "viz.sanity_print"
+            },
+            "aloha_pick_place_full_dataset_chain_of_thought": {
+                "dataset": "aloha_pick_place_full_dataset",
+                "visualization": "viz.chain_of_thought"
+            }
         }
 
         config["wandb_project"] = "palivla-cot"

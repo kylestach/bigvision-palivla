@@ -1,6 +1,7 @@
 from ml_collections import ConfigDict, FieldReference
 from ml_collections.config_dict import placeholder
 from palivla.base_config import get_config as get_base_config
+from octo.data.utils.data_utils import NormalizationType
 
 BIMANUAL_ACTION_DIM = 14
 MAX_CHUNK_SIZE = 50
@@ -50,7 +51,24 @@ def get_config(variant_config: str = "default"):
     config['visualization_datasets']['aloha_pick_place_full_dataset'] = config['visualization_datasets']['bridge'].copy()
     config['visualization_datasets']['aloha_pick_place_full_dataset']['name'] = "aloha_pick_place_full_dataset"
 
-    config['visualization_datasets'].pop('bridge')
+    config["visualization_datasets"] = {
+        "aloha_pick_place_full_dataset": {
+            "name": "aloha_pick_place_full_dataset",
+            "data_dir": config['data_dir'],
+            "load_camera_views": ["primary", "left_wrist", "right_wrist"],
+            "load_depth": False,
+            "load_proprio": True,
+            "load_language": True,
+            "force_recompute_dataset_statistics": False,
+            "action_proprio_normalization_type": NormalizationType.NORMAL,
+            "frame_transform_kwargs": {
+                "image_augment_kwargs": {},
+                "resize_size": {"primary": [224, 224], "left_wrist": [224, 224], "right_wrist": [224, 224]},
+            },
+        },
+    }
+
+    
     
     if variant_config == "smoke_test":
         config["visualizations"] = {
@@ -75,12 +93,13 @@ def get_config(variant_config: str = "default"):
             )
         ]
 
-        config["visualizations"]["aloha_pick_place_full_dataset_chain_of_thought"] = {
-            "dataset": "aloha_pick_place_full_dataset",
-            "visualization": "viz.chain_of_thought"
-            
+        config["visualizations"] = {
+            "aloha_pick_place_full_dataset_sanity_print": {
+                "dataset": "aloha_pick_place_full_dataset",
+                "visualization": "viz.sanity_print"
+            }
         }
-        
+
         config["wandb_project"] = "palivla-cot"
 
     return ConfigDict(config)
