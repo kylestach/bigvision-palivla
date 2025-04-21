@@ -149,21 +149,32 @@ def main(_):
 
     sharding_metadata = make_sharding(config)
 
+    # if config.resume_checkpoint_dir is not None:
+    #     # Load the model from a checkpoint
+    #     model = ModelComponents.load_static(
+    #         config.resume_checkpoint_dir, sharding_metadata
+    #     )
+    #     restore_manager = ocp.CheckpointManager(
+    #         config.resume_checkpoint_dir, options=ocp.CheckpointManagerOptions()
+    #     )
+    #     model.load_state(config.resume_checkpoint_step, restore_manager)
+    # else:
+    #     # Otherwise, create the model from scratch and apply any load_fns
+    #     model = create_model(config, sharding_metadata)
+    #     for load_fn, load_fn_kwargs in config.load_fns:
+    #         load_fn = Registry.lookup(load_fn)
+    #         load_fn(model, **load_fn_kwargs)
+
+    model = create_model(config, sharding_metadata)
+    for load_fn, load_fn_kwargs in config.load_fns:
+        load_fn = Registry.lookup(load_fn)
+        load_fn(model, **load_fn_kwargs)
+
     if config.resume_checkpoint_dir is not None:
-        # Load the model from a checkpoint
-        model = ModelComponents.load_static(
-            config.resume_checkpoint_dir, sharding_metadata
-        )
         restore_manager = ocp.CheckpointManager(
             config.resume_checkpoint_dir, options=ocp.CheckpointManagerOptions()
         )
         model.load_state(config.resume_checkpoint_step, restore_manager)
-    else:
-        # Otherwise, create the model from scratch and apply any load_fns
-        model = create_model(config, sharding_metadata)
-        for load_fn, load_fn_kwargs in config.load_fns:
-            load_fn = Registry.lookup(load_fn)
-            load_fn(model, **load_fn_kwargs)
 
     # Make the basic dataset
     # We have to do this first, since we need to know how the dataset is set up before we can construct the model
