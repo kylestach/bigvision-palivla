@@ -144,6 +144,10 @@ def chain_of_thought(model: ModelComponents, trajectory: Any):
     frame["observation"] = jax.tree_map(lambda x: x[None], frame["observation"])
     frame["action"] = trajectory["action"][None, :1, :]
 
+    # when we wanna visualize on trajectories where we don't have ground truth reasoning
+    if "reasonings" not in frame:
+        frame['reasonings'] = ["" for _ in range(frame['action'].shape[1])]
+
     # Predict chain-of-thought
     sequences = model.build_sequence(frame, begin_is_prompt=True)
     viz_batch, sequences = mhu.broadcast_one_to_all(

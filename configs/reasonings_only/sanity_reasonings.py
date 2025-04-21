@@ -2,8 +2,8 @@ from ml_collections import ConfigDict, FieldReference
 from ml_collections.config_dict import placeholder
 from palivla.base_config import get_config as get_base_config
 
-SINGLE_ARM_ACTION_DIM = 7
-MAX_CHUNK_SIZE = 4
+SINGLE_ARM_ACTION_DIM = 14
+MAX_CHUNK_SIZE = 50
 
 def get_config(variant_config: str = "default"):
     config = get_base_config(variant_config)
@@ -18,7 +18,7 @@ def get_config(variant_config: str = "default"):
     # REASONINGS ONLY (NO ACTIONS)
     config["dataset_kwargs"]["oxe_kwargs"]["override_and_use_reasonings_only"] = True
 
-    config["dataset_kwargs"]["oxe_kwargs"]["data_mix"] = "bridge"
+    config["dataset_kwargs"]["oxe_kwargs"]["data_mix"] = "aloha_spoons"
     config["dataset_kwargs"]["oxe_kwargs"]["load_camera_views"] = ["primary"]
 
     config["dataset_kwargs"]["traj_transform_kwargs"] = {
@@ -56,10 +56,12 @@ def get_config(variant_config: str = "default"):
             )
         ]
 
-        for v in config["visualization_datasets"].values():
-            v["use_cot"] = True
-            v["cot_data_path"] = config["cot_path"]
-            v["override_and_use_reasonings_only"] = True # REASONINGS ONLY
+        # for v in config["visualization_datasets"].values():
+        #     v["use_cot"] = True
+        #     v["cot_data_path"] = config["cot_path"]
+        #     v["override_and_use_reasonings_only"] = True # REASONINGS ONLY
+
+        
 
         config['visualization_datasets']['hard_bridge_eval'] = config['visualization_datasets']['bridge'].copy()
         config['visualization_datasets']['hard_bridge_eval']['name'] = "hard_bridge_eval" # we don't wanna use reasonings for this one 
@@ -69,11 +71,14 @@ def get_config(variant_config: str = "default"):
             "dataset": "hard_bridge_eval",
             "visualization": "viz.chain_of_thought"
         }
+
+        config['visualizations'].pop('bridge_sanity_print')
+        config['visualization_datasets'].pop('bridge')
         
-        config["visualizations"]["bridge_chain_of_thought"] = {
-            "dataset": "bridge",
-            "visualization": "viz.chain_of_thought"
-        }
+        # config["visualizations"]["bridge_chain_of_thought"] = {
+        #     "dataset": "bridge",
+        #     "visualization": "viz.chain_of_thought"
+        # }
 
         config["wandb_project"] = "palivla-cot"
 

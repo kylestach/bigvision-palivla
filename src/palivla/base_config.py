@@ -93,7 +93,7 @@ def get_config(variant_config: str):
             "traj_transform_threads": 16,
             "traj_read_threads": 16,
         },
-        "viz_trajectories_per_dataset": 4,
+        "viz_trajectories_per_dataset": 6,
         "visualization_datasets": {
             "bridge": {
                 "name": "bridge_dataset",
