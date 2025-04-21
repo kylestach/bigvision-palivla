@@ -18,8 +18,8 @@ def get_config(variant_config: str = "default"):
     # REASONINGS ONLY (NO ACTIONS)
     config["dataset_kwargs"]["oxe_kwargs"]["override_and_use_reasonings_only"] = True
 
-    config["dataset_kwargs"]["oxe_kwargs"]["data_mix"] = "all_mix"
-    config["dataset_kwargs"]["oxe_kwargs"]["load_camera_views"] = ["primary"] # intentionally just using high view, even for aloha (no proprio)
+    config["dataset_kwargs"]["oxe_kwargs"]["data_mix"] = "bridge"
+    config["dataset_kwargs"]["oxe_kwargs"]["load_camera_views"] = ["primary"]
 
     config["dataset_kwargs"]["traj_transform_kwargs"] = {
         "window_size": 1,
@@ -31,7 +31,7 @@ def get_config(variant_config: str = "default"):
         "max_action_dim": SINGLE_ARM_ACTION_DIM,
     }
 
-    config["dataset_kwargs"]["traj_read_threads"] = 6
+    config["dataset_kwargs"]["traj_read_threads"] = 1
     
     if variant_config == "smoke_test":
         config["visualizations"] = {
@@ -56,12 +56,6 @@ def get_config(variant_config: str = "default"):
             )
         ]
 
-        config['visualization_datasets']['libero_90'] = config['visualization_datasets']['bridge'].copy()
-        config['visualization_datasets']['libero_90']['name'] = "libero_90"
-
-        config['visualization_datasets']['ego4d_hamer'] = config['visualization_datasets']['bridge'].copy()
-        config['visualization_datasets']['ego4d_hamer']['name'] = "ego4d_hamer"
-
         for v in config["visualization_datasets"].values():
             v["use_cot"] = True
             v["cot_data_path"] = config["cot_path"]
@@ -71,29 +65,14 @@ def get_config(variant_config: str = "default"):
         config['visualization_datasets']['hard_bridge_eval']['name'] = "hard_bridge_eval" # we don't wanna use reasonings for this one 
         config['visualization_datasets']['hard_bridge_eval']['override_and_use_reasonings_only'] = True # gt should literally be nothing for this
 
-        config["visualizations"]["bridge_chain_of_thought"] = {
-            "dataset": "bridge",
-            "visualization": "viz.chain_of_thought"
-        }
-        config["visualizations"]["libero_90_chain_of_thought"] = {
-            "dataset": "libero_90",
-            "visualization": "viz.chain_of_thought"
-        }
-        config["visualizations"]["ego4d_hamer_chain_of_thought"] = {
-            "dataset": "ego4d_hamer",
-            "visualization": "viz.chain_of_thought"
-        }
         config["visualizations"]["hard_bridge_eval_chain_of_thought"] = {
             "dataset": "hard_bridge_eval",
             "visualization": "viz.chain_of_thought"
         }
-        config["visualizations"]["libero_90_sanity_print"] = {
-            "dataset": "libero_90",
-            "visualization": "viz.sanity_print"
-        }
-        config["visualizations"]["ego4d_hamer_sanity_print"] = {
-            "dataset": "ego4d_hamer",
-            "visualization": "viz.sanity_print"
+        
+        config["visualizations"]["bridge_chain_of_thought"] = {
+            "dataset": "bridge",
+            "visualization": "viz.chain_of_thought"
         }
 
         config["wandb_project"] = "palivla-cot"
