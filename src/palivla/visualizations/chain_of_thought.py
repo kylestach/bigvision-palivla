@@ -191,7 +191,7 @@ def chain_of_thought(model: ModelComponents, trajectory: Any):
     target_cot_str = "".join(target_gen_text_tokens[:target_action_start_idx])
 
     # Plot the table of prompt, target reasoning str, gen reasoning str
-    cot_table = get_table(prompt_str, pred_cot_str, target_cot_str)
+    # cot_table = get_table(prompt_str, pred_cot_str, target_cot_str)
 
     # Parse both predicted and target chain of thought strings
     pred_trajectory = parse_cot_string(pred_cot_str)
@@ -205,5 +205,5 @@ def chain_of_thought(model: ModelComponents, trajectory: Any):
 
     return {
         "trajectory_comparison": wandb.Image(comparison_image),
-        "cot_outputs": cot_table,
+        # "cot_outputs": cot_table,
     }
