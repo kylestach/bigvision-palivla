@@ -42,7 +42,7 @@ def get_config(variant_config: str):
         # Checkpoint settings
         "save_path": placeholder(str),
         "save_interval": 10000,
-        "max_to_keep": 10,
+        "max_to_keep": 50,
         # Logging and visualization
         "eval_interval": 100,
         "log_interval": 10,
