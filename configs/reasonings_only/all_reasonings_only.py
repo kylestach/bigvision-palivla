@@ -2,8 +2,8 @@ from ml_collections import ConfigDict, FieldReference
 from ml_collections.config_dict import placeholder
 from palivla.base_config import get_config as get_base_config
 
-SINGLE_ARM_ACTION_DIM = 7
-MAX_CHUNK_SIZE = 4
+SINGLE_ARM_ACTION_DIM = 14
+MAX_CHUNK_SIZE = 50
 
 def get_config(variant_config: str = "default"):
     config = get_base_config(variant_config)
@@ -62,14 +62,23 @@ def get_config(variant_config: str = "default"):
         config['visualization_datasets']['ego4d_hamer'] = config['visualization_datasets']['bridge'].copy()
         config['visualization_datasets']['ego4d_hamer']['name'] = "ego4d_hamer"
 
-        for v in config["visualization_datasets"].values():
-            v["use_cot"] = True
-            v["cot_data_path"] = config["cot_path"]
-            v["override_and_use_reasonings_only"] = True # REASONINGS ONLY
+        config['visualization_datasets']['aloha_spoons_in_bowls_dataset'] = config['visualization_datasets']['bridge'].copy()
+        config['visualization_datasets']['aloha_spoons_in_bowls_dataset']['name'] = "aloha_spoons_in_bowls_dataset"
 
+        config['visualization_datasets']['aloha_long_horizon_dataset'] = config['visualization_datasets']['bridge'].copy()
+        config['visualization_datasets']['aloha_long_horizon_dataset']['name'] = "aloha_long_horizon_dataset"
+
+        config['visualization_datasets']['aloha_pick_place_full_dataset'] = config['visualization_datasets']['bridge'].copy()
+        config['visualization_datasets']['aloha_pick_place_full_dataset']['name'] = "aloha_pick_place_full_dataset"
+        
         config['visualization_datasets']['hard_bridge_eval'] = config['visualization_datasets']['bridge'].copy()
         config['visualization_datasets']['hard_bridge_eval']['name'] = "hard_bridge_eval" # we don't wanna use reasonings for this one 
-        config['visualization_datasets']['hard_bridge_eval']['override_and_use_reasonings_only'] = True # gt should literally be nothing for this
+        
+        for k, v in config["visualization_datasets"].items():
+            if k != "hard_bridge_eval":
+                v["use_cot"] = True
+                v["cot_data_path"] = config["cot_path"]
+            v["override_and_use_reasonings_only"] = True # REASONINGS ONLY
 
         config["visualizations"]["bridge_chain_of_thought"] = {
             "dataset": "bridge",
@@ -83,18 +92,30 @@ def get_config(variant_config: str = "default"):
             "dataset": "ego4d_hamer",
             "visualization": "viz.chain_of_thought"
         }
+        config["visualizations"]["aloha_spoons_in_bowls_dataset_chain_of_thought"] = {
+            "dataset": "aloha_spoons_in_bowls_dataset",
+            "visualization": "viz.chain_of_thought"
+        }
+        config["visualizations"]["aloha_long_horizon_dataset_chain_of_thought"] = {
+            "dataset": "aloha_long_horizon_dataset",
+            "visualization": "viz.chain_of_thought"
+        }
+        config["visualizations"]["aloha_pick_place_full_dataset_chain_of_thought"] = {
+            "dataset": "aloha_pick_place_full_dataset",
+            "visualization": "viz.chain_of_thought"
+        }
         config["visualizations"]["hard_bridge_eval_chain_of_thought"] = {
             "dataset": "hard_bridge_eval",
             "visualization": "viz.chain_of_thought"
         }
-        config["visualizations"]["libero_90_sanity_print"] = {
-            "dataset": "libero_90",
-            "visualization": "viz.sanity_print"
-        }
-        config["visualizations"]["ego4d_hamer_sanity_print"] = {
-            "dataset": "ego4d_hamer",
-            "visualization": "viz.sanity_print"
-        }
+        # config["visualizations"]["libero_90_sanity_print"] = {
+        #     "dataset": "libero_90",
+        #     "visualization": "viz.sanity_print"
+        # }
+        # config["visualizations"]["ego4d_hamer_sanity_print"] = {
+        #     "dataset": "ego4d_hamer",
+        #     "visualization": "viz.sanity_print"
+        # }
 
         config["wandb_project"] = "palivla-cot"
 
