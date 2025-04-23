@@ -3,7 +3,7 @@ name = "big-vision"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11.12"
 dependencies = [
     "big-vision",
     "chex>=0.1.86",
