@@ -6,6 +6,7 @@ import einops
 import tqdm
 import zarr
 import jax
+import gcsfs
 
 import torch
 import torch.utils.data
@@ -352,7 +353,7 @@ class FrodoDataset:
     def __init__(
         self,
         repo_id: str,
-        root: Path | None,
+        root: str | None,
         split: str = "train",
 
         action_format: ActionFormat | str = ActionFormat.WAYPOINT,
@@ -399,7 +400,7 @@ class FrodoDataset:
         self.fps = dataset_framerate
         self.tolerance_s = 1 / self.fps - 1e-4
         self.video_backend = "pyav"
-        self.videos_dir = Path(root) / "frodobots_dataset" / "videos"
+        self.videos_dir = f"{root}/frodobots_dataset/videos"
 
         self.action_key = action_key
 
@@ -417,18 +418,12 @@ class FrodoDataset:
         #     },
         # )
 
-        # Build a cache of episode data indices
-        # self.dataset_cache = zarr.load(Path(root) / "frodobots_dataset" / "dataset_cache.zarr")
-        # self.dataset_cache = {
-        #     k: np.asarray(v) for k, v in self.dataset_cache.items()
-        # }
-
-        self.dataset_cache = zarr.open(Path(root) / "frodobots_dataset" / "dataset_cache.zarr")
+        store = gcsfs.GCSMap(f"{root}/frodobots_dataset/dataset_cache.zarr", recursive=True)
+        self.dataset_cache = zarr.open(store, mode="r")
         self.dataset_cache = {
             k: np.asarray(self.dataset_cache[k]) for k in self.dataset_cache.keys()
         }
         
-
         ep_from = []
         ep_to = []
         for ep_id in tqdm.trange(self.dataset_cache["episode_index"].max() + 1, desc="Building episode data index..."):
@@ -610,10 +605,6 @@ class FrodoDataset:
 
         headings = torch.tensor(self.dataset_cache["observation.filtered_heading"])
         heading_diff = (headings[target_indices] - headings[target_next_indices]).clip_(-0.2, 0.2).abs_().sum(dim=-1)
-
-        # heading = torch.tensor(self.dataset_cache["observation.filtered_heading"])
-        # initial_heading = heading[indices]
-        # final_heading = heading[target_indices]
 
         future_steer = torch.clip(heading_diff, -1, 1)
         weights = base_rate + (1 - base_rate) * future_steer ** 2

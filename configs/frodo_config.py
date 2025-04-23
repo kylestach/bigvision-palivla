@@ -12,9 +12,9 @@ def get_config(variant_config: str = "default"):
     config["wandb_project"] = "palivla-debug-frodo"
 
     config["dataset"] = "frodobots"
-    config["dataset_root"] = "/mnt/ephemeral2/frodobots_v2_export"
+    config["dataset_root"] = "gs://frodo-bucket-c2/frodobots_v2_export"
 
-    config["save_path"] = "/mnt/ephemeral2/models/palivla"
+    config["save_path"] = "gs://frodo-bucket-c2/logs"
     config["run_name"] = "palivla_relabeled_frodo"
     config["save_interval"] = 1000
     config["eval_interval"] = 10
