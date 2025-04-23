@@ -7,6 +7,22 @@ import optax
 
 from palivla.components.train_state import TrainState
 
+from flax.struct import dataclass
+from typing import Any, Dict, Sequence, Mapping, Union
+
+
+@dataclass
+class TrainingBatch:
+    sensors: Dict[str, jax.Array]
+    sensors_mask: jax.Array
+    actions_mask: jax.Array
+    actions: jax.Array
+    tokens: jax.Array
+    tokens_ar: jax.Array
+    tokens_loss: jax.Array
+    tokens_mask: jax.Array
+    gen_start: jax.Array | None = None
+
 
 def compute_stats(
     *,

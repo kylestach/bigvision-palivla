@@ -118,13 +118,17 @@ def load_paligemma_weights(
             _replace_params_fn(params, param_replacements, ""),
         )
 
-    replace_params_fn = model.sharding.mesh.sjit(
-        _replace_params,
-        in_shardings=(model.sharding.model_sharding_rule, None),
-        out_shardings=model.sharding.model_sharding_rule,
-        donate_argnums=(0,),
-    )
+    # replace_params_fn = model.sharding.mesh.sjit(
+    #     _replace_params,
+    #     in_shardings=model.sharding.model_sharding_rule,
+    #     # in_shardings=(model.sharding.model_sharding_rule, None),
+    #     out_shardings=model.sharding.model_sharding_rule,
+    #     donate_argnums=(0,),
+    # )
 
+    replace_params_fn = jax.jit(_replace_params)  # Remove sjit for debugging
+
+    # breakpoint()
     model.train_state = model.train_state.replace(
         params=replace_params_fn(model.train_state.params, base_params)
     )

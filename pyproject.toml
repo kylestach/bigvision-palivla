@@ -12,7 +12,7 @@ dependencies = [
     "einops>=0.8.0",
     "flax>=0.9.0",
     "ipykernel",
-    "jax>=0.4.34",
+    "jax[gpu]==0.4.35",
     "matplotlib>=3.9.2",
     "ml-collections>=0.1.1",
     "numpy<2.0.0",
@@ -28,19 +28,23 @@ dependencies = [
     "tensorflow-text-nightly>=2.15.0",
     "tf-nightly>=2.15.0",
     "wandb>=0.18.3",
-    "protobuf>=3.20",
+    "protobuf==5.29.3",
     "huggingface-hub>=0.27.0",
     "transformers>=4.47.1",
     "prettytable>=3.12.0",
+    "torch>=2.6.0",
+    "zarr>=3.0.6",
+    "torchvision>=0.21.0",
+    "av>=14.3.0",
 ]
 
 [project.optional-dependencies]
 tpu = [
-    "jax[tpu]>=0.4.34",
+    "jax[tpu]>=0.4.35",
     "libtpu-nightly",
 ]
 gpu = [
-    "jax[cuda12]==0.4.34"
+    "jax[cuda12]>=0.4.35",
 ]
 
 [tool.uv]

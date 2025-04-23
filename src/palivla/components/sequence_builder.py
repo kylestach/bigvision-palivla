@@ -155,6 +155,7 @@ class SequenceBuilder:
         *,
         boa_is_prompt: bool = False,
         action_dim: int,
+        action_horizon: int,
     ):
         boa_id = language_tokenizer.encode("<begin_of_action>")[0]
         eos_id = language_tokenizer.encode("<eos>")[0]
@@ -175,13 +176,12 @@ class SequenceBuilder:
         ]
 
         # Get the shape of a valid action
-        action_horizon = 0
-        for action in actions:
-            if action is not None:
-                action_horizon = max(action_horizon, action.shape[0])
-                action_dim = action.shape[1]
-                break
-
+        # action_horizon = 0
+        # for action in actions:
+        #     if action is not None:
+        #         action_horizon = max(action_horizon, action.shape[0])
+        #         action_dim = action.shape[1]
+        #         break
         actions_mask = np.array([action is not None for action in actions])
         actions = np.stack(
             [

@@ -159,7 +159,7 @@ class ModelComponents:
     def train_step(self, batch: Any):
         # Tokenize the batch and build sequences
         sequences = self.sequence_builder.build_sequence(
-            batch, self.language_tokenizer, self.action_tokenizer
+            batch, self.language_tokenizer, self.action_tokenizer, include_action_tokens=True
         )
 
         # Shard the batch to devices
@@ -183,7 +183,7 @@ class ModelComponents:
         gt_actions = batch["action"][:, -1, :, :]
 
         predicted_actions, actions_mask, tokens = self.predict(
-            batch, action_dim=gt_actions.shape[-1], return_tokens=True
+            batch, action_dim=gt_actions.shape[-1], action_horizon=gt_actions.shape[1], return_tokens=True
         )
 
         predicted_actions = np.nan_to_num(predicted_actions)
@@ -204,9 +204,11 @@ class ModelComponents:
         self,
         batch,
         action_dim: int,
+        action_horizon: int,
         *,
         use_ema_params: bool = False,
         return_tokens: bool = False,
+        include_action_tokens: bool = True,
     ):
         # Tokenize the batch and build sequences
         sequences = self.sequence_builder.build_sequence(
@@ -214,6 +216,7 @@ class ModelComponents:
             self.language_tokenizer,
             self.action_tokenizer,
             boa_is_prompt=True,
+            include_action_tokens=include_action_tokens,
         )
 
         # Shard the batch to devices
@@ -237,7 +240,7 @@ class ModelComponents:
                 model=self.train_state.model,
                 mesh=self.sharding.mesh.mesh,
                 out_sharding=PartitionSpec("fsdp"),
-                max_decode_len=10,
+                max_decode_len=sequences["gen"]["tokens"].shape[1],
                 eos_token=self.language_tokenizer.eos_token_id,
             )
             tokens = self.data_gather_fn(tokens)
@@ -248,6 +251,7 @@ class ModelComponents:
                 self.action_tokenizer,
                 boa_is_prompt=True,
                 action_dim=action_dim,
+                action_horizon=action_horizon,
             )
 
             if return_tokens:
