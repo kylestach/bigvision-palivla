@@ -29,9 +29,9 @@ uv sync --extra tpu
 
 # Install pytorch
 sudo apt install libopenblas-dev -y
-pip install numpy
-pip install --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/cpu
-pip install 'torch_xla[tpu] @ https://storage.googleapis.com/pytorch-xla-releases/wheels/tpuvm/torch_xla-2.8.0.dev-cp310-cp310-linux_x86_64.whl' \
+uv pip install gcsfs
+uv pip install --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/cpu
+uv pip install 'torch_xla[tpu] @ https://storage.googleapis.com/pytorch-xla-releases/wheels/tpuvm/torch_xla-2.8.0.dev-cp310-cp310-linux_x86_64.whl' \
   -f https://storage.googleapis.com/libtpu-releases/index.html \
   -f https://storage.googleapis.com/libtpu-wheels/index.html
 
