@@ -161,6 +161,7 @@ class ModelComponents:
     def train_step(self, batch: Any):
         # Tokenize the batch and build sequences
         sequences = self.build_sequence(batch, begin_is_prompt=False)
+        
 
         # Shard the batch to devices
         batch = {
@@ -181,6 +182,15 @@ class ModelComponents:
 
     def eval_step(self, batch):
 
+        # gt_actions = batch["action"][:, -1, :, :] # (batch, max_chunk_size, dimension)
+
+        # predicted_actions, actions_mask, tokens = self.predict(
+        #     batch, action_dim=gt_actions.shape[-1], return_tokens=True,
+        # )
+
+        # gt_actions = self.data_gather_fn(self.sharding.mesh.local_data_to_global_array(gt_actions))
+        # predicted_actions = np.nan_to_num(predicted_actions)
+
         gt_actions = batch["action"][:, -1, :, :] # (batch, max_chunk_size, dimension)
 
         predicted_actions, actions_mask, tokens = self.predict(
@@ -188,7 +198,17 @@ class ModelComponents:
         )
 
         gt_actions = self.data_gather_fn(self.sharding.mesh.local_data_to_global_array(gt_actions))
+
+        # look at whether we've used actions for each sample in batch
+        gt_use_actions = batch['use_actions']
+        gt_use_actions = self.data_gather_fn(self.sharding.mesh.local_data_to_global_array(gt_use_actions))
+
         predicted_actions = np.nan_to_num(predicted_actions)
+
+        # what we really should be doing here is just taking the metrics wrt the datasets that do use actions
+        gt_actions_real = np.array([ac for use, ac in zip(gt_use_actions, gt_actions) if use])
+        predicted_actions_real = np.array([ac for use, ac in zip(gt_use_actions, predicted_actions) if use])
+        actions_mask_real = np.array([mask for use, mask in zip(gt_use_actions, actions_mask) if use])
 
         return {
             # "gen_valid_pct": actions_mask.mean(), # okay this should be CLOSE to zero since we're padding 4--> 50, but not exactly 0? 
@@ -196,6 +216,11 @@ class ModelComponents:
             / actions_mask.mean(),
             "gen_l1": np.mean(np.abs(predicted_actions - gt_actions) * actions_mask)
             / actions_mask.mean(),
+            # add metrics specifically only for datasets that use actions 
+            "gen_l2_for_datasets_using_actions": np.mean(np.square(predicted_actions_real - gt_actions_real) * actions_mask_real)
+            / actions_mask_real.mean(),
+            "gen_l1_for_datasets_using_actions": np.mean(np.abs(predicted_actions_real - gt_actions_real) * actions_mask_real)
+            / actions_mask_real.mean(),
             "gen_acc": np.mean(
                 (tokens["predicted"] == tokens["target"]) * tokens["mask"]
             )

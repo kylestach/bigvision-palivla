@@ -27,11 +27,7 @@ def get_config(variant_config: str = "default"):
     # Turn on/off actions per dataset
     datasets = [
         "bridge_dataset", 
-        "libero_90", 
-        "ego4d_hamer", 
-        "aloha_pick_place_full_dataset", 
-        "aloha_spoons_in_bowls_dataset", 
-        "aloha_long_horizon_dataset"
+        "libero_90"
     ]
     config["dataset_kwargs"]["oxe_kwargs"]["use_actions_dct"] = {
         ds: (True if ds==TARGET_DATASET else False)
@@ -39,7 +35,7 @@ def get_config(variant_config: str = "default"):
     }
 
     # Specify data mix
-    config["dataset_kwargs"]["oxe_kwargs"]["data_mix"] = "bridge_actions_rest_reasonings"
+    config["dataset_kwargs"]["oxe_kwargs"]["data_mix"] = "bridge_libero"
 
     # Specify chunk size
     config["dataset_kwargs"]["oxe_kwargs"]["override_chunk_size"] = MAX_CHUNK_SIZE
@@ -59,7 +55,7 @@ def get_config(variant_config: str = "default"):
     }
 
     # Specify traj read threads
-    config["dataset_kwargs"]["traj_read_threads"] = 6
+    config["dataset_kwargs"]["traj_read_threads"] = 2
     
     if variant_config == "smoke_test":
         config["visualizations"] = {
@@ -84,63 +80,7 @@ def get_config(variant_config: str = "default"):
             )
         ]
 
-        # Setup visualization datasets
-        viz_datasets = ['aloha_spoons_in_bowls_dataset', 'aloha_long_horizon_dataset', 'hard_bridge_eval', 'aloha_pick_place_full_dataset', 'libero_90']  
-        for ds in viz_datasets:
-            config['visualization_datasets'][ds] = config['visualization_datasets']['bridge'].copy()
-            config['visualization_datasets'][ds]['name'] = ds
-            config['visualization_datasets'][ds]['use_actions'] = False
-
-        # Turn on CoT for all datasets except hard_bridge_eval
-        for v in config["visualization_datasets"].values():
-            if v["name"] != "hard_bridge_eval":
-                v["use_cot"] = True
-                v["cot_data_path"] = config["cot_path"]
-            if v["name"] != TARGET_DATASET:
-                v["use_actions"] = False # don't use actions for non-bridge datasets
-
-        # CoT visualizations
-        config["visualizations"]["bridge_chain_of_thought"] = {
-            "dataset": "bridge",
-            "visualization": "viz.chain_of_thought"
-        }
-
-        config["visualizations"]["hard_bridge_eval_chain_of_thought"] = {
-            "dataset": "hard_bridge_eval",
-            "visualization": "viz.chain_of_thought"
-        }
-
-        config["visualizations"]["aloha_spoons_in_bowls_dataset_chain_of_thought"] = {
-            "dataset": "aloha_spoons_in_bowls_dataset",
-            "visualization": "viz.chain_of_thought"
-        }
-
-        config["visualizations"]["aloha_long_horizon_dataset_chain_of_thought"] = {
-            "dataset": "aloha_long_horizon_dataset",
-            "visualization": "viz.chain_of_thought"
-        }
-
-        # Sanity prints
-        config["visualizations"]["aloha_spoons_in_bowls_dataset_sanity_print"] = {
-            "dataset": "aloha_spoons_in_bowls_dataset",
-            "visualization": "viz.sanity_print"
-        }
-
-        config["visualizations"]["aloha_pick_place_full_dataset_sanity_print"] = {
-            "dataset": "aloha_pick_place_full_dataset",
-            "visualization": "viz.sanity_print"
-        }
-        
-        config["visualizations"]["libero_90_sanity_print"] = {
-            "dataset": "libero_90",
-            "visualization": "viz.sanity_print"
-        }
-
-        config["visualizations"]["aloha_long_horizon_dataset_sanity_print"] = {
-            "dataset": "aloha_long_horizon_dataset",
-            "visualization": "viz.sanity_print"
-        }
-
+        config['visualizations'] = {}
 
         config["wandb_project"] = "palivla-cot"
 
