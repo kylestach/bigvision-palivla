@@ -10,9 +10,9 @@ dependencies = [
     "distrax>=0.1.5",
     "dlimp@git+https://github.com/kvablack/dlimp.git",
     "einops>=0.8.0",
-    "flax>=0.9.0",
+    "flax==0.9.0",
     "ipykernel",
-    "jax[gpu]==0.4.35",
+    "jax==0.4.34",
     "matplotlib>=3.9.2",
     "ml-collections>=0.1.1",
     "numpy<2.0.0",
@@ -25,8 +25,8 @@ dependencies = [
     "scikit-learn>=1.5.2",
     "scipy>=1.14.1",
     "tfds-nightly>=4.9.0",
-    "tensorflow-text-nightly>=2.15.0",
-    "tf-nightly>=2.15.0",
+    "tensorflow-text-nightly==2.19.0.dev20250210",
+    "tf-nightly==2.19.0.dev20250210",
     "wandb>=0.18.3",
     "protobuf==5.29.3",
     "huggingface-hub>=0.27.0",
@@ -40,11 +40,11 @@ dependencies = [
 
 [project.optional-dependencies]
 tpu = [
-    "jax[tpu]>=0.4.35",
+    "jax[tpu]>=0.4.34",
     "libtpu-nightly",
 ]
 gpu = [
-    "jax[cuda12]>=0.4.35",
+    "jax[cuda12]>=0.4.34",
 ]
 
 [tool.uv]
