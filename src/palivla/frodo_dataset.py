@@ -426,14 +426,14 @@ class FrodoDataset:
         for folder in folders:
             folder_name = folder.split("/")[-1]
             breakpoint()
-            if folder == ".zgroup":
+            if folder_name == ".zgroup":
                 continue
             ts_spec = {
                 "driver": "zarr",
                 "kvstore": {
                     "driver": "gcs",
                     "bucket": "frodo-bucket-c2",
-                    "path": f"frodobots_v2_export/frodobots_dataset/dataset_cache.zarr/{folder}",
+                    "path": f"frodobots_v2_export/frodobots_dataset/dataset_cache.zarr/{folder_name}",
                 }
             }
             subcache = ts.open(ts_spec).result()
