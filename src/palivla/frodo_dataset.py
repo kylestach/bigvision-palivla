@@ -418,7 +418,7 @@ class FrodoDataset:
         #     },
         # )
 
-        store = gcsfs.GCSMap(f"{root}/frodobots_dataset/dataset_cache.zarr", recursive=True)
+        store = gcsfs.GCSMap(f"{root}/frodobots_dataset/dataset_cache.zarr")
         self.dataset_cache = zarr.open(store, mode="r")
         self.dataset_cache = {
             k: np.asarray(self.dataset_cache[k]) for k in self.dataset_cache.keys()
