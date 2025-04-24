@@ -211,8 +211,6 @@ def main(_):
     config = flags.FLAGS.config
 
     sharding_metadata = make_sharding(config)
-    breakpoint()
-    print("Sharding set up")
 
     if config.resume_checkpoint_dir is not None:
         # Load the model from a checkpoint
@@ -316,28 +314,26 @@ def main(_):
         raise ValueError(f"Unknown batch type: {type(batch)}")
 
     # breakpoint()
-    # train_loader = DataLoader(
-    #     train_ds,
-    #     batch_size=config.batch_size,
-    #     # sampler=train_ds.get_sampler(),
-    #     shuffle = True,
-    #     num_workers = 0,
-    #     # num_workers=128,
-    #     collate_fn=collate_fn,
-    #     # multiprocessing_context='forkserver', # don't fork - jax gets mad 
-    # )
+    train_loader = DataLoader(
+        train_ds,
+        batch_size=config.batch_size,
+        # sampler=train_ds.get_sampler(),
+        shuffle = True,
+        num_workers = 0,
+        # num_workers=128,
+        collate_fn=collate_fn,
+        multiprocessing_context='forkserver', # don't fork - jax gets mad 
+    )
     # breakpoint()
     
-    # train_it = map(make_training_batch, iter(train_loader))
-
-
+    train_it = map(make_training_batch, iter(train_loader))
 
     print("Dataset iterator set up")
 
 
     # Construct the final dataset
     # We need to do this after the model is constructed, since we need to have a tokenizer
-    # per_host_train_batch_size = config.batch_size // jax.process_count()
+    per_host_train_batch_size = config.batch_size // jax.process_count()
 
     # def make_training_batch(batch):
     #     return batch
@@ -398,17 +394,18 @@ def main(_):
     # )
     # for i, batch in enumerate(tqdm_iter):
 
-    idxs = np.arange(1, len(train_ds))  # from 1 to 1233093 inclusive
-    np.random.shuffle(idxs)
-    print("idxs set up")
+    # idxs = np.arange(1, len(train_ds))  # from 1 to 1233093 inclusive
+    # np.random.shuffle(idxs)
+    # print("idxs set up")
 
 
     # partial_get_item = partial(get_item, dataset=train_ds)
 
     for i in tqdm.tqdm(range(len(train_ds) // config.batch_size)): 
 
-        # if not config.overfit_dataset:
-            # batch = next(train_it)
+        if not config.overfit_dataset:
+            batch = next(train_it)
+        
 
 
         # with mp.get_context("forkserver").Pool(processes=32) as pool:  # or whatever number of processes makes sense
@@ -417,11 +414,11 @@ def main(_):
         #                     desc="Loading batch"))
 
 
-        batch = [train_ds[j] for j in tqdm.tqdm(idxs[i * config.batch_size:(i + 1) * config.batch_size], desc="Loading batch")]
+        # batch = [train_ds[j] for j in tqdm.tqdm(idxs[i * config.batch_size:(i + 1) * config.batch_size], desc="Loading batch")]
 
-        # batch = [train_ds[j] for j in idxs[i* config.batch_size:(i+1)* config.batch_size]]
-        batch = collate_fn(batch)
-        batch["action"] = batch["action"][:, np.newaxis, :, :] # to work with sequence generator 
+        # # batch = [train_ds[j] for j in idxs[i* config.batch_size:(i+1)* config.batch_size]]
+        # batch = collate_fn(batch)
+        # batch["action"] = batch["action"][:, np.newaxis, :, :] # to work with sequence generator 
 
         info = model.train_step(batch)
         info = jax.device_get(info)
