@@ -419,7 +419,7 @@ class FrodoDataset:
         #     },
         # )
         fs = gcsfs.GCSFileSystem(project="rail-tpus")
-        gcs_dir = "frodo-bucket-c2/frodobots_v2_export/frodobots_dataset/dataset_cache.zarr"
+        gcs_dir = "gs://rail-tpus/frodo-bucket-c2/frodobots_v2_export/frodobots_dataset/dataset_cache.zarr"
 
         folders = fs.ls(gcs_dir)
         self.dataset_cache = {}
