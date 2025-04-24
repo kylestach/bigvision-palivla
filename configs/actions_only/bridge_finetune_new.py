@@ -9,8 +9,18 @@ def get_config(variant_config: str = "default"):
     config = get_base_config(variant_config)
     
     config["resume_checkpoint_dir"] = "gs://multi-robot-bucket3/runs/vla/all_reasonings_only_21042025_085309"
-    config["resume_checkpoint_step"] = 40000
+    config["resume_checkpoint_step"] = 22500
+
+    # learning rate
+    config['optimizer']['kwargs']['llm_optimizer_kwargs'] = {
+        "learning_rate": 5e-5,
+        "schedule_type": "warmup_constant",
+
+    }
+    config['optimizer']['kwargs']['embed_optimizer_kwargs'] = config['optimizer']['kwargs']['llm_optimizer_kwargs']
+    config['optimizer']['kwargs']['img_optimizer_kwargs'] = config['optimizer']['kwargs']['llm_optimizer_kwargs']
     
+    # sequence builder
     config["sequence_builder"] = f"sequence_builder.default(prompt_pad_length=50, gen_pad_length=30, action_chunk_pad_length={MAX_CHUNK_SIZE})"
 
     config["cot_path"] = FieldReference(None, str)

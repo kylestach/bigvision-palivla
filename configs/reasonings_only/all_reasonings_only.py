@@ -2,8 +2,9 @@ from ml_collections import ConfigDict, FieldReference
 from ml_collections.config_dict import placeholder
 from palivla.base_config import get_config as get_base_config
 
+# this can be arbitrary (but at least the length of the longest action for dataloading purposes), since we're not using actions
 SINGLE_ARM_ACTION_DIM = 14
-MAX_CHUNK_SIZE = 50
+MAX_CHUNK_SIZE = 4 
 
 def get_config(variant_config: str = "default"):
     config = get_base_config(variant_config)
@@ -16,7 +17,14 @@ def get_config(variant_config: str = "default"):
     config["dataset_kwargs"]["oxe_kwargs"]["cot_data_path"] = config["cot_path"]
 
     # REASONINGS ONLY (NO ACTIONS)
-    config["dataset_kwargs"]["oxe_kwargs"]["override_and_use_reasonings_only"] = True
+    config["dataset_kwargs"]["oxe_kwargs"]["use_actions_dct"] = {
+        "bridge_dataset": False,
+        'aloha_spoons_in_bowls_dataset': False,
+        'aloha_long_horizon_dataset': False,
+        'aloha_pick_place_full_dataset': False,
+        'ego4d_hamer': False,
+        'libero_90': False,
+    }
 
     config["dataset_kwargs"]["oxe_kwargs"]["data_mix"] = "all_mix"
     config["dataset_kwargs"]["oxe_kwargs"]["load_camera_views"] = ["primary"] # intentionally just using high view, even for aloha (no proprio)
@@ -32,6 +40,15 @@ def get_config(variant_config: str = "default"):
     }
 
     config["dataset_kwargs"]["traj_read_threads"] = 6
+
+    # learning rate
+    config['optimizer']['kwargs']['llm_optimizer_kwargs'] = {
+        "learning_rate": 5e-5,
+        "schedule_type": "warmup_constant",
+
+    }
+    config['optimizer']['kwargs']['embed_optimizer_kwargs'] = config['optimizer']['kwargs']['llm_optimizer_kwargs']
+    config['optimizer']['kwargs']['img_optimizer_kwargs'] = config['optimizer']['kwargs']['llm_optimizer_kwargs']
     
     if variant_config == "smoke_test":
         config["visualizations"] = {
@@ -78,7 +95,8 @@ def get_config(variant_config: str = "default"):
             if k != "hard_bridge_eval":
                 v["use_cot"] = True
                 v["cot_data_path"] = config["cot_path"]
-            v["override_and_use_reasonings_only"] = True # REASONINGS ONLY
+            v["use_actions"] = False
+
 
         config["visualizations"]["bridge_chain_of_thought"] = {
             "dataset": "bridge",

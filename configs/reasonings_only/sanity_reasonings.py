@@ -15,10 +15,21 @@ def get_config(variant_config: str = "default"):
     config["dataset_kwargs"]["oxe_kwargs"]["use_cot"] = True
     config["dataset_kwargs"]["oxe_kwargs"]["cot_data_path"] = config["cot_path"]
 
-    # REASONINGS ONLY (NO ACTIONS)
-    config["dataset_kwargs"]["oxe_kwargs"]["override_and_use_reasonings_only"] = True
+    # learning rate
+    config['optimizer']['kwargs']['llm_optimizer_kwargs'] = {
+        "learning_rate": 5e-5,
+        "schedule_type": "warmup_constant",
 
-    config["dataset_kwargs"]["oxe_kwargs"]["data_mix"] = "aloha_spoons"
+    }
+    config['optimizer']['kwargs']['embed_optimizer_kwargs'] = config['optimizer']['kwargs']['llm_optimizer_kwargs']
+    config['optimizer']['kwargs']['img_optimizer_kwargs'] = config['optimizer']['kwargs']['llm_optimizer_kwargs']
+
+    # REASONINGS ONLY (NO ACTIONS)
+    config["dataset_kwargs"]["oxe_kwargs"]["use_actions_dct"] = {
+        "bridge_dataset": False,
+    }
+
+    config["dataset_kwargs"]["oxe_kwargs"]["data_mix"] = "bridge"
     config["dataset_kwargs"]["oxe_kwargs"]["load_camera_views"] = ["primary"]
 
     config["dataset_kwargs"]["traj_transform_kwargs"] = {
@@ -65,7 +76,7 @@ def get_config(variant_config: str = "default"):
 
         config['visualization_datasets']['hard_bridge_eval'] = config['visualization_datasets']['bridge'].copy()
         config['visualization_datasets']['hard_bridge_eval']['name'] = "hard_bridge_eval" # we don't wanna use reasonings for this one 
-        config['visualization_datasets']['hard_bridge_eval']['override_and_use_reasonings_only'] = True # gt should literally be nothing for this
+        config['visualization_datasets']['hard_bridge_eval']['use_actions'] = False
 
         config["visualizations"]["hard_bridge_eval_chain_of_thought"] = {
             "dataset": "hard_bridge_eval",

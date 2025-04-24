@@ -105,14 +105,25 @@ def make_optimizer(
         learning_rate=base_learning_rate,
         init_learning_rate=0.0,
         warmup_steps=1000,
+        schedule_type="warmup_cosine_decay",
         **kwargs,
     ):
-        return optax.warmup_cosine_decay_schedule(
-            init_learning_rate,
-            learning_rate,
-            min(warmup_steps, num_train_steps - 1),
-            max(num_train_steps - warmup_steps, 1),  # Ensure at least one step
-        )
+        if schedule_type == "warmup_cosine_decay":
+            return optax.warmup_cosine_decay_schedule(
+                init_learning_rate,
+                learning_rate,
+                min(warmup_steps, num_train_steps - 1),
+                max(num_train_steps - warmup_steps, 1),  # Ensure at least one step
+            )
+        elif schedule_type == "warmup_constant":
+            return optax.warmup_constant_schedule(
+                init_learning_rate,
+                learning_rate,
+                warmup_steps,
+            )
+        else:
+            raise ValueError(f"Unknown schedule type: {schedule_type}")
+
 
     transforms = [
         (
