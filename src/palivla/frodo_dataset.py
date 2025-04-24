@@ -570,7 +570,7 @@ class FrodoDataset:
         image_goal_mask = b < 0.5
 
         item = {
-            "action": action,
+            "action": np.expand_dims(action, 1),
             "pad_mask_dict": {
                 "action": action_mask,
             },

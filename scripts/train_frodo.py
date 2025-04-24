@@ -391,8 +391,6 @@ def main(_):
     )
     for i, batch in enumerate(tqdm_iter):
 
-        breakpoint()
-
         # for i in tqdm.tqdm(range(len(train_ds) // config.batch_size)): 
 
         #     if not config.overfit_dataset:
