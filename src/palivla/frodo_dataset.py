@@ -423,7 +423,7 @@ class FrodoDataset:
 
         store = gcsfs.GCSMap(gcs_dir, gcs=fs, check=False)
         self.dataset_cache = zarr.open(store, mode="r")
-        self.dataset_cache = {k: self.dataset_cache[k] for k in self.dataset_cache.keys()}
+        self.dataset_cache = {k: np.array(self.dataset_cache[k]) for k in self.dataset_cache.keys()}
         
         breakpoint()
 
