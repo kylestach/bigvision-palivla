@@ -4,8 +4,8 @@ from palivla.base_config import get_config as get_base_config
 def get_config(variant_config: str = "default"):
     config = get_base_config(variant_config)
 
-    config["batch_size"] = 20 # 256
-    config["eval_batch_size"] = 20
+    config["batch_size"] = 192 # 256
+    config["eval_batch_size"] = 192
 
 
     config["wandb_mode"] = "online"

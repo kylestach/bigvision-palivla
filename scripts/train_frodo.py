@@ -211,6 +211,7 @@ def main(_):
     config = flags.FLAGS.config
 
     sharding_metadata = make_sharding(config)
+    breakpoint()
     print("Sharding set up")
 
     if config.resume_checkpoint_dir is not None:
@@ -226,7 +227,6 @@ def main(_):
         # Otherwise, create the model from scratch and apply any load_fns
         model = create_model(config, sharding_metadata)
 
-        print("model sharding mesh", model.sharding.mesh)
         for load_fn, load_fn_kwargs in config.load_fns:
             print("Load function", load_fn, "and kwargs", load_fn_kwargs)
             load_fn = Registry.lookup(load_fn)
