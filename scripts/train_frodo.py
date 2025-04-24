@@ -96,8 +96,6 @@ def collate_fn(batch):
     }
     
 
-
-
 def make_sharding(config: ConfigDict):
     mesh = MeshShardingHelper([-1], ["fsdp"])
     sharding_metadata = ShardingMetadata(
@@ -250,6 +248,7 @@ def main(_):
         shuffle = True,
         num_workers = 0,
         collate_fn=collate_fn,
+        drop_last=True,
     )
 
 
