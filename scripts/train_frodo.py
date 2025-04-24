@@ -322,10 +322,10 @@ def main(_):
         multiprocessing_context='forkserver', # don't fork - jax gets mad 
     )
     # breakpoint()
-    print("Making train it ")
-    train_it = map(make_training_batch, iter(train_loader))
+    # print("Making train it ")
+    # train_it = map(make_training_batch, iter(train_loader))
 
-    print("Dataset iterator set up")
+    # print("Dataset iterator set up")
 
 
     # Construct the final dataset
@@ -383,25 +383,18 @@ def main(_):
 
     # breakpoint()
 
-    # tqdm_iter = tqdm.tqdm(
-    #     train_loader,
-    #     disable = False,
-    #     dynamic_ncols = True,
-    #     desc= f"Progress through dataset"
-    # )
-    # for i, batch in enumerate(tqdm_iter):
+    tqdm_iter = tqdm.tqdm(
+        train_loader,
+        disable = False,
+        dynamic_ncols = True,
+        desc= f"Progress through dataset"
+    )
+    for i, batch in enumerate(tqdm_iter):
 
-    # idxs = np.arange(1, len(train_ds))  # from 1 to 1233093 inclusive
-    # np.random.shuffle(idxs)
-    # print("idxs set up")
+        # for i in tqdm.tqdm(range(len(train_ds) // config.batch_size)): 
 
-
-    # partial_get_item = partial(get_item, dataset=train_ds)
-
-    for i in tqdm.tqdm(range(len(train_ds) // config.batch_size)): 
-
-        if not config.overfit_dataset:
-            batch = next(train_it)
+        #     if not config.overfit_dataset:
+        #         batch = next(train_it)
         
 
 
