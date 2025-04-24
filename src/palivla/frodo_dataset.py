@@ -7,6 +7,7 @@ import tqdm
 import zarr
 import jax
 import gcsfs
+import tensorstore as ts
 
 import torch
 import torch.utils.data
@@ -417,10 +418,15 @@ class FrodoDataset:
         #         "action": [i * self.dt for i in range(action_spacing * action_horizon)],
         #     },
         # )
-        bucket = "frodo-bucket-c2"
-        fs = gcsfs.GCSFileSystem(project="rail-tpus", token="anon", access="read_only")
-        store = fs.get_mapper(f"{bucket}/frodobots_v2_export/dataset_cache.zarr")
-        self.dataset_cache = zarr.open(store, mode="r")
+        ts_spec = {
+            "driver": "zarr",
+            "kvstore": {
+                "driver": "gcs",
+                "bucket": "rail-tpus",
+                "path": "frodo-bucket-c2/frodobots_v2_export/frodobots_dataset/dataset_cache.zarr",
+            }
+        }
+        self.dataset_cache = ts.open(ts_spec).result()
         self.dataset_cache = {
             k: np.asarray(self.dataset_cache[k]) for k in self.dataset_cache.keys()
         }
