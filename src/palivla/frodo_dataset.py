@@ -423,9 +423,10 @@ class FrodoDataset:
 
         store = gcsfs.GCSMap(gcs_dir, gcs=fs, check=False)
         self.dataset_cache = zarr.open(store, mode="r")
-
-        breakpoint()
+        self.dataset_cache = {k: self.dataset_cache[k] for k in self.dataset_cache.keys()}
         
+        breakpoint()
+
         ep_from = []
         ep_to = []
         for ep_id in tqdm.trange(self.dataset_cache["episode_index"].max() + 1, desc="Building episode data index..."):
