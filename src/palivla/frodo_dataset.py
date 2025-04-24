@@ -8,6 +8,7 @@ import zarr
 import jax
 import gcsfs
 import tensorstore as ts
+from google.cloud import storage
 
 import torch
 import torch.utils.data
@@ -96,7 +97,13 @@ def decode_video_frames_torchvision(
 
     # set a video stream reader
     # TODO(rcadene): also load audio stream at the same time
-    reader = torchvision.io.VideoReader(video_path, "video")
+    client = storage.Client()
+    bucket = client.bucket("frodo-bucket-c2")
+    blob = bucket.blob(video_path)
+    os.makedirs("~/videos", exist_ok=True)
+    local_video_path = Path("~/videos") / video_path.split("/")[-1]
+    blob.download_to_filename(local_video_path)
+    reader = torchvision.io.VideoReader(local_video_path, "video")
 
     # set the first and last requested timestamps
     # Note: previous timestamps are usually loaded, since we need to access the previous key frame
