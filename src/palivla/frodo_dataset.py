@@ -401,7 +401,7 @@ class FrodoDataset:
         self.fps = dataset_framerate
         self.tolerance_s = 1 / self.fps - 1e-4
         self.video_backend = "pyav"
-        self.videos_dir = f"{root}/frodobots_dataset/videos"
+        self.videos_dir = Path(f"{root}/frodobots_dataset/videos")
 
         self.action_key = action_key
 
@@ -425,7 +425,6 @@ class FrodoDataset:
         self.dataset_cache = zarr.open(store, mode="r")
         self.dataset_cache = {k: np.array(self.dataset_cache[k]) for k in self.dataset_cache.keys()}
         
-        breakpoint()
 
         ep_from = []
         ep_to = []
