@@ -104,9 +104,10 @@ def decode_video_frames_torchvision(
     blob = bucket.blob(video_path)
     local_folder = os.path.expanduser("~/videos")
     os.makedirs(local_folder, exist_ok=True)
-    breakpoint()
     local_video_path = os.path.expanduser(f"{local_folder}/{video_path.split('/')[-1]}")
-    blob.download_to_filename(local_video_path)
+    if not os.path.exists(local_video_path):
+        # Download the video file to the local folder
+        blob.download_to_filename(local_video_path)
     reader = torchvision.io.VideoReader(local_video_path, "video")
 
     # set the first and last requested timestamps
