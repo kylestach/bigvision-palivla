@@ -319,8 +319,8 @@ def main(_):
         batch_size=config.batch_size,
         # sampler=train_ds.get_sampler(),
         shuffle = True,
-        num_workers = 0,
-        # num_workers=128,
+        # num_workers = 0,
+        num_workers=128,
         collate_fn=collate_fn,
         multiprocessing_context='forkserver', # don't fork - jax gets mad 
     )
