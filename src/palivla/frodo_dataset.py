@@ -425,6 +425,7 @@ class FrodoDataset:
         self.dataset_cache = {}
         for folder in folders:
             folder_name = folder.split("/")[-1]
+            breakpoint()
             if folder == ".zgroup":
                 continue
             ts_spec = {
