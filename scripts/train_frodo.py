@@ -50,9 +50,9 @@ jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
 jax.config.update("jax_persistent_cache_min_compile_time_secs", 0)
 tf.config.set_visible_devices([], "GPU")
 
-os.environ["OMP_NUM_THREADS"] = "12"  # Set number of OpenMP threads
-os.environ["MKL_NUM_THREADS"] = "12"  # Set number of MKL threads
-torch.set_num_threads(12)  # Limit the number of CPU threads used by PyTorch (edited) 
+os.environ["OMP_NUM_THREADS"] = "30"  # Set number of OpenMP threads
+os.environ["MKL_NUM_THREADS"] = "30"  # Set number of MKL threads
+torch.set_num_threads(30)  # Limit the number of CPU threads used by PyTorch (edited) 
 
 
 import multiprocessing as mp
@@ -231,9 +231,6 @@ def main(_):
             load_fn(model, **load_fn_kwargs)
 
     print("Model set up")
-    # Make the basic dataset
-    # We have to do this first, since we need to know how the dataset is set up before we can construct the model
-    # train_ds = make_base_dataset(**config.dataset_kwargs.to_dict(), train=True)
 
     start_time = time.time()
     train_ds = FrodoDataset(
@@ -325,7 +322,7 @@ def main(_):
         multiprocessing_context='forkserver', # don't fork - jax gets mad 
     )
     # breakpoint()
-    
+    print("Making train it ")
     train_it = map(make_training_batch, iter(train_loader))
 
     print("Dataset iterator set up")
