@@ -424,7 +424,9 @@ class FrodoDataset:
         folders = fs.ls(gcs_dir)
         self.dataset_cache = {}
         for folder in folders:
-            breakpoint()
+            folder_name = folder.split("/")[-1]
+            if folder == ".zgroup":
+                continue
             ts_spec = {
                 "driver": "zarr",
                 "kvstore": {
