@@ -419,7 +419,7 @@ class FrodoDataset:
         #     },
         # )
         fs = gcsfs.GCSFileSystem(project="rail-tpus")
-        gcs_dir = "gs://rail-tpus/frodo-bucket-c2/frodobots_v2_export/frodobots_dataset/dataset_cache.zarr"
+        gcs_dir = "frodo-bucket-c2/frodobots_v2_export/frodobots_dataset/dataset_cache.zarr"
 
         folders = fs.ls(gcs_dir)
         self.dataset_cache = {}
@@ -429,8 +429,8 @@ class FrodoDataset:
                 "driver": "zarr",
                 "kvstore": {
                     "driver": "gcs",
-                    "bucket": "rail-tpus",
-                    "path": f"frodo-bucket-c2/frodobots_v2_export/frodobots_dataset/dataset_cache.zarr/{folder}",
+                    "bucket": "frodo-bucket-c2",
+                    "path": f"frodobots_v2_export/frodobots_dataset/dataset_cache.zarr/{folder}",
                 }
             }
             subcache = ts.open(ts_spec).result()
