@@ -35,7 +35,7 @@ def make_step_fn(sharding: ShardingMetadata):
 def make_gather_fn(mesh):
     jax_gather_fn = jax.jit(
         lambda x: x,
-        out_shardings=jax.NamedSharding(mesh, PartitionSpec()),
+        out_shardings=jax.NamedSharding(mesh, PartitionSpec("fsdp")),
     )
     return lambda tensor: jax.device_get(jax_gather_fn(tensor))
 

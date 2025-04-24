@@ -65,28 +65,6 @@ def get_item(j, dataset):
 
 def collate_fn(batch):
 
-    # def check_shapes(key, tensors):
-    #     shapes = [x.shape for x in tensors]
-    #     first_shape = shapes[0]
-    #     for i, shape in enumerate(shapes):
-    #         if shape != first_shape:
-    #             print(f"Shape mismatch in '{key}' at batch index {i}: got {shape}, expected {first_shape}")
-    #     return shapes
-
-    # # Check observation shapes
-    # for key in ["image_front", "image_goal", "gps_goal"]:
-    #     check_shapes(f"observation/{key}", [b["observation"][key] for b in batch])
-
-    # # Check action shapes
-    # check_shapes("action", [b["action"] for b in batch])
-
-    # # Check pad_mask_dict shapes
-    # for key in ["image_front", "image_goal", "gps_goal"]:
-    #     check_shapes(f"observation/pad_mask_dict/{key}", [
-    #         b["observation"]["pad_mask_dict"][key] for b in batch
-    #     ])
-    # check_shapes("pad_mask_dict/action", [b["pad_mask_dict"]["action"] for b in batch])
-
     return {
         "observation": {
             "image_front": np.stack(
@@ -254,50 +232,6 @@ def main(_):
 
     def make_training_batch(batch):
         return batch
-        # sensors = {
-        #     k: batch["observation"][k]
-        #     for k in batch["observation"]
-        #     if k in model.model_state.model.modality_mappings and k != "text"
-        # }
-        # sensors_mask = {
-        #     k: np.squeeze(batch["observation"]["pad_mask_dict"][k], axis=-1)
-        #     for k in model.model_state.model.modality_mappings
-        #     if k != "text"
-        # }
-
-        # tokens = jax.device_get(model.tokenize_action(batch["action"], None))
-        # tokens = np.concatenate(
-        #     [np.zeros((tokens.shape[0], 1), dtype=tokens.dtype), tokens], axis=-1
-        # )
-        # tokens_ar = np.ones_like(tokens)
-        # tokens_mask = np.ones_like(tokens)
-        # tokens_loss = np.ones_like(tokens)
-
-        # # Start of generation
-        # gen_start = np.ones((tokens.shape[0],), dtype=np.int32)
-
-        # # print("Tokens")
-        # # print(np.where(tokens_loss, tokens, -1)[0])
-        # # print(tokens[0])
-        # # breakpoint()
-
-
-        # return mesh.local_data_to_global_array(
-        #     TrainingBatch(
-        #         sensors=sensors,
-        #         sensors_mask=sensors_mask,
-        #         actions=batch["action"],
-        #         actions_mask=batch["pad_mask_dict"]["action"],
-        #         tokens=tokens,
-        #         tokens_ar=tokens_ar,
-        #         tokens_loss=tokens_loss,
-        #         tokens_mask=tokens_mask,
-        #         gen_start=gen_start,
-        #     )
-        # )
-    
-    # train_ds.item_transform = make_frame_transform(generation=False, tokenizer=model.tokenizer)
-    # frame_transform = make_frame_transform(generation=False, tokenizer=model.tokenizer)
 
     def _collate_fn(batch):
         b0 = batch[0]
@@ -310,35 +244,18 @@ def main(_):
 
         raise ValueError(f"Unknown batch type: {type(batch)}")
 
-    # breakpoint()
     train_loader = DataLoader(
         train_ds,
         batch_size=config.batch_size,
-        # sampler=train_ds.get_sampler(),
         shuffle = True,
         num_workers = 0,
-        # num_workers=128,
         collate_fn=collate_fn,
-        # multiprocessing_context='forkserver', # don't fork - jax gets mad 
     )
-    # breakpoint()
-    # print("Making train it ")
-    # train_it = map(make_training_batch, iter(train_loader))
-
-    # print("Dataset iterator set up")
 
 
     # Construct the final dataset
     # We need to do this after the model is constructed, since we need to have a tokenizer
     per_host_train_batch_size = config.batch_size // jax.process_count()
-
-    # def make_training_batch(batch):
-    #     return batch
-
-    # train_it = map(
-    #     make_training_batch,
-    #     train_ds.batch(per_host_train_batch_size).iterator(),
-    # )
 
     # W&B setup
     if jax.process_index() == 0:
@@ -370,19 +287,6 @@ def main(_):
     # Main training loop
     start_step = model.train_state.step.item()
 
-    # if config.overfit_dataset:
-    #     batch = next(train_it)
-
-    # with tqdm.trange(
-    #     start_step, config.num_steps, desc="Training", dynamic_ncols=True
-    # ) as pbar:
-    #     for i in pbar:
-
-    # num_batches = len(train_loader)
-    # print("num batches is", num_batches)
-
-    # breakpoint()
-
     tqdm_iter = tqdm.tqdm(
         train_loader,
         disable = False,
@@ -391,31 +295,9 @@ def main(_):
     )
     for i, batch in enumerate(tqdm_iter):
 
-        # for i in tqdm.tqdm(range(len(train_ds) // config.batch_size)): 
-
-        #     if not config.overfit_dataset:
-        #         batch = next(train_it)
-        
-
-
-        # with mp.get_context("forkserver").Pool(processes=32) as pool:  # or whatever number of processes makes sense
-        #     batch = list(tqdm.tqdm(pool.imap(partial_get_item, idxs[i * config.batch_size:(i + 1) * config.batch_size]), 
-        #                     total=config.batch_size, 
-        #                     desc="Loading batch"))
-
-
-        # batch = [train_ds[j] for j in tqdm.tqdm(idxs[i * config.batch_size:(i + 1) * config.batch_size], desc="Loading batch")]
-
-        # # batch = [train_ds[j] for j in idxs[i* config.batch_size:(i+1)* config.batch_size]]
-        # batch = collate_fn(batch)
-        # batch["action"] = batch["action"][:, np.newaxis, :, :] # to work with sequence generator 
-
         info = model.train_step(batch)
         info = jax.device_get(info)
         wandb_logs.append(info)
-        # pbar.set_postfix(
-        #     loss=f"{info['loss']:.4f}",
-        # )
 
         if (i + 1) % config.eval_interval == 0:
             eval_info = model.eval_step(batch)
