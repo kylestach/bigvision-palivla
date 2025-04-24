@@ -100,6 +100,7 @@ def decode_video_frames_torchvision(
     # TODO(rcadene): also load audio stream at the same time
     client = storage.Client()
     bucket = client.bucket("frodo-bucket-c2")
+    video_path = video_path.split("frodo-bucket-c2/")[-1]
     blob = bucket.blob(video_path)
     os.makedirs("~/videos", exist_ok=True)
     local_video_path = Path("~/videos") / video_path.split("/")[-1]
