@@ -58,5 +58,6 @@ echo "Launching Script"
 gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME --zone=us-central2-b --command="cd ~/bigvision-palivla &&
                                                                                   source ~/.local/bin/env &&
                                                                                   source .venv/bin/activate &&
+                                                                                  uv pip install 'zarr<3' &&
                                                                                   uv run wandb login $API_KEY &&
                                                                                   python scripts/train_frodo.py --config configs/frodo_config.py"
