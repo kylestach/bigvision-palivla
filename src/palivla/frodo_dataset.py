@@ -421,22 +421,10 @@ class FrodoDataset:
         fs = gcsfs.GCSFileSystem(project="rail-tpus")
         gcs_dir = "frodo-bucket-c2/frodobots_v2_export/frodobots_dataset/dataset_cache.zarr"
 
-        folders = fs.ls(gcs_dir)
-        self.dataset_cache = {}
-        for folder in folders:
-            folder_name = folder.split("/")[-1]
-            if folder_name == ".zgroup":
-                continue
-            ts_spec = {
-                "driver": "zarr",
-                "kvstore": {
-                    "driver": "gcs",
-                    "bucket": "frodo-bucket-c2",
-                    "path": f"frodobots_v2_export/frodobots_dataset/dataset_cache.zarr/{folder_name}",
-                }
-            }
-            subcache = ts.open(ts_spec).result()
-            self.dataset_cache[folder] = subcache
+        store = gcsfs.GCSMap(gs_dir, gcs=fs, check=False)
+        self.dataset_cache = zarr.open(store, mode="r")
+
+        breakpoint()
         
         ep_from = []
         ep_to = []
