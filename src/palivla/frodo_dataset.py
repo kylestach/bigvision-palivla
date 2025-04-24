@@ -421,7 +421,7 @@ class FrodoDataset:
         fs = gcsfs.GCSFileSystem(project="rail-tpus")
         gcs_dir = "frodo-bucket-c2/frodobots_v2_export/frodobots_dataset/dataset_cache.zarr"
 
-        store = gcsfs.GCSMap(gs_dir, gcs=fs, check=False)
+        store = gcsfs.GCSMap(gcs_dir, gcs=fs, check=False)
         self.dataset_cache = zarr.open(store, mode="r")
 
         breakpoint()
