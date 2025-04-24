@@ -418,18 +418,23 @@ class FrodoDataset:
         #         "action": [i * self.dt for i in range(action_spacing * action_horizon)],
         #     },
         # )
-        ts_spec = {
-            "driver": "zarr",
-            "kvstore": {
-                "driver": "gcs",
-                "bucket": "rail-tpus",
-                "path": "frodo-bucket-c2/frodobots_v2_export/frodobots_dataset/dataset_cache.zarr",
+        fs = gcsfs.GCSFileSystem()
+        gcs_dir = "rail-tpus/frodo-bucket-c2/frodobots_v2_export/frodobots_dataset/dataset_cache.zarr"
+
+        folders = fs.ls(gcs_dir)
+        self.dataset_cache = {}
+        for folder in folders:
+            breakpoint()
+            ts_spec = {
+                "driver": "zarr",
+                "kvstore": {
+                    "driver": "gcs",
+                    "bucket": "rail-tpus",
+                    "path": f"frodo-bucket-c2/frodobots_v2_export/frodobots_dataset/dataset_cache.zarr/{folder}",
+                }
             }
-        }
-        self.dataset_cache = ts.open(ts_spec).result()
-        self.dataset_cache = {
-            k: np.asarray(self.dataset_cache[k]) for k in self.dataset_cache.keys()
-        }
+            subcache = ts.open(ts_spec).result()
+            self.dataset_cache[folder] = subcache
         
         ep_from = []
         ep_to = []
