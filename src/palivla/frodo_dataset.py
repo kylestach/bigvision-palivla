@@ -419,8 +419,8 @@ class FrodoDataset:
         # )
         bucket = "frodo-bucket-c2"
         fs = gcsfs.GCSFileSystem(project="rail-tpus", token="anon", access="read_only")
-        store = zarr.N5FSStore(url=bucket, fs=fs)
-        self.dataset_cache = zarr.open_array(store, path="frodobots_v2_export/dataset_cache.zarr", mode="r")
+        store = fs.get_mapper(f"{bukcet}/frodobots_v2_export/dataset_cache.zarr")
+        self.dataset_cache = zarr.open(store, mode="r")
         self.dataset_cache = {
             k: np.asarray(self.dataset_cache[k]) for k in self.dataset_cache.keys()
         }
