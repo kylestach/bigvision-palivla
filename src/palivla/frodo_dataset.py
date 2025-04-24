@@ -102,9 +102,10 @@ def decode_video_frames_torchvision(
     bucket = client.bucket("frodo-bucket-c2")
     video_path = video_path.split("frodo-bucket-c2/")[-1]
     blob = bucket.blob(video_path)
-    os.makedirs("~/videos", exist_ok=True)
+    local_folder = os.path.expanduser("~/videos")
+    os.makedirs(local_folder, exist_ok=True)
     breakpoint()
-    local_video_path = os.path.expanduser(f"~/videos/{video_path.split('/')[-1]}")
+    local_video_path = os.path.expanduser(f"{local_folder}/{video_path.split('/')[-1]}")
     blob.download_to_filename(local_video_path)
     reader = torchvision.io.VideoReader(local_video_path, "video")
 
