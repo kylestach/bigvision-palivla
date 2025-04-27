@@ -3,35 +3,36 @@ name = "big-vision"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = "==3.11.12"
 dependencies = [
     "big-vision",
     "chex>=0.1.86",
     "distrax>=0.1.5",
     "dlimp@git+https://github.com/kvablack/dlimp.git",
     "einops>=0.8.0",
-    "flax>=0.9.0",
+    "flax==0.9.0",
     "ipykernel",
-    "jax>=0.4.34",
+    "jax==0.4.34",
     "matplotlib>=3.9.2",
     "ml-collections>=0.1.1",
     "numpy<2.0.0",
     "octo",
     "optax>=0.2.3",
-    "orbax-checkpoint>=0.7.0",
+    "orbax-checkpoint==0.7.0",
     "overrides>=7.7.0",
     "pip",
     "scalax>=0.2.4",
     "scikit-learn>=1.5.2",
     "scipy>=1.14.1",
     "tfds-nightly>=4.9.0",
-    "tensorflow-text-nightly>=2.15.0",
-    "tf-nightly>=2.15.0",
+    "tensorflow-text-nightly==2.19.0.dev20250210",
+    "tf-nightly==2.19.0.dev20250210",
     "wandb>=0.18.3",
     "protobuf>=3.20",
     "huggingface-hub>=0.27.0",
     "transformers>=4.47.1",
     "prettytable>=3.12.0",
+    "zarr<3",
 ]
 
 [project.optional-dependencies]
@@ -42,6 +43,8 @@ tpu = [
 gpu = [
     "jax[cuda12]==0.4.34"
 ]
+
+
 
 [tool.uv]
 find-links = ["https://storage.googleapis.com/jax-releases/libtpu_releases.html"]
@@ -75,3 +78,5 @@ allow-direct-references = true
 [tool.uv.sources]
 big-vision = { workspace = true }
 octo = { path = "octo", editable = true }
+
+
