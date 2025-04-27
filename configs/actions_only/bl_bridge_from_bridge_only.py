@@ -8,14 +8,13 @@ MAX_CHUNK_SIZE = 4
 def get_config(variant_config: str = "default"):
     config = get_base_config(variant_config)
     
-    config["resume_checkpoint_dir"] = "gs://multi-robot-bucket3/runs/vla/constant_lr_reasonings_only_25042025_025425"
+    config["resume_checkpoint_dir"] = "gs://multi-robot-bucket3/runs/vla/bl_bridge_reasonings_only_26042025_041714"
     config["resume_checkpoint_step"] = 30000
 
     # learning rate
     config['optimizer']['kwargs']['llm_optimizer_kwargs'] = {
         "learning_rate": 5e-5,
         "schedule_type": "warmup_constant",
-
     }
     config['optimizer']['kwargs']['embed_optimizer_kwargs'] = config['optimizer']['kwargs']['llm_optimizer_kwargs']
     config['optimizer']['kwargs']['img_optimizer_kwargs'] = config['optimizer']['kwargs']['llm_optimizer_kwargs']
