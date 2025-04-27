@@ -315,3 +315,21 @@ class ModelComponents:
             )
         else:
             return actions, actions_mask
+
+    def load_params(self, step: int, checkpoint_manager: ocp.CheckpointManager):
+        """
+        Loads the model state from a checkpoint but keeps the current optimizer state.
+        This preserves all model variables while using fresh optimizer states.
+        """
+        # Create a temporary state for loading
+        tmp_state = checkpoint_manager.restore(step, args=ocp.args.StandardRestore(self.train_state))
+        
+        # Keep all state variables except optimizer state
+        new_state = self.train_state.replace(
+            step=tmp_state.step,
+            params=tmp_state.params,
+            # Keep current optimizer state
+            opt_state=self.train_state.opt_state
+        )
+        
+        return self.replace(train_state=new_state)

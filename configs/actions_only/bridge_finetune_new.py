@@ -13,7 +13,7 @@ def get_config(variant_config: str = "default"):
     config["num_steps"] = 200000
     # learning rate
     config['optimizer']['kwargs']['llm_optimizer_kwargs'] = {
-        "learning_rate": 5e-5,
+        "learning_rate": 1e-5,
         "schedule_type": "warmup_constant",
 
     }
