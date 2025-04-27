@@ -325,11 +325,9 @@ class ModelComponents:
         tmp_state = checkpoint_manager.restore(step, args=ocp.args.StandardRestore(self.train_state))
         
         # Keep all state variables except optimizer state
-        new_state = self.train_state.replace(
+        self.train_state.replace(
             step=tmp_state.step,
             params=tmp_state.params,
             # Keep current optimizer state
             opt_state=self.train_state.opt_state
         )
-        
-        return self.replace(train_state=new_state)
