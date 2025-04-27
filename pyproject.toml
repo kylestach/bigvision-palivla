@@ -38,7 +38,7 @@ dependencies = [
 [project.optional-dependencies]
 tpu = [
     "jax[tpu]>=0.4.34",
-    "libtpu-nightly",
+    "libtpu-nightly==0.1.dev20241002+nightly",
 ]
 gpu = [
     "jax[cuda12]==0.4.34"
