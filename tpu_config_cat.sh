@@ -11,7 +11,7 @@ sudo tar -xvzf ngrok-v3-stable-linux-amd64.tgz -C /usr/local/bin
 # Need to set token for ngrok
 curl -LsSf https://astral.sh/uv/install.sh | sh
 source ~/.local/bin/env
-git clone git@github.com:catglossop/bigvision-palivla.git --recursive
+git clone git@github.com:kylestach/bigvision-palivla.git --recursive
 cd ~/bigvision-palivla
 git checkout bridge_test
 git pull
