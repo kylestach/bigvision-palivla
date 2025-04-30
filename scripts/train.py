@@ -177,7 +177,9 @@ def main(_):
         restore_manager = ocp.CheckpointManager(
             config.resume_checkpoint_dir, options=ocp.CheckpointManagerOptions()
         )
-        model.load_state(config.resume_checkpoint_step, restore_manager)
+        #model.load_state(config.resume_checkpoint_step, restore_manager)
+        model.load_params(config.resume_checkpoint_step, restore_manager)
+
 
     # Make the basic dataset
     # We have to do this first, since we need to know how the dataset is set up before we can construct the model
