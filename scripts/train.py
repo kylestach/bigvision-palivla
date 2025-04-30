@@ -66,13 +66,16 @@ def create_model(config: ConfigDict, sharding_metadata: ShardingMetadata):
         )
     
     # Add mask for proprio sensor if it's being loaded
+    # Add mask for proprio sensor if it's being loaded
     if config.dataset_kwargs.oxe_kwargs.load_proprio:
-        example_batch_sensors["proprio_bimanual"] = jax.ShapeDtypeStruct(
-            shape=(1, 14), dtype=jnp.float32
-        )
-        example_batch_sensors_mask["proprio_bimanual"] = jax.ShapeDtypeStruct(
-            shape=(1, 14), dtype=jnp.bool_
-        )
+        proprio_keys = ['proprio_bimanual', 'proprio_franka']
+        for proprio_key in proprio_keys:
+            example_batch_sensors[proprio_key] = jax.ShapeDtypeStruct(
+                shape=(1, 14), dtype=jnp.float32
+            )
+            example_batch_sensors_mask[proprio_key] = jax.ShapeDtypeStruct(
+                shape=(1, 14), dtype=jnp.bool_
+            )
 
     example_batch = {
         "sensors": example_batch_sensors,

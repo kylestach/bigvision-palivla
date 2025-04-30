@@ -22,11 +22,15 @@ def get_config(variant_config: str = "default"):
         'aloha_spoons_in_bowls_dataset': False,
         'aloha_long_horizon_dataset': False,
         'aloha_pick_place_full_dataset': False,
+        'aloha_bread_dataset': False,
         'ego4d_hamer': False,
         'libero_90': False,
+        'fractal20220817_data': False,
+        'droid_dataset': False,
+        'aria_dataset': False,
     }
 
-    config["dataset_kwargs"]["oxe_kwargs"]["data_mix"] = "all_mix"
+    config["dataset_kwargs"]["oxe_kwargs"]["data_mix"] = "cotraining_mix"
     config["dataset_kwargs"]["oxe_kwargs"]["load_camera_views"] = ["primary"] # intentionally just using high view, even for aloha (no proprio)
 
     config["dataset_kwargs"]["traj_transform_kwargs"] = {
@@ -39,7 +43,7 @@ def get_config(variant_config: str = "default"):
         "max_action_dim": SINGLE_ARM_ACTION_DIM,
     }
 
-    config["dataset_kwargs"]["traj_read_threads"] = 6
+    config["dataset_kwargs"]["traj_read_threads"] = 10
 
     # learning rate
     config['optimizer']['kwargs']['llm_optimizer_kwargs'] = {
@@ -90,7 +94,13 @@ def get_config(variant_config: str = "default"):
         
         config['visualization_datasets']['hard_bridge_eval'] = config['visualization_datasets']['bridge'].copy()
         config['visualization_datasets']['hard_bridge_eval']['name'] = "hard_bridge_eval" # we don't wanna use reasonings for this one 
-        
+
+        config['visualization_datasets']['fractal20220817_data'] = config['visualization_datasets']['bridge'].copy()
+        config['visualization_datasets']['fractal20220817_data']['name'] = "fractal20220817_data"
+
+        config['visualization_datasets']['droid_dataset'] = config['visualization_datasets']['bridge'].copy()
+        config['visualization_datasets']['droid_dataset']['name'] = "droid_dataset"
+
         for k, v in config["visualization_datasets"].items():
             if k != "hard_bridge_eval":
                 v["use_cot"] = True
