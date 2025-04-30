@@ -232,13 +232,25 @@ class ModelComponents:
         # Get dataset names for each sample
         dataset_names = batch.get('dataset_name', None)
         if dataset_names is not None:
-            # Convert dataset names to numpy array and decode bytes to strings if needed
-            dataset_names = np.array([name.decode() if isinstance(name, bytes) else name for name in dataset_names])
-            unique_datasets = np.unique(dataset_names)
+            # Since dataset names are non-numeric, we need to handle them differently
+            # First, convert to a format that can be gathered
+            if isinstance(dataset_names[0], bytes):
+                dataset_names = np.array([name.decode() if isinstance(name, bytes) else name for name in dataset_names])
+            
+            # Create a numeric representation of the dataset names for gathering
+            unique_names = np.unique(dataset_names)
+            name_to_idx = {name: i for i, name in enumerate(unique_names)}
+            numeric_names = np.array([name_to_idx[name] for name in dataset_names])
+            
+            # Gather the numeric representation
+            gathered_numeric = self.data_gather_fn(self.sharding.mesh.local_data_to_global_array(numeric_names))
+            
+            # Convert back to original names
+            gathered_names = np.array([unique_names[idx] for idx in gathered_numeric])
             
             # Compute metrics for each dataset
-            for dataset in unique_datasets:
-                dataset_mask = dataset_names == dataset
+            for dataset in np.unique(gathered_names):
+                dataset_mask = gathered_names == dataset
                 if np.any(dataset_mask):
                     # Action metrics
                     dataset_actions = gt_actions[dataset_mask]
