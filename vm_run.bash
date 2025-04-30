@@ -1,3 +1,4 @@
+#!/bin/bash
 uv run --prerelease=allow python scripts/train.py --config /nfs/nfs2/users/oiermees/bigvision-palivla/configs/actions_only/bridge_finetune_new.py \
 	--config.eval_interval 10 \
 	--config.cot_path gs://multi-robot-bucket2/data/generated_data \
@@ -11,4 +12,4 @@ uv run --prerelease=allow python scripts/train.py --config /nfs/nfs2/users/oierm
 
 # --config.cot_path gs://multi-robot-bucket2/data/generated_data \
 
-	
+
