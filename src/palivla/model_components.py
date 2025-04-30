@@ -181,51 +181,95 @@ class ModelComponents:
         return info
 
     def eval_step(self, batch):
-
-        # gt_actions = batch["action"][:, -1, :, :] # (batch, max_chunk_size, dimension)
-
-        # predicted_actions, actions_mask, tokens = self.predict(
-        #     batch, action_dim=gt_actions.shape[-1], return_tokens=True,
-        # )
-
-        # gt_actions = self.data_gather_fn(self.sharding.mesh.local_data_to_global_array(gt_actions))
-        # predicted_actions = np.nan_to_num(predicted_actions)
-
-        gt_actions = batch["action"][:, -1, :, :] # (batch, max_chunk_size, dimension)
-
+        gt_actions = batch["action"][:, -1, :, :]  # (batch, max_chunk_size, dimension)
         predicted_actions, actions_mask, tokens = self.predict(
             batch, action_dim=gt_actions.shape[-1], return_tokens=True,
         )
 
         gt_actions = self.data_gather_fn(self.sharding.mesh.local_data_to_global_array(gt_actions))
-
-        # look at whether we've used actions for each sample in batch
         gt_use_actions = batch['use_actions']
         gt_use_actions = self.data_gather_fn(self.sharding.mesh.local_data_to_global_array(gt_use_actions))
-
         predicted_actions = np.nan_to_num(predicted_actions)
 
-        # what we really should be doing here is just taking the metrics wrt the datasets that do use actions
+        # Get metrics for datasets that use actions
         gt_actions_real = np.array([ac for use, ac in zip(gt_use_actions, gt_actions) if use])
         predicted_actions_real = np.array([ac for use, ac in zip(gt_use_actions, predicted_actions) if use])
         actions_mask_real = np.array([mask for use, mask in zip(gt_use_actions, actions_mask) if use])
 
-        return {
-            # "gen_valid_pct": actions_mask.mean(), # okay this should be CLOSE to zero since we're padding 4--> 50, but not exactly 0? 
-            "gen_l2": np.mean(np.square(predicted_actions - gt_actions) * actions_mask)
-            / actions_mask.mean(),
-            "gen_l1": np.mean(np.abs(predicted_actions - gt_actions) * actions_mask)
-            / actions_mask.mean(),
-            # add metrics specifically only for datasets that use actions 
-            "gen_l2_for_datasets_using_actions": np.mean(np.square(predicted_actions_real - gt_actions_real) * actions_mask_real)
-            / actions_mask_real.mean(),
-            "gen_l1_for_datasets_using_actions": np.mean(np.abs(predicted_actions_real - gt_actions_real) * actions_mask_real)
-            / actions_mask_real.mean(),
-            "gen_acc": np.mean(
-                (tokens["predicted"] == tokens["target"]) * tokens["mask"]
-            )
-            / tokens["mask"].mean(),
+        # Get action token IDs from the tokenizer
+        action_token_start = self.language_tokenizer.convert_tokens_to_ids("<begin_of_action>")
+        
+        # Convert token IDs back to strings for comparison
+        token_strings = np.array([self.language_tokenizer.convert_ids_to_tokens(int(token_id)) for token_id in tokens["target"].flatten()]).reshape(tokens["target"].shape)
+        
+        # Create masks for action and representation tokens
+        # Check for both <begin_of_action> and <act tokens
+        is_action_token = np.array([token == "<begin_of_action>" or token.startswith("<act") for token in token_strings.flatten()]).reshape(token_strings.shape)
+        is_special_token = np.array([token == "<pad>" or token == "<eos>" for token in token_strings.flatten()]).reshape(token_strings.shape)
+        is_rep_token = ~(is_action_token | is_special_token)
+        
+        # Convert boolean masks to float32 for JAX compatibility
+        action_token_mask = (tokens["mask"].astype(np.float32) * is_action_token.astype(np.float32))
+        rep_token_mask = (tokens["mask"].astype(np.float32) * is_rep_token.astype(np.float32))
+        total_token_mask = tokens["mask"].astype(np.float32)
+        
+        # Compute accuracy separately for action and representation tokens
+        action_acc = np.mean((tokens["predicted"] == tokens["target"]) * action_token_mask) / np.mean(action_token_mask) if np.mean(action_token_mask) > 0 else 0.0
+        rep_acc = np.mean((tokens["predicted"] == tokens["target"]) * rep_token_mask) / np.mean(rep_token_mask) if np.mean(rep_token_mask) > 0 else 0.0
+        total_acc = np.mean((tokens["predicted"] == tokens["target"]) * total_token_mask) / np.mean(total_token_mask) if np.mean(total_token_mask) > 0 else 0.0
+
+        # Initialize metrics dictionary with global metrics
+        metrics = {
+            "gen_l2": np.mean(np.square(predicted_actions - gt_actions) * actions_mask) / np.mean(actions_mask),
+            "gen_l1": np.mean(np.abs(predicted_actions - gt_actions) * actions_mask) / np.mean(actions_mask),
+            "gen_acc": total_acc,
+            "gen_acc_actions": action_acc,
+            "gen_acc_representations": rep_acc,
+            "gen_l2_for_datasets_using_actions": np.mean(np.square(predicted_actions_real - gt_actions_real) * actions_mask_real) / np.mean(actions_mask_real),
+            "gen_l1_for_datasets_using_actions": np.mean(np.abs(predicted_actions_real - gt_actions_real) * actions_mask_real) / np.mean(actions_mask_real),
         }
+
+        # Get dataset names for each sample
+        dataset_names = batch.get('dataset_name', None)
+        if dataset_names is not None:
+            # Convert dataset names to numpy array and decode bytes to strings if needed
+            dataset_names = np.array([name.decode() if isinstance(name, bytes) else name for name in dataset_names])
+            unique_datasets = np.unique(dataset_names)
+            
+            # Compute metrics for each dataset
+            for dataset in unique_datasets:
+                dataset_mask = dataset_names == dataset
+                if np.any(dataset_mask):
+                    # Action metrics
+                    dataset_actions = gt_actions[dataset_mask]
+                    dataset_preds = predicted_actions[dataset_mask]
+                    dataset_action_mask = actions_mask[dataset_mask].astype(np.float32)
+                    
+                    # Token metrics
+                    dataset_tokens = {
+                        "predicted": tokens["predicted"][dataset_mask],
+                        "target": tokens["target"][dataset_mask],
+                        "mask": tokens["mask"][dataset_mask].astype(np.float32)
+                    }
+                    dataset_is_action = is_action_token[dataset_mask].astype(np.float32)
+                    dataset_is_rep = is_rep_token[dataset_mask].astype(np.float32)
+                    
+                    dataset_action_token_mask = dataset_tokens["mask"] * dataset_is_action
+                    dataset_rep_token_mask = dataset_tokens["mask"] * dataset_is_rep
+                    
+                    dataset_action_acc = np.mean((dataset_tokens["predicted"] == dataset_tokens["target"]) * dataset_action_token_mask) / np.mean(dataset_action_token_mask) if np.mean(dataset_action_token_mask) > 0 else 0.0
+                    dataset_rep_acc = np.mean((dataset_tokens["predicted"] == dataset_tokens["target"]) * dataset_rep_token_mask) / np.mean(dataset_rep_token_mask) if np.mean(dataset_rep_token_mask) > 0 else 0.0
+                    dataset_total_acc = np.mean((dataset_tokens["predicted"] == dataset_tokens["target"]) * dataset_tokens["mask"]) / np.mean(dataset_tokens["mask"]) if np.mean(dataset_tokens["mask"]) > 0 else 0.0
+                    
+                    metrics.update({
+                        f"{dataset}_l2": np.mean(np.square(dataset_preds - dataset_actions) * dataset_action_mask) / np.mean(dataset_action_mask),
+                        f"{dataset}_l1": np.mean(np.abs(dataset_preds - dataset_actions) * dataset_action_mask) / np.mean(dataset_action_mask),
+                        f"{dataset}_acc": dataset_total_acc,
+                        f"{dataset}_acc_actions": dataset_action_acc,
+                        f"{dataset}_acc_representations": dataset_rep_acc,
+                    })
+
+        return metrics
 
     def build_sequence(self, batch: Any, begin_is_prompt: bool = True, include_action_tokens: bool = True):
         return self.sequence_builder.build_sequence(
@@ -315,3 +359,20 @@ class ModelComponents:
             )
         else:
             return actions, actions_mask
+
+    def load_params(self, step: int, checkpoint_manager: ocp.CheckpointManager):
+        """
+        Loads the model state from a checkpoint but keeps the current optimizer state.
+        This preserves all model variables while using fresh optimizer states.
+        """
+        # Create a temporary state for loading
+        tmp_state = checkpoint_manager.restore(step, args=ocp.args.StandardRestore(self.train_state))
+        
+        # Keep all state variables except optimizer state
+        new_state = self.train_state.replace(
+            step=tmp_state.step,
+            params=tmp_state.params,
+            # Keep current optimizer state
+            opt_state=self.train_state.opt_state
+        )
+        self.train_state = new_state
