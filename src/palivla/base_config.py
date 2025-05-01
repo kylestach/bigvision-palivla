@@ -59,9 +59,18 @@ def get_config(variant_config: str):
                 "optimizer": "adamw",
                 "num_train_steps": num_train_steps,
                 "base_learning_rate": 4e-5,
-                # "llm_optimizer_kwargs": {
-                #     "weight_decay": 0.0,
-                # },
+                "llm_optimizer_kwargs": {
+                   "learning_rate": 5e-5,
+                    "schedule_type": "warmup_constant",
+                },
+                "embed_optimizer_kwargs": {
+                    "learning_rate": 5e-5,
+                    "schedule_type": "warmup_constant",
+                },
+                "img_optimizer_kwargs": {
+                    "learning_rate": 5e-5,
+                    "schedule_type": "warmup_constant",
+                },
             },
         },
         # Dataset settings
@@ -95,7 +104,7 @@ def get_config(variant_config: str):
         },
         "viz_trajectories_per_dataset": 6,
         "visualization_datasets": {
-            "bridge": {
+            "bridge_dataset": {
                 "name": "bridge_dataset",
                 "data_dir": data_dir,
                 "load_camera_views": ["primary"],
@@ -111,10 +120,10 @@ def get_config(variant_config: str):
             },
         },
         "visualizations": {
-            "bridge_sanity_print": {
-                "dataset": "bridge",
-                "visualization": "viz.sanity_print",
-            },
+            # "bridge_dataset_sanity_print": {
+            #     "dataset": "bridge_dataset",
+            #     "visualization": "viz.sanity_print",
+            # },
         },
     }
 
