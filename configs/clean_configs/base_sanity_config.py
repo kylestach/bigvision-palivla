@@ -37,10 +37,7 @@ def get_config(variant_config: str = "default"):
 
     # modality mappings 
     config["model_config"]["num_proprio_tokens"] = MAX_PROPRIO_DIM
-    config["model_config"]["modality_mappings"] =  (
-        {f"image_{k}": "img" for k in IMAGE_KEYS} |
-        {f"proprio_{k}": "proprio" for k in PROPRIO_KEYS}
-    )
+     # create the target order of your modalities
     config["model_config"]["target_key_order"] = (
         tuple(f"proprio_{k}" for k in PROPRIO_KEYS) +
         tuple(f"image_{k}" for k in IMAGE_KEYS)

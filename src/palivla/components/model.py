@@ -28,7 +28,13 @@ def get_default_config():
             "config": {"variant": "So400m/14", "pool_type": "none", "scan": True},
         },
         "encoder_specs": {},
-        "modality_mappings": {"image_primary": "img"},
+        "modality_mappings": {
+            "image_primary": "img",
+            "image_left_wrist": "img",
+            "image_right_wrist": "img",
+            "proprio_bimanual": "proprio",
+            "proprio_franka": "proprio",
+        },
         "prompt_autoregressive": False,
         "target_key_order": ("image_primary",),
         "num_proprio_tokens": 0,
@@ -156,6 +162,9 @@ class PaliVLAModel(nn.Module):
         info = {}
 
         for modality, encoder_name in self.modality_mappings.items():
+            if modality not in data:
+                continue # skip modalities that are not present in the data
+
             # Embed the data
             encoder = self.encoders[encoder_name]
 
@@ -197,7 +206,6 @@ class PaliVLAModel(nn.Module):
         batch_size = jax.tree.leaves(data)[0].shape[0]
         embed_dim = self.llm.embdim
         chex.assert_shape(list(embeds.values()), (batch_size, None, embed_dim))
-
         return embeds, embed_masks, info
 
     def embed_sensors(
@@ -211,12 +219,17 @@ class PaliVLAModel(nn.Module):
             sensors, sensors_mask, train=train
         )
 
+        # jax.debug.print("left mask: {}, right mask: {}", sensors_masks["image_left_wrist"][0], sensors_masks["image_right_wrist"][0])
+
         packed_embeds, packed_masks = jax.vmap(
             partial(collect_embeddings, target_key_order=self.target_key_order)
         )(
             sensors_embeds,
             sensors_masks,
         )
+
+        # jax.debug.print("masks: {}", packed_masks[0])
+        # jax.debug.print("values: {}", packed_embeds[0, :, 0])
 
         return packed_embeds, packed_masks, info
 
@@ -271,6 +284,7 @@ class PaliVLAModel(nn.Module):
         embeds, masks, masks_ar, info, prompt_end = self.embed_sensors_and_text(
             sensors, sensors_mask, prompt_seq, gen_seq, train=train
         )
+        jax.debug.print("prompt_end: {}", prompt_end)
 
         positions = jnp.cumsum(masks, axis=1) - 1
         attn_mask = make_attn_mask(masks, masks_ar)
