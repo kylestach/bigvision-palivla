@@ -1,30 +1,29 @@
 from ml_collections import ConfigDict, FieldReference
 from palivla.base_config import get_config as get_base_config
+from palivla.base_config import LEARNING_RATES as LRATES
 
 MAX_ACTION_DIM = 7
 MAX_CHUNK_SIZE = 4
 MAX_PROPRIO_DIM = 14 # testing proprio padding 
 
-USE_COT = False
-LR = 5e-5
+USE_COT = True
+LR = LRATES['cot_action_finetuning']
 
 IMAGE_KEYS = ["primary"] # in the order you want them to appear in the sequence
 PROPRIO_KEYS = [] # in the order you want them to appear in the sequence
 
-DATA_MIX = "bridge_fractal"
+DATA_MIX = "bridge"
 USE_ACTIONS_DCT = {
-    "fractal20220817_data": True,
     "bridge_dataset": True,
 }
 
 VISUALIZATIONS = {
-    "fractal20220817_data": ['sanity_print'],
-    "bridge_dataset": ['sanity_print'],
+    "bridge_dataset": ['sanity_print', 'chain_of_thought'],
 }
 
 RESTORE = {
-    'path': None,
-    'step': None
+    'path': 'lrfix_bridge_reasonings_07052025_011938',
+    'step': 25000
 }
 
 ####################################################################################

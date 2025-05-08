@@ -3,6 +3,11 @@ from ml_collections.config_dict import placeholder, ConfigDict, FieldReference
 
 from palivla.components.model import get_default_config
 
+LEARNING_RATES = {
+    'reasoning_only': 5e-5,
+    'cot_action_finetuning': 1e-5
+}
+
 
 def get_config(variant_config: str):
     num_train_steps = FieldReference(100000, int)
@@ -58,7 +63,7 @@ def get_config(variant_config: str):
             "kwargs": {
                 "optimizer": "adamw",
                 "num_train_steps": num_train_steps,
-                "base_learning_rate": 4e-5,
+                "base_learning_rate": 5e-5,
                 "llm_optimizer_kwargs": {
                    "learning_rate": 5e-5,
                     "schedule_type": "warmup_constant",

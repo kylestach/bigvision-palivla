@@ -1,30 +1,27 @@
 from ml_collections import ConfigDict, FieldReference
 from palivla.base_config import get_config as get_base_config
 
-MAX_ACTION_DIM = 7
-MAX_CHUNK_SIZE = 4
+MAX_ACTION_DIM = 8
+MAX_CHUNK_SIZE = 15
 MAX_PROPRIO_DIM = 14 # testing proprio padding 
 
-USE_COT = False
-LR = 5e-5
+USE_COT = True
 
 IMAGE_KEYS = ["primary"] # in the order you want them to appear in the sequence
-PROPRIO_KEYS = [] # in the order you want them to appear in the sequence
+PROPRIO_KEYS = ["franka"] # in the order you want them to appear in the sequence
 
-DATA_MIX = "bridge_fractal"
+DATA_MIX = "franka"
 USE_ACTIONS_DCT = {
-    "fractal20220817_data": True,
-    "bridge_dataset": True,
+    "droid_drawer_dataset": True,
 }
 
 VISUALIZATIONS = {
-    "fractal20220817_data": ['sanity_print'],
-    "bridge_dataset": ['sanity_print'],
+    "droid_drawer_dataset": ['sanity_print', 'chain_of_thought'],
 }
 
 RESTORE = {
-    'path': None,
-    'step': None
+    'path': 'all_reasonings_no_frankabowls_04052025_065946',
+    'step': 25000
 }
 
 ####################################################################################
@@ -48,7 +45,6 @@ def get_config(variant_config: str = "default"):
 
     # modality mappings 
     config["model_config"]["num_proprio_tokens"] = MAX_PROPRIO_DIM
-     # create the target order of your modalities
     config["model_config"]["target_key_order"] = (
         tuple(f"proprio_{k}" for k in PROPRIO_KEYS) +
         tuple(f"image_{k}" for k in IMAGE_KEYS)
@@ -77,12 +73,6 @@ def get_config(variant_config: str = "default"):
         "max_action_dim": MAX_ACTION_DIM,
         "max_proprio_dim": MAX_PROPRIO_DIM,
     }
-
-    # learning rate
-    config["optimizer"]["kwargs"]["base_learning_rate"] = LR
-    config["optimizer"]["kwargs"]["llm_optimizer_kwargs"]["learning_rate"] = LR
-    config["optimizer"]["kwargs"]["img_optimizer_kwargs"]["learning_rate"] = LR
-    config["optimizer"]["kwargs"]["embed_optimizer_kwargs"]["learning_rate"] = LR
 
     ####################################################################################
     # VISUALIZATIONS

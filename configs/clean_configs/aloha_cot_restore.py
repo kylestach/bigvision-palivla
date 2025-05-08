@@ -1,30 +1,27 @@
 from ml_collections import ConfigDict, FieldReference
 from palivla.base_config import get_config as get_base_config
 
-MAX_ACTION_DIM = 7
-MAX_CHUNK_SIZE = 4
+MAX_ACTION_DIM = 14
+MAX_CHUNK_SIZE =50
 MAX_PROPRIO_DIM = 14 # testing proprio padding 
 
-USE_COT = False
-LR = 5e-5
+USE_COT = True
 
-IMAGE_KEYS = ["primary"] # in the order you want them to appear in the sequence
-PROPRIO_KEYS = [] # in the order you want them to appear in the sequence
+IMAGE_KEYS = ["primary", "left_wrist", "right_wrist"] # in the order you want them to appear in the sequence
+PROPRIO_KEYS = ["bimanual"] # in the order you want them to appear in the sequence
 
-DATA_MIX = "bridge_fractal"
+DATA_MIX = "aloha_pp_mix"
 USE_ACTIONS_DCT = {
-    "fractal20220817_data": True,
-    "bridge_dataset": True,
+    "aloha_pick_place_full_dataset": True,
 }
 
 VISUALIZATIONS = {
-    "fractal20220817_data": ['sanity_print'],
-    "bridge_dataset": ['sanity_print'],
+    "aloha_pick_place_full_dataset": ['sanity_print', 'chain_of_thought'],
 }
 
 RESTORE = {
-    'path': None,
-    'step': None
+    'path': 'more_data_reasonings_only_29042025_200001',
+    'step': 97500
 }
 
 ####################################################################################
@@ -48,7 +45,6 @@ def get_config(variant_config: str = "default"):
 
     # modality mappings 
     config["model_config"]["num_proprio_tokens"] = MAX_PROPRIO_DIM
-     # create the target order of your modalities
     config["model_config"]["target_key_order"] = (
         tuple(f"proprio_{k}" for k in PROPRIO_KEYS) +
         tuple(f"image_{k}" for k in IMAGE_KEYS)
@@ -77,12 +73,6 @@ def get_config(variant_config: str = "default"):
         "max_action_dim": MAX_ACTION_DIM,
         "max_proprio_dim": MAX_PROPRIO_DIM,
     }
-
-    # learning rate
-    config["optimizer"]["kwargs"]["base_learning_rate"] = LR
-    config["optimizer"]["kwargs"]["llm_optimizer_kwargs"]["learning_rate"] = LR
-    config["optimizer"]["kwargs"]["img_optimizer_kwargs"]["learning_rate"] = LR
-    config["optimizer"]["kwargs"]["embed_optimizer_kwargs"]["learning_rate"] = LR
 
     ####################################################################################
     # VISUALIZATIONS

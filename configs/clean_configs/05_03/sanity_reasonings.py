@@ -1,30 +1,22 @@
 from ml_collections import ConfigDict, FieldReference
 from palivla.base_config import get_config as get_base_config
 
-MAX_ACTION_DIM = 7
-MAX_CHUNK_SIZE = 4
+MAX_ACTION_DIM = 14
+MAX_CHUNK_SIZE = 50 
 MAX_PROPRIO_DIM = 14 # testing proprio padding 
 
-USE_COT = False
-LR = 5e-5
+USE_COT = True
 
 IMAGE_KEYS = ["primary"] # in the order you want them to appear in the sequence
 PROPRIO_KEYS = [] # in the order you want them to appear in the sequence
 
-DATA_MIX = "bridge_fractal"
+DATA_MIX = "droid_drawer"
 USE_ACTIONS_DCT = {
-    "fractal20220817_data": True,
-    "bridge_dataset": True,
+    "droid_drawer_dataset": False,
 }
 
 VISUALIZATIONS = {
-    "fractal20220817_data": ['sanity_print'],
-    "bridge_dataset": ['sanity_print'],
-}
-
-RESTORE = {
-    'path': None,
-    'step': None
+    "droid_drawer_dataset": ['sanity_print', 'chain_of_thought'],
 }
 
 ####################################################################################
@@ -35,11 +27,6 @@ def get_config(variant_config: str = "default"):
 
     config["cot_path"] = FieldReference(None, str)
     config["dataset_kwargs"]["oxe_kwargs"]["use_cot"] = USE_COT
-
-    # restore from checkpoint
-    if RESTORE['path'] is not None:
-        config["resume_checkpoint_dir"] = f"gs://multi-robot-bucket3/runs/vla/{RESTORE['path']}"
-        config["resume_checkpoint_step"] = RESTORE['step']
 
     # dataset configs
     config["dataset_kwargs"]["oxe_kwargs"]["data_mix"] = DATA_MIX 
@@ -77,12 +64,6 @@ def get_config(variant_config: str = "default"):
         "max_action_dim": MAX_ACTION_DIM,
         "max_proprio_dim": MAX_PROPRIO_DIM,
     }
-
-    # learning rate
-    config["optimizer"]["kwargs"]["base_learning_rate"] = LR
-    config["optimizer"]["kwargs"]["llm_optimizer_kwargs"]["learning_rate"] = LR
-    config["optimizer"]["kwargs"]["img_optimizer_kwargs"]["learning_rate"] = LR
-    config["optimizer"]["kwargs"]["embed_optimizer_kwargs"]["learning_rate"] = LR
 
     ####################################################################################
     # VISUALIZATIONS
