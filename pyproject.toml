@@ -3,7 +3,7 @@ name = "big-vision"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.11,<3.12"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "big-vision",
     "chex>=0.1.86",
@@ -14,7 +14,7 @@ dependencies = [
     "ipykernel",
     "jax>=0.4.34",
     "matplotlib>=3.9.2",
-    "ml-collections==1.0.0",
+    "ml-collections>=0.1.1",
     "numpy==1.26.4",
     "octo",
     "optax>=0.2.3",
@@ -25,8 +25,8 @@ dependencies = [
     "scikit-learn>=1.5.2",
     "scipy>=1.14.1",
     "tfds-nightly>=4.9.0",
-    "tensorflow-text-nightly",
-    "tf-nightly==2.20.0.dev20250211",
+    "tensorflow-text-nightly==2.20.0.dev20250316",
+    "tf-nightly>=2.15.0",
     "wandb>=0.18.3",
     "protobuf==3.20.3",
     "huggingface-hub>=0.27.0",
