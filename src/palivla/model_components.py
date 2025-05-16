@@ -245,11 +245,12 @@ class ModelComponents:
             # Gather the numeric representation
             gathered_numeric = self.data_gather_fn(self.sharding.mesh.local_data_to_global_array(numeric_names))
             
-            # Convert back to original names
-            gathered_names = np.array([unique_names[idx] for idx in gathered_numeric])
+            # Get unique gathered indices and their corresponding names
+            unique_gathered_indices = np.unique(gathered_numeric)
+            gathered_names = np.array([unique_names[idx] for idx in unique_gathered_indices])
             
-            # Compute metrics for each dataset
-            for dataset in np.unique(gathered_names):
+            # Compute metrics for each dataset that is actually present in the batch
+            for dataset in gathered_names:
                 dataset_mask = gathered_names == dataset
                 if np.any(dataset_mask):
                     # Action metrics
