@@ -237,21 +237,22 @@ class ModelComponents:
             if isinstance(dataset_names[0], bytes):
                 dataset_names = np.array([name.decode() if isinstance(name, bytes) else name for name in dataset_names])
             
-            # Create a numeric representation of the dataset names for gathering
+            # Create a stable numeric encoding for dataset names
             unique_names = np.unique(dataset_names)
-            name_to_idx = {name: i for i, name in enumerate(unique_names)}
-            numeric_names = np.array([name_to_idx[name] for name in dataset_names])
+            # Use a hash function to create stable numeric IDs for each dataset name
+            name_to_id = {name: hash(name) % (2**31) for name in unique_names}  # Use 31 bits to avoid negative numbers
+            numeric_ids = np.array([name_to_id[name] for name in dataset_names])
             
-            # Gather the numeric representation
-            gathered_numeric = self.data_gather_fn(self.sharding.mesh.local_data_to_global_array(numeric_names))
+            # Gather the numeric IDs
+            gathered_ids = self.data_gather_fn(self.sharding.mesh.local_data_to_global_array(numeric_ids))
             
-            # Get unique gathered indices and their corresponding names
-            unique_gathered_indices = np.unique(gathered_numeric)
-            gathered_names = np.array([unique_names[idx] for idx in unique_gathered_indices])
+            # Create reverse mapping for gathered IDs
+            id_to_name = {v: k for k, v in name_to_id.items()}
             
-            # Compute metrics for each dataset that is actually present in the batch
-            for dataset in gathered_names:
-                dataset_mask = gathered_names == dataset
+            # Compute metrics for each unique dataset in the gathered batch
+            for dataset_id in np.unique(gathered_ids):
+                dataset = id_to_name[dataset_id]
+                dataset_mask = gathered_ids == dataset_id
                 if np.any(dataset_mask):
                     # Action metrics
                     dataset_actions = gt_actions[dataset_mask]
