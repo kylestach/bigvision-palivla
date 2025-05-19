@@ -10,7 +10,7 @@ dependencies = [
     "distrax>=0.1.5",
     "dlimp",
     "einops>=0.8.0",
-    "flax>=0.9.0",
+    "flax==0.10.2",
     "ipykernel",
     "jax>=0.4.34",
     "matplotlib>=3.9.2",
