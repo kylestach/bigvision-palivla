@@ -237,51 +237,52 @@ class ModelComponents:
             if isinstance(dataset_names[0], bytes):
                 dataset_names = np.array([name.decode() if isinstance(name, bytes) else name for name in dataset_names])
             
-            # Create a stable numeric encoding for dataset names
+            # Create a deterministic numeric encoding for dataset names
             unique_names = np.unique(dataset_names)
-            # Use a hash function to create stable numeric IDs for each dataset name
-            name_to_id = {name: hash(name) % (2**31) for name in unique_names}  # Use 31 bits to avoid negative numbers
+            # Use simple enumeration for stable numeric IDs
+            name_to_id = {name: i for i, name in enumerate(unique_names)}
             numeric_ids = np.array([name_to_id[name] for name in dataset_names])
             
             # Gather the numeric IDs
             gathered_ids = self.data_gather_fn(self.sharding.mesh.local_data_to_global_array(numeric_ids))
             
             # Create reverse mapping for gathered IDs
-            id_to_name = {v: k for k, v in name_to_id.items()}
+            id_to_name = {i: name for i, name in enumerate(unique_names)}
             
             # Compute metrics for each unique dataset in the gathered batch
             for dataset_id in np.unique(gathered_ids):
-                dataset = id_to_name[dataset_id]
-                dataset_mask = gathered_ids == dataset_id
-                if np.any(dataset_mask):
-                    # Action metrics
-                    dataset_actions = gt_actions[dataset_mask]
-                    dataset_preds = predicted_actions[dataset_mask]
-                    dataset_action_mask = actions_mask[dataset_mask].astype(np.float32)
-                    
-                    # Token metrics
-                    dataset_tokens = {
-                        "predicted": tokens["predicted"][dataset_mask],
-                        "target": tokens["target"][dataset_mask],
-                        "mask": tokens["mask"][dataset_mask].astype(np.float32)
-                    }
-                    dataset_is_action = is_action_token[dataset_mask].astype(np.float32)
-                    dataset_is_rep = is_rep_token[dataset_mask].astype(np.float32)
-                    
-                    dataset_action_token_mask = dataset_tokens["mask"] * dataset_is_action
-                    dataset_rep_token_mask = dataset_tokens["mask"] * dataset_is_rep
-                    
-                    dataset_action_acc = np.mean((dataset_tokens["predicted"] == dataset_tokens["target"]) * dataset_action_token_mask) / np.mean(dataset_action_token_mask) if np.mean(dataset_action_token_mask) > 0 else 0.0
-                    dataset_rep_acc = np.mean((dataset_tokens["predicted"] == dataset_tokens["target"]) * dataset_rep_token_mask) / np.mean(dataset_rep_token_mask) if np.mean(dataset_rep_token_mask) > 0 else 0.0
-                    dataset_total_acc = np.mean((dataset_tokens["predicted"] == dataset_tokens["target"]) * dataset_tokens["mask"]) / np.mean(dataset_tokens["mask"]) if np.mean(dataset_tokens["mask"]) > 0 else 0.0
-                    
-                    metrics.update({
-                        f"{dataset}_l2": np.mean(np.square(dataset_preds - dataset_actions) * dataset_action_mask) / np.mean(dataset_action_mask),
-                        f"{dataset}_l1": np.mean(np.abs(dataset_preds - dataset_actions) * dataset_action_mask) / np.mean(dataset_action_mask),
-                        f"{dataset}_acc": dataset_total_acc,
-                        f"{dataset}_acc_actions": dataset_action_acc,
-                        f"{dataset}_acc_representations": dataset_rep_acc,
-                    })
+                if dataset_id in id_to_name:  # Only process if we have the mapping
+                    dataset = id_to_name[dataset_id]
+                    dataset_mask = gathered_ids == dataset_id
+                    if np.any(dataset_mask):
+                        # Action metrics
+                        dataset_actions = gt_actions[dataset_mask]
+                        dataset_preds = predicted_actions[dataset_mask]
+                        dataset_action_mask = actions_mask[dataset_mask].astype(np.float32)
+                        
+                        # Token metrics
+                        dataset_tokens = {
+                            "predicted": tokens["predicted"][dataset_mask],
+                            "target": tokens["target"][dataset_mask],
+                            "mask": tokens["mask"][dataset_mask].astype(np.float32)
+                        }
+                        dataset_is_action = is_action_token[dataset_mask].astype(np.float32)
+                        dataset_is_rep = is_rep_token[dataset_mask].astype(np.float32)
+                        
+                        dataset_action_token_mask = dataset_tokens["mask"] * dataset_is_action
+                        dataset_rep_token_mask = dataset_tokens["mask"] * dataset_is_rep
+                        
+                        dataset_action_acc = np.mean((dataset_tokens["predicted"] == dataset_tokens["target"]) * dataset_action_token_mask) / np.mean(dataset_action_token_mask) if np.mean(dataset_action_token_mask) > 0 else 0.0
+                        dataset_rep_acc = np.mean((dataset_tokens["predicted"] == dataset_tokens["target"]) * dataset_rep_token_mask) / np.mean(dataset_rep_token_mask) if np.mean(dataset_rep_token_mask) > 0 else 0.0
+                        dataset_total_acc = np.mean((dataset_tokens["predicted"] == dataset_tokens["target"]) * dataset_tokens["mask"]) / np.mean(dataset_tokens["mask"]) if np.mean(dataset_tokens["mask"]) > 0 else 0.0
+                        
+                        metrics.update({
+                            f"{dataset}_l2": np.mean(np.square(dataset_preds - dataset_actions) * dataset_action_mask) / np.mean(dataset_action_mask),
+                            f"{dataset}_l1": np.mean(np.abs(dataset_preds - dataset_actions) * dataset_action_mask) / np.mean(dataset_action_mask),
+                            f"{dataset}_acc": dataset_total_acc,
+                            f"{dataset}_acc_actions": dataset_action_acc,
+                            f"{dataset}_acc_representations": dataset_rep_acc,
+                        })
 
         return metrics
 
