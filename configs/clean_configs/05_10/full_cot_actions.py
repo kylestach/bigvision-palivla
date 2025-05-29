@@ -46,6 +46,7 @@ def get_config(variant_config: str = "default"):
 
     config["cot_path"] = FieldReference(None, str)
     config["dataset_kwargs"]["oxe_kwargs"]["use_cot"] = USE_COT
+    config["not_restore_optimizer"] = FieldReference(False, bool)
 
     # restore from checkpoint
     if RESTORE['path'] is not None:
