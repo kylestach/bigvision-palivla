@@ -177,8 +177,12 @@ def main(_):
         restore_manager = ocp.CheckpointManager(
             config.resume_checkpoint_dir, options=ocp.CheckpointManagerOptions()
         )
-        #model.load_state(config.resume_checkpoint_step, restore_manager)
-        model.load_params(config.resume_checkpoint_step, restore_manager)
+        if config.finetune:
+            print("Not restoring optimizer state since we are finetuning")
+            model.load_params(config.resume_checkpoint_step, restore_manager)
+        else:
+            print("Restoring optimizer state since we are resuming pre-training")
+            model.load_state(config.resume_checkpoint_step, restore_manager)
 
 
     # Make the basic dataset
