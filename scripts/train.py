@@ -177,7 +177,7 @@ def main(_):
         restore_manager = ocp.CheckpointManager(
             config.resume_checkpoint_dir, options=ocp.CheckpointManagerOptions()
         )
-        if config.finetune:
+        if config.not_restore_optimizer:
             print("Not restoring optimizer state since we are finetuning")
             model.load_params(config.resume_checkpoint_step, restore_manager)
         else:
