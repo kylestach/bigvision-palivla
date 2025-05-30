@@ -6,7 +6,7 @@ MAX_CHUNK_SIZE = 50
 MAX_PROPRIO_DIM = 14 # testing proprio padding 
 
 USE_COT = True
-LR = 1e-6
+LR = 5e-5
 
 IMAGE_KEYS = ["primary"] # in the order you want them to appear in the sequence
 PROPRIO_KEYS = [] # in the order you want them to appear in the sequence
