@@ -284,9 +284,12 @@ class PaliVLAModel(nn.Module):
         embeds, masks, masks_ar, info, prompt_end = self.embed_sensors_and_text(
             sensors, sensors_mask, prompt_seq, gen_seq, train=train
         )
-        jax.debug.print("prompt_end: {}", prompt_end)
 
-        positions = jnp.cumsum(masks, axis=1) - 1
+        # Stable slot-based positions (previously was cumsum over masks leading to
+        # sample-dependent shifts when some modalities are fully padded).
+        seq_len = embeds.shape[1]
+        positions = jnp.broadcast_to(jnp.arange(seq_len), masks.shape)
+
         attn_mask = make_attn_mask(masks, masks_ar)
         _, llm_info = self.llm(embeds, mask=attn_mask, train=train, positions=positions)
 
