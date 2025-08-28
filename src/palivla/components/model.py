@@ -198,6 +198,10 @@ class PaliVLAModel(nn.Module):
                 mask = jnp.concatenate([mask[:, :1], mask], axis=1)
             chex.assert_shape(mask, embed.shape[:-1])
 
+            # Zero out embeddings where mask is False so padded modalities (e.g. missing camera views)
+            # don't leak arbitrary feature values into the transformer.
+            embed = jnp.where(mask[..., None], embed, 0.0)
+
             info.update({f"{modality}/{k}": v for k, v in m_info.items()})
 
             embeds[modality] = embed
@@ -230,7 +234,22 @@ class PaliVLAModel(nn.Module):
 
         # jax.debug.print("masks: {}", packed_masks[0])
         # jax.debug.print("values: {}", packed_embeds[0, :, 0])
-
+        try:
+            # Per-modality segment lengths (including start token) in target order
+            seg_lengths = []
+            for k in self.target_key_order:
+                if k in sensors_embeds:
+                    seg_lengths.append(sensors_embeds[k].shape[1])
+                else:
+                    seg_lengths.append(-1)  # missing modality marker
+            seg_lengths_arr = jnp.array(seg_lengths, dtype=jnp.int32)
+            seg_offsets = jnp.cumsum(
+                jnp.concatenate([jnp.array([0], dtype=jnp.int32), seg_lengths_arr[:-1]])
+            )
+            info["debug/segment_lengths"] = seg_lengths_arr
+            info["debug/segment_offsets"] = seg_offsets
+        except Exception:
+            pass
         return packed_embeds, packed_masks, info
 
     def embed_sensors_and_text(
@@ -285,8 +304,6 @@ class PaliVLAModel(nn.Module):
             sensors, sensors_mask, prompt_seq, gen_seq, train=train
         )
 
-        # Stable slot-based positions (previously was cumsum over masks leading to
-        # sample-dependent shifts when some modalities are fully padded).
         seq_len = embeds.shape[1]
         positions = jnp.broadcast_to(jnp.arange(seq_len), masks.shape)
 
@@ -304,6 +321,13 @@ class PaliVLAModel(nn.Module):
         info["text_pre_logits"] = pre_logits
         info["text_logits"] = logits
         info["text_tokens"] = jnp.argmax(logits, axis=-1)
+
+        # Debug: record where text starts and sensor prefix length
+        try:
+            info["debug/prefix_sensor_len"] = jnp.array([embeds.shape[1] - llm_info["pre_logits"].shape[1]])
+            info["debug/prompt_end"] = jnp.array([prompt_end])
+        except Exception:
+            pass
 
         return logits, info
 
