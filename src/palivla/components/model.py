@@ -207,6 +207,20 @@ class PaliVLAModel(nn.Module):
             embeds[modality] = embed
             embed_masks[modality] = mask
 
+            # Debug print per modality (first batch element) showing padding pattern.
+            # Safe inside jit: jax.debug.print executes host-side.
+            try:
+                jax.debug.print(
+                    "[pad-debug] modality={m} shape={s} valid_tokens(sample0)={vc} total_tokens={tt} mask(sample0, first 16)={ms}",
+                    m=modality,
+                    s=embed.shape,
+                    vc=jnp.sum(mask[0]).astype(jnp.int32),
+                    tt=mask.shape[1],
+                    ms=mask[0][:16],
+                )
+            except Exception:
+                pass
+
         batch_size = jax.tree.leaves(data)[0].shape[0]
         embed_dim = self.llm.embdim
         chex.assert_shape(list(embeds.values()), (batch_size, None, embed_dim))
@@ -234,22 +248,7 @@ class PaliVLAModel(nn.Module):
 
         # jax.debug.print("masks: {}", packed_masks[0])
         # jax.debug.print("values: {}", packed_embeds[0, :, 0])
-        try:
-            # Per-modality segment lengths (including start token) in target order
-            seg_lengths = []
-            for k in self.target_key_order:
-                if k in sensors_embeds:
-                    seg_lengths.append(sensors_embeds[k].shape[1])
-                else:
-                    seg_lengths.append(-1)  # missing modality marker
-            seg_lengths_arr = jnp.array(seg_lengths, dtype=jnp.int32)
-            seg_offsets = jnp.cumsum(
-                jnp.concatenate([jnp.array([0], dtype=jnp.int32), seg_lengths_arr[:-1]])
-            )
-            info["debug/segment_lengths"] = seg_lengths_arr
-            info["debug/segment_offsets"] = seg_offsets
-        except Exception:
-            pass
+
         return packed_embeds, packed_masks, info
 
     def embed_sensors_and_text(
@@ -303,9 +302,10 @@ class PaliVLAModel(nn.Module):
         embeds, masks, masks_ar, info, prompt_end = self.embed_sensors_and_text(
             sensors, sensors_mask, prompt_seq, gen_seq, train=train
         )
-
         seq_len = embeds.shape[1]
-        positions = jnp.broadcast_to(jnp.arange(seq_len), masks.shape)
+        base_positions = jnp.arange(seq_len)
+        positions = jnp.broadcast_to(base_positions, masks.shape)
+        positions = jnp.where(masks, positions, 0)
 
         attn_mask = make_attn_mask(masks, masks_ar)
         _, llm_info = self.llm(embeds, mask=attn_mask, train=train, positions=positions)
@@ -321,13 +321,6 @@ class PaliVLAModel(nn.Module):
         info["text_pre_logits"] = pre_logits
         info["text_logits"] = logits
         info["text_tokens"] = jnp.argmax(logits, axis=-1)
-
-        # Debug: record where text starts and sensor prefix length
-        try:
-            info["debug/prefix_sensor_len"] = jnp.array([embeds.shape[1] - llm_info["pre_logits"].shape[1]])
-            info["debug/prompt_end"] = jnp.array([prompt_end])
-        except Exception:
-            pass
 
         return logits, info
 
